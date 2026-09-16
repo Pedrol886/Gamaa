@@ -12,63 +12,1800 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore Gama source
+      - name: Create fixed Gama project
         shell: bash
         run: |
-          cat > /tmp/gama.tar.gz.b64 <<'EOF'
-          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
-          EOF
-          base64 -d /tmp/gama.tar.gz.b64 > /tmp/gama.tar.gz
-          tar -xzf /tmp/gama.tar.gz -C "$GITHUB_WORKSPACE"
+          rm -rf app settings.gradle.kts build.gradle.kts gradle.properties
+          mkdir -p app/src/main/java/com/gama/assistant app/src/main/res/drawable
 
-      - name: Install Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+          cat > 'settings.gradle.kts' <<'EOF_SETTINGS'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-      - name: Install Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
 
-      - name: Prepare Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
+          rootProject.name = "Gama"
+          include(":app")
+          EOF_SETTINGS
 
-      - name: Install Android platform
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          cat > 'build.gradle.kts' <<'EOF_BUILD'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF_BUILD
 
-      - name: Download Portuguese offline speech model
-        run: |
-          mkdir -p app/src/main/assets
-          curl -fL --retry 3 https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip -o /tmp/vosk.zip
-          unzip -q /tmp/vosk.zip -d /tmp/vosk
-          rm -rf app/src/main/assets/model
-          mv /tmp/vosk/vosk-model-small-pt-0.3 app/src/main/assets/model
+          cat > 'gradle.properties' <<'EOF_PROPERTIES'
+          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
+          android.useAndroidX=false
+          kotlin.code.style=official
+          EOF_PROPERTIES
 
-      - name: Build APK
-        run: gradle :app:assembleDebug --stacktrace
+          cat > 'app/build.gradle.kts' <<'EOF_APP_BUILD'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Gama-Orb.apk
+          android {
+              namespace = "com.gama.assistant"
+              compileSdk = 35
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-Orb-APK
-          path: Gama-Orb.apk
+              defaultConfig {
+                  applicationId = "com.gama.assistant"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 2
+                  versionName = "1.1"
+              }
 
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="gama-${{ github.run_number }}"
-          gh release create "$TAG" Gama-Orb.apk --title "Gama Orb $TAG" --notes "APK de teste do Gama gerado automaticamente."
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("com.alphacephei:vosk-android:0.3.47@aar")
+              implementation("net.java.dev.jna:jna:5.13.0@aar")
+          }
+          EOF_APP_BUILD
+
+          cat > 'app/src/main/AndroidManifest.xml' <<'EOF_MANIFEST'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+
+              <application
+                  android:label="Gama"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+
+                  </activity>
+
+                  <service
+                      android:name=".GamaService"
+                      android:exported="false"
+                      android:foregroundServiceType="microphone"/>
+
+              </application>
+          </manifest>
+          EOF_MANIFEST
+
+          cat > 'app/src/main/java/com/gama/assistant/MainActivity.kt' <<'EOF_MAIN'
+          package com.gama.assistant
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
+
+          class MainActivity : Activity() {
+
+              private lateinit var status: TextView
+              private var waitOverlay = false
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val box = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER_HORIZONTAL
+                      setPadding(40, 70, 40, 40)
+                      setBackgroundColor(Color.rgb(7, 10, 16))
+                  }
+
+                  fun label(
+                      value: String,
+                      size: Float,
+                      color: Int
+                  ) = TextView(this).apply {
+                      text = value
+                      textSize = size
+                      setTextColor(color)
+                      setPadding(0, 12, 0, 12)
+                  }
+
+                  box.addView(
+                      label(
+                          "GAMA",
+                          34f,
+                          Color.WHITE
+                      )
+                  )
+
+                  box.addView(
+                      label(
+                          "Assistente de voz local",
+                          16f,
+                          Color.LTGRAY
+                      )
+                  )
+
+                  status = label(
+                      "Status: parado",
+                      18f,
+                      Color.rgb(255, 145, 45)
+                  )
+
+                  box.addView(status)
+
+                  box.addView(
+                      Button(this).apply {
+                          text = "Ativar Gama"
+
+                          setOnClickListener {
+                              startGama()
+                          }
+                      }
+                  )
+
+                  box.addView(
+                      Button(this).apply {
+                          text = "Parar Gama"
+
+                          setOnClickListener {
+                              stopService(
+                                  Intent(
+                                      this@MainActivity,
+                                      GamaService::class.java
+                                  )
+                              )
+
+                              status.text = "Status: parado"
+                          }
+                      }
+                  )
+
+                  box.addView(
+                      Button(this).apply {
+                          text = "Permitir bolinha flutuante"
+
+                          setOnClickListener {
+                              askOverlay()
+                          }
+                      }
+                  )
+
+                  box.addView(
+                      label(
+                          "Diga “Gama”. Ele responde “Sim?”. " +
+                                  "Depois fale o comando, por exemplo: " +
+                                  "“abra o WhatsApp”.\n\n" +
+                                  "Também funciona dizendo tudo junto: " +
+                                  "“Gama, abra o Instagram”.",
+                          14f,
+                          Color.LTGRAY
+                      )
+                  )
+
+                  setContentView(box)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+
+                  if (
+                      waitOverlay &&
+                      Settings.canDrawOverlays(this)
+                  ) {
+                      waitOverlay = false
+                      startGama()
+                  }
+              }
+
+              private fun askOverlay() {
+
+                  if (
+                      Settings.canDrawOverlays(this)
+                  ) {
+                      status.text =
+                          "Bolinha flutuante permitida"
+
+                      return
+                  }
+
+                  waitOverlay = true
+
+                  startActivity(
+                      Intent(
+                          Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                          Uri.parse(
+                              "package:$packageName"
+                          )
+                      )
+                  )
+              }
+
+              private fun startGama() {
+
+                  val needed =
+                      mutableListOf<String>()
+
+                  if (
+                      checkSelfPermission(
+                          Manifest.permission.RECORD_AUDIO
+                      ) !=
+                      PackageManager.PERMISSION_GRANTED
+                  ) {
+                      needed +=
+                          Manifest.permission.RECORD_AUDIO
+                  }
+
+                  if (
+                      checkSelfPermission(
+                          Manifest.permission.CAMERA
+                      ) !=
+                      PackageManager.PERMISSION_GRANTED
+                  ) {
+                      needed +=
+                          Manifest.permission.CAMERA
+                  }
+
+                  if (
+                      Build.VERSION.SDK_INT >= 33 &&
+                      checkSelfPermission(
+                          Manifest.permission.POST_NOTIFICATIONS
+                      ) !=
+                      PackageManager.PERMISSION_GRANTED
+                  ) {
+                      needed +=
+                          Manifest.permission.POST_NOTIFICATIONS
+                  }
+
+                  if (
+                      needed.isNotEmpty()
+                  ) {
+                      requestPermissions(
+                          needed.toTypedArray(),
+                          10
+                      )
+
+                      return
+                  }
+
+                  if (
+                      !Settings.canDrawOverlays(this)
+                  ) {
+                      askOverlay()
+                      return
+                  }
+
+                  val intent =
+                      Intent(
+                          this,
+                          GamaService::class.java
+                      )
+
+                  if (
+                      Build.VERSION.SDK_INT >= 26
+                  ) {
+                      startForegroundService(
+                          intent
+                      )
+                  } else {
+                      startService(
+                          intent
+                      )
+                  }
+
+                  status.text =
+                      "Status: ativo. Diga “Gama”."
+              }
+
+              override fun onRequestPermissionsResult(
+                  requestCode: Int,
+                  permissions: Array<out String>,
+                  grantResults: IntArray
+              ) {
+                  super.onRequestPermissionsResult(
+                      requestCode,
+                      permissions,
+                      grantResults
+                  )
+
+                  if (
+                      requestCode == 10 &&
+                      grantResults.isNotEmpty() &&
+                      grantResults.all {
+                          it ==
+                          PackageManager.PERMISSION_GRANTED
+                      }
+                  ) {
+                      startGama()
+                  } else if (
+                      requestCode == 10
+                  ) {
+                      status.text =
+                          "Permita microfone e câmera."
+                  }
+              }
+          }
+          EOF_MAIN
+
+          cat > 'app/src/main/java/com/gama/assistant/GamaService.kt' <<'EOF_SERVICE'
+          package com.gama.assistant
+
+          import android.animation.AnimatorSet
+          import android.animation.ObjectAnimator
+          import android.app.*
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.PixelFormat
+          import android.hardware.camera2.CameraCharacteristics
+          import android.hardware.camera2.CameraManager
+          import android.media.*
+          import android.os.*
+          import android.provider.MediaStore
+          import android.provider.Settings
+          import android.speech.tts.TextToSpeech
+          import android.speech.tts.UtteranceProgressListener
+          import android.view.*
+          import android.widget.ImageView
+          import org.json.JSONObject
+          import org.vosk.Model
+          import org.vosk.Recognizer
+          import java.io.File
+          import java.io.FileOutputStream
+          import java.text.Normalizer
+          import java.util.Locale
+          import kotlin.concurrent.thread
+
+          class GamaService :
+              Service(),
+              TextToSpeech.OnInitListener {
+
+              companion object {
+                  const val CH =
+                      "gama_voice"
+
+                  const val ID =
+                      42
+
+                  const val SR =
+                      16000
+
+                  const val WINDOW =
+                      9000L
+              }
+
+              @Volatile
+              private var running =
+                  false
+
+              @Volatile
+              private var speaking =
+                  false
+
+              private var awakeUntil =
+                  0L
+
+              private var ttsReady =
+                  false
+
+              private var pending:
+                  String? = null
+
+              private var audio:
+                  AudioRecord? = null
+
+              private var recognizer:
+                  Recognizer? = null
+
+              private var model:
+                  Model? = null
+
+              private var tts:
+                  TextToSpeech? = null
+
+              private var windowManager:
+                  WindowManager? = null
+
+              private var orb:
+                  ImageView? = null
+
+              private var orbParams:
+                  WindowManager.LayoutParams? =
+                  null
+
+              private var spin:
+                  ObjectAnimator? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+
+                  createChannel()
+
+                  startForeground(
+                      ID,
+                      notification(
+                          "Preparando reconhecimento..."
+                      )
+                  )
+
+                  tts =
+                      TextToSpeech(
+                          this,
+                          this
+                      )
+
+                  showOrb()
+
+                  running = true
+
+                  thread(
+                      name = "gama-listener"
+                  ) {
+                      listen()
+                  }
+              }
+
+              override fun onStartCommand(
+                  intent: Intent?,
+                  flags: Int,
+                  startId: Int
+              ): Int {
+                  return START_STICKY
+              }
+
+              override fun onBind(
+                  intent: Intent?
+              ): IBinder? {
+                  return null
+              }
+
+              override fun onDestroy() {
+
+                  running = false
+
+                  try {
+                      audio?.stop()
+                  } catch (_: Exception) {
+                  }
+
+                  audio?.release()
+                  recognizer?.close()
+                  model?.close()
+
+                  tts?.stop()
+                  tts?.shutdown()
+
+                  removeOrb()
+
+                  super.onDestroy()
+              }
+
+              override fun onInit(
+                  status: Int
+              ) {
+
+                  if (
+                      status !=
+                      TextToSpeech.SUCCESS
+                  ) {
+                      updateNotification(
+                          "TTS indisponível."
+                      )
+
+                      return
+                  }
+
+                  ttsReady = true
+
+                  tts?.language =
+                      Locale(
+                          "pt",
+                          "BR"
+                      )
+
+                  tts?.setPitch(
+                      0.82f
+                  )
+
+                  tts?.setSpeechRate(
+                      0.94f
+                  )
+
+                  tts?.setOnUtteranceProgressListener(
+                      object :
+                          UtteranceProgressListener() {
+
+                          override fun onStart(
+                              utteranceId: String?
+                          ) {
+                              speaking = true
+
+                              pulse(
+                                  1.15f,
+                                  900
+                              )
+                          }
+
+                          override fun onDone(
+                              utteranceId: String?
+                          ) {
+                              speaking = false
+
+                              try {
+                                  recognizer?.reset()
+                              } catch (_: Exception) {
+                              }
+                          }
+
+                          @Deprecated(
+                              "Deprecated in Java"
+                          )
+                          override fun onError(
+                              utteranceId: String?
+                          ) {
+                              speaking = false
+                          }
+                      }
+                  )
+
+                  pending?.let {
+
+                      pending = null
+
+                      speak(it)
+                  }
+              }
+
+              private fun listen() {
+
+                  try {
+
+                      val modelDirectory =
+                          ensureModel()
+
+                      model =
+                          Model(
+                              modelDirectory.absolutePath
+                          )
+
+                      recognizer =
+                          Recognizer(
+                              model,
+                              SR.toFloat()
+                          )
+
+                      val minimumBuffer =
+                          AudioRecord.getMinBufferSize(
+                              SR,
+                              AudioFormat.CHANNEL_IN_MONO,
+                              AudioFormat.ENCODING_PCM_16BIT
+                          ).coerceAtLeast(
+                              4096
+                          )
+
+                      audio =
+                          AudioRecord(
+                              MediaRecorder.AudioSource.MIC,
+                              SR,
+                              AudioFormat.CHANNEL_IN_MONO,
+                              AudioFormat.ENCODING_PCM_16BIT,
+                              minimumBuffer * 2
+                          )
+
+                      if (
+                          audio?.state !=
+                          AudioRecord.STATE_INITIALIZED
+                      ) {
+                          error(
+                              "microfone não inicializou"
+                          )
+                      }
+
+                      val buffer =
+                          ByteArray(
+                              minimumBuffer
+                          )
+
+                      audio?.startRecording()
+
+                      updateNotification(
+                          "Gama ouvindo. Diga “Gama”."
+                      )
+
+                      while (
+                          running
+                      ) {
+
+                          val amount =
+                              audio?.read(
+                                  buffer,
+                                  0,
+                                  buffer.size
+                              ) ?: 0
+
+                          if (
+                              amount <= 0 ||
+                              speaking
+                          ) {
+                              continue
+                          }
+
+                          val r =
+                              recognizer
+                                  ?: continue
+
+                          if (
+                              r.acceptWaveForm(
+                                  buffer,
+                                  amount
+                              )
+                          ) {
+
+                              val text =
+                                  JSONObject(
+                                      r.result
+                                  ).optString(
+                                      "text"
+                                  )
+
+                              handle(
+                                  text
+                              )
+
+                          } else {
+
+                              val partial =
+                                  normalize(
+                                      JSONObject(
+                                          r.partialResult
+                                      ).optString(
+                                          "partial"
+                                      )
+                                  )
+
+                              if (
+                                  partial.contains(
+                                      "gama"
+                                  )
+                              ) {
+
+                                  awakeUntil =
+                                      SystemClock
+                                          .elapsedRealtime() +
+                                      WINDOW
+
+                                  pulse(
+                                      1.22f,
+                                      450
+                                  )
+
+                                  updateNotification(
+                                      "Ouvi você. Pode falar."
+                                  )
+                              }
+                          }
+                      }
+
+                  } catch (
+                      exception: Exception
+                  ) {
+
+                      updateNotification(
+                          "Erro de voz: " +
+                                  (
+                                          exception.message
+                                              ?: "falha"
+                                          )
+                      )
+
+                      speak(
+                          "Tive um problema ao iniciar o microfone."
+                      )
+                  }
+              }
+
+              private fun handle(
+                  raw: String
+              ) {
+
+                  val text =
+                      normalize(
+                          raw
+                      )
+
+                  if (
+                      text.isBlank()
+                  ) {
+                      return
+                  }
+
+                  val wakeIndex =
+                      text.indexOf(
+                          "gama"
+                      )
+
+                  if (
+                      wakeIndex >= 0
+                  ) {
+
+                      awakeUntil =
+                          SystemClock
+                              .elapsedRealtime() +
+                          WINDOW
+
+                      pulse(
+                          1.22f,
+                          450
+                      )
+
+                      val command =
+                          text.substring(
+                              wakeIndex + 4
+                          ).trim()
+
+                      if (
+                          command.isBlank()
+                      ) {
+
+                          speak(
+                              "Sim?"
+                          )
+
+                          updateNotification(
+                              "Gama ativo. Fale o comando."
+                          )
+
+                      } else {
+
+                          reply(
+                              command
+                          )
+                      }
+
+                      return
+                  }
+
+                  if (
+                      SystemClock
+                          .elapsedRealtime() <=
+                      awakeUntil
+                  ) {
+                      reply(
+                          text
+                      )
+                  }
+              }
+
+              private fun reply(
+                  command: String
+              ) {
+
+                  awakeUntil = 0L
+
+                  val response =
+                      execute(
+                          command
+                      )
+
+                  updateNotification(
+                      response
+                  )
+
+                  speak(
+                      response
+                  )
+              }
+
+              private fun execute(
+                  command: String
+              ): String {
+
+                  return when {
+
+                      command.contains(
+                          "whatsapp"
+                      ) ->
+                          openPackage(
+                              "com.whatsapp",
+                              "WhatsApp"
+                          )
+
+                      command.contains(
+                          "instagram"
+                      ) ||
+                      command.contains(
+                          "insta"
+                      ) ->
+                          openPackage(
+                              "com.instagram.android",
+                              "Instagram"
+                          )
+
+                      command.contains(
+                          "youtube"
+                      ) ->
+                          openPackage(
+                              "com.google.android.youtube",
+                              "YouTube"
+                          )
+
+                      command.contains(
+                          "camera"
+                      ) ->
+                          launch(
+                              Intent(
+                                  MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
+                              ),
+                              "Abrindo a câmera.",
+                              "Não consegui abrir a câmera."
+                          )
+
+                      command.contains(
+                          "configur"
+                      ) ||
+                      command.contains(
+                          "ajustes"
+                      ) ->
+                          launch(
+                              Intent(
+                                  Settings.ACTION_SETTINGS
+                              ),
+                              "Abrindo as configurações.",
+                              "Não consegui abrir as configurações."
+                          )
+
+                      command.contains(
+                          "tela inicial"
+                      ) ||
+                      command == "inicio" ->
+                          launch(
+                              Intent(
+                                  Intent.ACTION_MAIN
+                              ).addCategory(
+                                  Intent.CATEGORY_HOME
+                              ),
+                              "Voltando para a tela inicial.",
+                              "Não consegui voltar."
+                          )
+
+                      command.contains(
+                          "aument"
+                      ) &&
+                      command.contains(
+                          "volume"
+                      ) -> {
+
+                          audioManager()
+                              .adjustStreamVolume(
+                                  AudioManager.STREAM_MUSIC,
+                                  AudioManager.ADJUST_RAISE,
+                                  AudioManager.FLAG_SHOW_UI
+                              )
+
+                          "Aumentei o volume."
+                      }
+
+                      (
+                              command.contains(
+                                  "diminu"
+                              ) ||
+                              command.contains(
+                                  "abaix"
+                              )
+                              ) &&
+                      command.contains(
+                          "volume"
+                      ) -> {
+
+                          audioManager()
+                              .adjustStreamVolume(
+                                  AudioManager.STREAM_MUSIC,
+                                  AudioManager.ADJUST_LOWER,
+                                  AudioManager.FLAG_SHOW_UI
+                              )
+
+                          "Diminuí o volume."
+                      }
+
+                      command.contains(
+                          "silenci"
+                      ) &&
+                      command.contains(
+                          "volume"
+                      ) -> {
+
+                          audioManager()
+                              .adjustStreamVolume(
+                                  AudioManager.STREAM_MUSIC,
+                                  AudioManager.ADJUST_MUTE,
+                                  AudioManager.FLAG_SHOW_UI
+                              )
+
+                          "Volume silenciado."
+                      }
+
+                      command.contains(
+                          "pause"
+                      ) ||
+                      command.contains(
+                          "pausar"
+                      ) -> {
+
+                          mediaKey(
+                              KeyEvent.KEYCODE_MEDIA_PAUSE
+                          )
+
+                          "Música pausada."
+                      }
+
+                      command.contains(
+                          "continue"
+                      ) ||
+                      command.contains(
+                          "retome"
+                      ) ||
+                      command.contains(
+                          "reprodu"
+                      ) -> {
+
+                          mediaKey(
+                              KeyEvent.KEYCODE_MEDIA_PLAY
+                          )
+
+                          "Continuando."
+                      }
+
+                      command.contains(
+                          "proxima"
+                      ) &&
+                      command.contains(
+                          "musica"
+                      ) -> {
+
+                          mediaKey(
+                              KeyEvent.KEYCODE_MEDIA_NEXT
+                          )
+
+                          "Próxima música."
+                      }
+
+                      command.contains(
+                          "anterior"
+                      ) &&
+                      (
+                              command.contains(
+                                  "musica"
+                              ) ||
+                              command.contains(
+                                  "faixa"
+                              )
+                              ) -> {
+
+                          mediaKey(
+                              KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                          )
+
+                          "Música anterior."
+                      }
+
+                      command.contains(
+                          "lanterna"
+                      ) &&
+                      command.contains(
+                          "lig"
+                      ) -> {
+
+                          if (
+                              torch(
+                                  true
+                              )
+                          ) {
+                              "Lanterna ligada."
+                          } else {
+                              "Não encontrei a lanterna."
+                          }
+                      }
+
+                      command.contains(
+                          "lanterna"
+                      ) &&
+                      (
+                              command.contains(
+                                  "deslig"
+                              ) ||
+                              command.contains(
+                                  "apague"
+                              )
+                              ) -> {
+
+                          if (
+                              torch(
+                                  false
+                              )
+                          ) {
+                              "Lanterna desligada."
+                          } else {
+                              "Não encontrei a lanterna."
+                          }
+                      }
+
+                      command.startsWith(
+                          "abra "
+                      ) ||
+                      command.startsWith(
+                          "abrir "
+                      ) -> {
+
+                          openByName(
+                              command
+                                  .removePrefix(
+                                      "abra "
+                                  )
+                                  .removePrefix(
+                                      "abrir "
+                                  )
+                                  .trim()
+                          )
+                      }
+
+                      else ->
+                          "Ainda não reconheço esse comando."
+                  }
+              }
+
+              private fun launch(
+                  intent: Intent,
+                  success: String,
+                  failure: String
+              ): String {
+
+                  return try {
+
+                      intent.addFlags(
+                          Intent.FLAG_ACTIVITY_NEW_TASK
+                      )
+
+                      startActivity(
+                          intent
+                      )
+
+                      success
+
+                  } catch (
+                      _: Exception
+                  ) {
+                      failure
+                  }
+              }
+
+              private fun openPackage(
+                  packageName: String,
+                  appName: String
+              ): String {
+
+                  return try {
+
+                      val intent =
+                          packageManager
+                              .getLaunchIntentForPackage(
+                                  packageName
+                              )
+                              ?: return
+                              "Não encontrei o $appName neste celular."
+
+                      intent.addFlags(
+                          Intent.FLAG_ACTIVITY_NEW_TASK
+                      )
+
+                      startActivity(
+                          intent
+                      )
+
+                      "Abrindo $appName."
+
+                  } catch (
+                      _: Exception
+                  ) {
+
+                      "Não consegui abrir o $appName."
+                  }
+              }
+
+              private fun openByName(
+                  query: String
+              ): String {
+
+                  return try {
+
+                      val normalizedQuery =
+                          normalize(
+                              query
+                          )
+
+                      val launcher =
+                          Intent(
+                              Intent.ACTION_MAIN
+                          ).addCategory(
+                              Intent.CATEGORY_LAUNCHER
+                          )
+
+                      val activity =
+                          packageManager
+                              .queryIntentActivities(
+                                  launcher,
+                                  PackageManager.MATCH_ALL
+                              )
+                              .firstOrNull {
+
+                                  val label =
+                                      normalize(
+                                          it
+                                              .loadLabel(
+                                                  packageManager
+                                              )
+                                              .toString()
+                                      )
+
+                                  label ==
+                                  normalizedQuery ||
+                                  label.contains(
+                                      normalizedQuery
+                                  ) ||
+                                  normalizedQuery.contains(
+                                      label
+                                  )
+                              }
+                              ?: return
+                              "Não encontrei o aplicativo $query."
+
+                      val intent =
+                          packageManager
+                              .getLaunchIntentForPackage(
+                                  activity
+                                      .activityInfo
+                                      .packageName
+                              )
+                              ?: return
+                              "Esse aplicativo não pode ser aberto diretamente."
+
+                      intent.addFlags(
+                          Intent.FLAG_ACTIVITY_NEW_TASK
+                      )
+
+                      startActivity(
+                          intent
+                      )
+
+                      "Abrindo ${
+                          activity.loadLabel(
+                              packageManager
+                          )
+                      }."
+
+                  } catch (
+                      _: Exception
+                  ) {
+
+                      "Não consegui abrir o aplicativo $query."
+                  }
+              }
+
+              private fun audioManager():
+                  AudioManager {
+
+                  return getSystemService(
+                      Context.AUDIO_SERVICE
+                  ) as AudioManager
+              }
+
+              private fun mediaKey(
+                  key: Int
+              ) {
+
+                  audioManager()
+                      .dispatchMediaKeyEvent(
+                          KeyEvent(
+                              KeyEvent.ACTION_DOWN,
+                              key
+                          )
+                      )
+
+                  audioManager()
+                      .dispatchMediaKeyEvent(
+                          KeyEvent(
+                              KeyEvent.ACTION_UP,
+                              key
+                          )
+                      )
+              }
+
+              private fun torch(
+                  enabled: Boolean
+              ): Boolean {
+
+                  return try {
+
+                      val cameraManager =
+                          getSystemService(
+                              Context.CAMERA_SERVICE
+                          ) as CameraManager
+
+                      val id =
+                          cameraManager
+                              .cameraIdList
+                              .firstOrNull {
+
+                                  cameraManager
+                                      .getCameraCharacteristics(
+                                          it
+                                      )
+                                      .get(
+                                          CameraCharacteristics
+                                              .FLASH_INFO_AVAILABLE
+                                      ) == true
+                              }
+                              ?: return false
+
+                      cameraManager
+                          .setTorchMode(
+                              id,
+                              enabled
+                          )
+
+                      true
+
+                  } catch (
+                      _: Exception
+                  ) {
+                      false
+                  }
+              }
+
+              private fun speak(
+                  text: String
+              ) {
+
+                  if (
+                      !ttsReady
+                  ) {
+                      pending = text
+                      return
+                  }
+
+                  tts?.speak(
+                      text,
+                      TextToSpeech.QUEUE_FLUSH,
+                      null,
+                      "gama_${
+                          SystemClock.elapsedRealtime()
+                      }"
+                  )
+              }
+
+              private fun normalize(
+                  text: String
+              ): String {
+
+                  return Normalizer
+                      .normalize(
+                          text.lowercase(
+                              Locale(
+                                  "pt",
+                                  "BR"
+                              )
+                          ),
+                          Normalizer.Form.NFD
+                      )
+                      .replace(
+                          "\\p{Mn}+".toRegex(),
+                          ""
+                      )
+                      .replace(
+                          "[^a-z0-9 ]".toRegex(),
+                          " "
+                      )
+                      .replace(
+                          "\\s+".toRegex(),
+                          " "
+                      )
+                      .trim()
+              }
+
+              private fun ensureModel():
+                  File {
+
+                  val directory =
+                      File(
+                          filesDir,
+                          "vosk-pt"
+                      )
+
+                  val marker =
+                      File(
+                          directory,
+                          ".ok"
+                      )
+
+                  if (
+                      marker.exists()
+                  ) {
+                      return directory
+                  }
+
+                  if (
+                      directory.exists()
+                  ) {
+                      directory.deleteRecursively()
+                  }
+
+                  directory.mkdirs()
+
+                  copyTree(
+                      "model",
+                      directory
+                  )
+
+                  marker.writeText(
+                      "ok"
+                  )
+
+                  return directory
+              }
+
+              private fun copyTree(
+                  path: String,
+                  output: File
+              ) {
+
+                  val list =
+                      assets.list(
+                          path
+                      )
+                          ?: emptyArray()
+
+                  if (
+                      list.isEmpty()
+                  ) {
+
+                      output
+                          .parentFile
+                          ?.mkdirs()
+
+                      assets.open(
+                          path
+                      ).use { input ->
+
+                          FileOutputStream(
+                              output
+                          ).use { file ->
+
+                              input.copyTo(
+                                  file
+                              )
+                          }
+                      }
+
+                  } else {
+
+                      output.mkdirs()
+
+                      list.forEach {
+
+                          copyTree(
+                              "$path/$it",
+                              File(
+                                  output,
+                                  it
+                              )
+                          )
+                      }
+                  }
+              }
+
+              private fun showOrb() {
+
+                  if (
+                      !Settings.canDrawOverlays(
+                          this
+                      )
+                  ) {
+                      return
+                  }
+
+                  windowManager =
+                      getSystemService(
+                          Context.WINDOW_SERVICE
+                      ) as WindowManager
+
+                  orb =
+                      ImageView(
+                          this
+                      ).apply {
+
+                          setImageResource(
+                              R.drawable.gama_orb
+                          )
+
+                          scaleType =
+                              ImageView
+                                  .ScaleType
+                                  .FIT_CENTER
+
+                          alpha =
+                              0.96f
+                      }
+
+                  val windowType =
+                      if (
+                          Build.VERSION.SDK_INT >=
+                          26
+                      ) {
+                          WindowManager
+                              .LayoutParams
+                              .TYPE_APPLICATION_OVERLAY
+                      } else {
+                          WindowManager
+                              .LayoutParams
+                              .TYPE_PHONE
+                      }
+
+                  orbParams =
+                      WindowManager
+                          .LayoutParams(
+                              dp(92),
+                              dp(92),
+                              windowType,
+                              WindowManager
+                                  .LayoutParams
+                                  .FLAG_NOT_FOCUSABLE or
+                                      WindowManager
+                                          .LayoutParams
+                                          .FLAG_NOT_TOUCH_MODAL,
+                              PixelFormat.TRANSLUCENT
+                          )
+                          .apply {
+
+                              gravity =
+                                  Gravity.BOTTOM or
+                                      Gravity.END
+
+                              x =
+                                  dp(14)
+
+                              y =
+                                  dp(42)
+                          }
+
+                  orb?.setOnTouchListener(
+                      object :
+                          View.OnTouchListener {
+
+                          var startX =
+                              0
+
+                          var startY =
+                              0
+
+                          var touchX =
+                              0f
+
+                          var touchY =
+                              0f
+
+                          override fun onTouch(
+                              view: View?,
+                              event: MotionEvent
+                          ): Boolean {
+
+                              val p =
+                                  orbParams
+                                      ?: return false
+
+                              when (
+                                  event.action
+                              ) {
+
+                                  MotionEvent.ACTION_DOWN -> {
+
+                                      startX =
+                                          p.x
+
+                                      startY =
+                                          p.y
+
+                                      touchX =
+                                          event.rawX
+
+                                      touchY =
+                                          event.rawY
+
+                                      return true
+                                  }
+
+                                  MotionEvent.ACTION_MOVE -> {
+
+                                      p.x =
+                                          (
+                                                  startX -
+                                                  (
+                                                          event.rawX -
+                                                          touchX
+                                                          )
+                                                  )
+                                              .toInt()
+
+                                      p.y =
+                                          (
+                                                  startY -
+                                                  (
+                                                          event.rawY -
+                                                          touchY
+                                                          )
+                                                  )
+                                              .toInt()
+
+                                      try {
+                                          windowManager
+                                              ?.updateViewLayout(
+                                                  orb,
+                                                  p
+                                              )
+                                      } catch (
+                                          _: Exception
+                                      ) {
+                                      }
+
+                                      return true
+                                  }
+                              }
+
+                              return false
+                          }
+                      }
+                  )
+
+                  windowManager
+                      ?.addView(
+                          orb,
+                          orbParams
+                      )
+
+                  spin =
+                      ObjectAnimator
+                          .ofFloat(
+                              orb,
+                              "rotation",
+                              0f,
+                              360f
+                          )
+                          .apply {
+
+                              duration =
+                                  14000
+
+                              repeatCount =
+                                  ObjectAnimator
+                                      .INFINITE
+
+                              start()
+                          }
+              }
+
+              private fun pulse(
+                  scale: Float,
+                  durationMs: Long
+              ) {
+
+                  orb?.post {
+
+                      AnimatorSet()
+                          .apply {
+
+                              playTogether(
+                                  ObjectAnimator.ofFloat(
+                                      orb,
+                                      "scaleX",
+                                      1f,
+                                      scale,
+                                      1f
+                                  ),
+                                  ObjectAnimator.ofFloat(
+                                      orb,
+                                      "scaleY",
+                                      1f,
+                                      scale,
+                                      1f
+                                  ),
+                                  ObjectAnimator.ofFloat(
+                                      orb,
+                                      "alpha",
+                                      0.78f,
+                                      1f,
+                                      0.94f
+                                  )
+                              )
+
+                              duration =
+                                  durationMs
+
+                              start()
+                          }
+                  }
+              }
+
+              private fun removeOrb() {
+
+                  spin?.cancel()
+
+                  orb?.let {
+
+                      try {
+                          windowManager
+                              ?.removeView(
+                                  it
+                              )
+                      } catch (
+                          _: Exception
+                      ) {
+                      }
+                  }
+
+                  orb = null
+              }
+
+              private fun dp(
+                  value: Int
+              ): Int {
+
+                  return (
+                          value *
+                          resources
+                              .displayMetrics
+                              .density
+                          )
+                      .toInt()
+              }
+
+              private fun createChannel() {
+
+                  if (
+                      Build.VERSION.SDK_INT >=
+                      26
+                  ) {
+
+                      getSystemService(
+                          NotificationManager::class.java
+                      )
+                          .createNotificationChannel(
+                              NotificationChannel(
+                                  CH,
+                                  "Gama em segundo plano",
+                                  NotificationManager
+                                      .IMPORTANCE_LOW
+                              )
+                          )
+                  }
+              }
+
+              private fun notification(
+                  text: String
+              ): Notification {
+
+                  val pendingIntent =
+                      PendingIntent
+                          .getActivity(
+                              this,
+                              0,
+                              Intent(
+                                  this,
+                                  MainActivity::class.java
+                              ),
+                              PendingIntent
+                                  .FLAG_IMMUTABLE or
+                                  PendingIntent
+                                      .FLAG_UPDATE_CURRENT
+                          )
+
+                  val builder =
+                      if (
+                          Build.VERSION.SDK_INT >=
+                          26
+                      ) {
+                          Notification.Builder(
+                              this,
+                              CH
+                          )
+                      } else {
+                          Notification.Builder(
+                              this
+                          )
+                      }
+
+                  return builder
+                      .setSmallIcon(
+                          android.R.drawable
+                              .ic_btn_speak_now
+                      )
+                      .setContentTitle(
+                          "Gama"
+                      )
+                      .setContentText(
+                          text
+                      )
+                      .setContentIntent(
+                          pendingIntent
+                      )
+                      .setOngoing(
+                          true
+                      )
+                      .build()
+              }
+
+              private fun updateNotification(
+                  text: String
+              ) {
+
+                  (
+                          getSystemService(
+                              Context.NOTIFICATION
