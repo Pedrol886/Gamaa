@@ -59,7 +59,6 @@ jobs:
 
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/gama/assistant/MainActivity.kt
-          test -f app/src/main/java/com/gama/assistant/LocalBrain.kt
       - name: Apply Gama wake and lock-screen update
         shell: bash
         run: |
@@ -373,8 +372,6 @@ jobs:
           EOF_LOCAL_BRAIN
           tr -d '\n\r ' < /tmp/local_brain.gz.b64 | base64 -d | gzip -d \
             > app/src/main/java/com/gama/assistant/LocalBrain.kt
-          tr -d '\n\r ' < /tmp/local_brain.gz.b64 | base64 -d | gzip -d \
-            > app/src/main/java/com/gama/assistant/LocalBrain.kt
 
           find app/src/main/res/drawable -maxdepth 1 -type f -name 'gama_orb.*' | grep -q .
           test -f app/src/main/java/com/gama/assistant/GamaService.kt
@@ -383,6 +380,7 @@ jobs:
           test -f app/src/main/java/com/gama/assistant/GamaDeviceAdminReceiver.kt
           test -f app/src/main/res/xml/gama_device_admin.xml
           test -f app/src/main/java/com/gama/assistant/MainActivity.kt
+          test -f app/src/main/java/com/gama/assistant/LocalBrain.kt
 
       - name: Install Java
         uses: actions/setup-java@v5
