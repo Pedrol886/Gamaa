@@ -19,52 +19,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Recover base Gama project from history
+      - name: Recover base Gama project from gama-5
         shell: bash
         run: |
           set -euo pipefail
 
-          SOURCE_COMMIT=""
-          while read -r commit; do
-            if git show "$commit:.github/workflows/build-gama.yml" 2>/dev/null \
-              | grep -q "cat > /tmp/gama.tar.gz.b64"; then
-              SOURCE_COMMIT="$commit"
-              break
-            fi
-          done < <(git rev-list HEAD -- .github/workflows/build-gama.yml)
-
-          if [ -z "$SOURCE_COMMIT" ]; then
-            echo "Não encontrei a versão anterior com o projeto Gama embutido."
-            exit 1
-          fi
-
-          git show "$SOURCE_COMMIT:.github/workflows/build-gama.yml" > /tmp/gama-old.yml
+          git show gama-5:.github/workflows/build-gama.yml > /tmp/gama5.yml
 
           python3 - <<'PY'
           from pathlib import Path
           import base64
 
-          text = Path('/tmp/gama-old.yml').read_text(encoding='utf-8')
+          text = Path('/tmp/gama5.yml').read_text(encoding='utf-8')
           marker = "cat > /tmp/gama.tar.gz.b64 <<'EOF'"
 
           if marker not in text:
-              raise SystemExit('Bloco do projeto não encontrado.')
+              raise SystemExit('Bloco do projeto não encontrado na tag gama-5.')
 
-          block = text.split(marker, 1)[1].split('\n          EOF', 1)[0]
-          payload = ''.join(line.strip() for line in block.splitlines())
+          after = text.split(marker, 1)[1]
 
-          Path('/tmp/gama.tar.gz').write_bytes(
-              base64.b64decode(payload)
-          )
+          lines = []
+          for line in after.splitlines():
+              if line.strip() == "EOF":
+                  break
+              lines.append(line.strip())
+
+          payload = ''.join(lines)
+
+          try:
+              data = base64.b64decode(payload, validate=True)
+          except Exception as exc:
+              raise SystemExit(f'Base64 do projeto inválido: {exc}')
+
+          Path('/tmp/gama.tar.gz').write_bytes(data)
           PY
 
+          rm -rf app
           tar -xzf /tmp/gama.tar.gz -C "$GITHUB_WORKSPACE"
 
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/gama/assistant/MainActivity.kt
       - name: Apply Gama wake and lock-screen update
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p app/src/main/java/com/gama/assistant
           mkdir -p app/src/main/res/drawable
 
@@ -110,7 +108,7 @@ jobs:
           S4b60yJPxHpsFZt5JDZXBLLwJOZ2tDJaBA+XSMssH/WIDR56yBUmfn1KnpVjR2gSEpUrPMOJKFtmHadqZF1nWUIEwrhfdquqRs2h
           pkZTBSrl5KOyVl9+WzC6ckWIXuoGWj+ngoXMfinNx9GaydQABNRBM4o+auBRh4F88LxDjQJS+dxcMb+kuY6VKaHRusE4mwZByyR/
           /nMzFHkYbC9cAqgZJtkHUbIHog80IB+0QHj4hM2tpu70EgKtDw8NAlBuWAMmRbUfw6uwjwUFSE32kQfMT0v9DFHNs6MBVCZLtJQD
-          SHWCbpaCEZRUm/YcdofGSisXcPxejrueACzJSC7ZnuOsOV97LBvEyjrDYGl6qWkoWZIoRqo5VRMBCNuBfcyN7wx5bG3ktYFWT55R
+          SHWCbpaCEZRUm/YcdofGSisXcPxejrueACzJSC7ZnuOsOV97LBvEyjrDYGl6qWkoWZIoRqo5VRMZCNuBfcyN7wx5bG3ktYFWT55R
           pZVU01mv31/0Bngg1rEH3YltWmBaT/FEPe1snfbtMwH/vje7WAy754uZPX1nVnfVlg2qJgsJnPt/R0Kt1l6HWVVMQ5mr8LHgwCVS
           hWuxNrCL+yt3nYQU7H1UVQ/6UwL7q6YhSgslH83orMLSyvjbnc16w7PpF+FqRHbzuf/l/n9Y9GXZ+yD6ej7H4Jxk+bWUm8KCiU+8
           9UgmphxKWTiwe0MTK429u5rYG1jbgS1szcMMhdWxZ92z0eRi8XY06Jp1vfYRSDXs1ojoPfdkCQ1W+4Ciqvz4QkLa4hDhPgPUi4km
@@ -153,7 +151,6 @@ jobs:
           qTlvTL29lNoCHvEO3oZ6Xs8BkWbRk5I0cp3FZewvxGnlwuc3ZqV79pibG+O53ll+308HpH/UQIFIxRu4VYiRv+a4axWvr4tW9Rk4
           jd5q7v8VtFdhrlGbrhPPk2bpJDVpp1loJfLEurmre+BUXoZPaf908H9X5LDeh14AAA==
           EOF_SERVICE
-
           tr -d '\n\r ' < /tmp/service.gz.b64 | base64 -d | gzip -d \
             > app/src/main/java/com/gama/assistant/GamaService.kt
 
@@ -177,7 +174,6 @@ jobs:
           bWk1Tzn2jj2vsur6ticcra5l1n9QueXPuYRpmpIN7OVNXhhM7waDwWivMdBhoWgKalxsm9/aNlfS0G+QYeVOIHHCZA6axlQJfRRP
           aCZhcthYcfgUQL/0/gHYxsYveBAAAA==
           EOF_LOCK
-
           tr -d '\n\r ' < /tmp/lock.gz.b64 | base64 -d | gzip -d \
             > app/src/main/java/com/gama/assistant/LockScreenActivity.kt
 
@@ -191,11 +187,10 @@ jobs:
           U0GeEyIBPl3DJWYKjokIq3IYS1HEQEygqi35QTXDFSfrUOQmDmWubAapKA9LubinSpvSnOKptXhZrIHXKe2bfVCpK8mbpBE/qfvi
           v2uPK8bUDrwfyV0nFMgNJXCqEfVYJo3sgg4shYTVbkJbVrotDb2gRIpyLTjsbxvnzVVh3kineyRven8AEolAYlcHAAA=
           EOF_MANIFEST
-
           tr -d '\n\r ' < /tmp/manifest.gz.b64 | base64 -d | gzip -d \
             > app/src/main/AndroidManifest.xml
 
-          test -f app/src/main/res/drawable/gama_orb.png
+          find app/src/main/res/drawable -maxdepth 1 -type f -name 'gama_orb.*' | grep -q .
           test -f app/src/main/java/com/gama/assistant/GamaService.kt
           test -f app/src/main/java/com/gama/assistant/LockScreenActivity.kt
 
@@ -226,19 +221,13 @@ jobs:
         run: |
           set -e
           mkdir -p app/src/main/assets
-
           curl -fL --retry 3 --retry-delay 2 \
             "https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip" \
             -o /tmp/vosk.zip
-
           rm -rf /tmp/vosk app/src/main/assets/model
           mkdir -p /tmp/vosk
-
           unzip -q /tmp/vosk.zip -d /tmp/vosk
-
-          mv \
-            /tmp/vosk/vosk-model-small-pt-0.3 \
-            app/src/main/assets/model
+          mv /tmp/vosk/vosk-model-small-pt-0.3 app/src/main/assets/model
 
       - name: Build APK
         shell: bash
@@ -265,7 +254,6 @@ jobs:
         shell: bash
         run: |
           TAG="gama-${{ github.run_number }}"
-
           gh release create "$TAG" Gama-Orb.apk \
             --title "Gama Orb $TAG" \
             --notes "Gama: bolinha só ao chamar, tela com logo na tela bloqueada, WhatsApp corrigido e sem pedir foco de áudio."
