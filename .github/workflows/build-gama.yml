@@ -3,7 +3,7 @@ name: Build Gama APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 permissions:
   contents: write
@@ -17,1795 +17,379 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create fixed Gama project
+      - name: Restore complete Gama source
         shell: bash
         run: |
-          rm -rf app settings.gradle.kts build.gradle.kts gradle.properties
-          mkdir -p app/src/main/java/com/gama/assistant app/src/main/res/drawable
-
-          cat > 'settings.gradle.kts' <<'EOF_SETTINGS'
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-
-          rootProject.name = "Gama"
-          include(":app")
-          EOF_SETTINGS
-
-          cat > 'build.gradle.kts' <<'EOF_BUILD'
-          plugins {
-              id("com.android.application") version "8.7.3" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-          }
-          EOF_BUILD
-
-          cat > 'gradle.properties' <<'EOF_PROPERTIES'
-          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
-          android.useAndroidX=false
-          kotlin.code.style=official
-          EOF_PROPERTIES
-
-          cat > 'app/build.gradle.kts' <<'EOF_APP_BUILD'
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-          }
-
-          android {
-              namespace = "com.gama.assistant"
-              compileSdk = 35
-
-              defaultConfig {
-                  applicationId = "com.gama.assistant"
-                  minSdk = 26
-                  targetSdk = 35
-                  versionCode = 2
-                  versionName = "1.1"
-              }
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-          }
-
-          dependencies {
-              implementation("com.alphacephei:vosk-android:0.3.47@aar")
-              implementation("net.java.dev.jna:jna:5.13.0@aar")
-          }
-          EOF_APP_BUILD
-
-          cat > 'app/src/main/AndroidManifest.xml' <<'EOF_MANIFEST'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-              <uses-permission android:name="android.permission.CAMERA"/>
-              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
-              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
-
-              <application
-                  android:label="Gama"
-                  android:theme="@android:style/Theme.Material.NoActionBar">
-
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true">
-
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-
-                  </activity>
-
-                  <service
-                      android:name=".GamaService"
-                      android:exported="false"
-                      android:foregroundServiceType="microphone"/>
-
-              </application>
-          </manifest>
-          EOF_MANIFEST
-
-          cat > 'app/src/main/java/com/gama/assistant/MainActivity.kt' <<'EOF_MAIN'
-          package com.gama.assistant
-
-          import android.Manifest
-          import android.app.Activity
-          import android.content.Intent
-          import android.content.pm.PackageManager
-          import android.graphics.Color
-          import android.net.Uri
-          import android.os.Build
-          import android.os.Bundle
-          import android.provider.Settings
-          import android.view.Gravity
-          import android.widget.Button
-          import android.widget.LinearLayout
-          import android.widget.TextView
-
-          class MainActivity : Activity() {
-
-              private lateinit var status: TextView
-              private var waitOverlay = false
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-
-                  val box = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      gravity = Gravity.CENTER_HORIZONTAL
-                      setPadding(40, 70, 40, 40)
-                      setBackgroundColor(Color.rgb(7, 10, 16))
-                  }
-
-                  fun label(
-                      value: String,
-                      size: Float,
-                      color: Int
-                  ) = TextView(this).apply {
-                      text = value
-                      textSize = size
-                      setTextColor(color)
-                      setPadding(0, 12, 0, 12)
-                  }
-
-                  box.addView(
-                      label(
-                          "GAMA",
-                          34f,
-                          Color.WHITE
-                      )
-                  )
-
-                  box.addView(
-                      label(
-                          "Assistente de voz local",
-                          16f,
-                          Color.LTGRAY
-                      )
-                  )
-
-                  status = label(
-                      "Status: parado",
-                      18f,
-                      Color.rgb(255, 145, 45)
-                  )
-
-                  box.addView(status)
-
-                  box.addView(
-                      Button(this).apply {
-                          text = "Ativar Gama"
-
-                          setOnClickListener {
-                              startGama()
-                          }
-                      }
-                  )
-
-                  box.addView(
-                      Button(this).apply {
-                          text = "Parar Gama"
-
-                          setOnClickListener {
-                              stopService(
-                                  Intent(
-                                      this@MainActivity,
-                                      GamaService::class.java
-                                  )
-                              )
-
-                              status.text = "Status: parado"
-                          }
-                      }
-                  )
-
-                  box.addView(
-                      Button(this).apply {
-                          text = "Permitir bolinha flutuante"
-
-                          setOnClickListener {
-                              askOverlay()
-                          }
-                      }
-                  )
-
-                  box.addView(
-                      label(
-                          "Diga “Gama”. Ele responde “Sim?”. " +
-                                  "Depois fale o comando, por exemplo: " +
-                                  "“abra o WhatsApp”.\n\n" +
-                                  "Também funciona dizendo tudo junto: " +
-                                  "“Gama, abra o Instagram”.",
-                          14f,
-                          Color.LTGRAY
-                      )
-                  )
-
-                  setContentView(box)
-              }
-
-              override fun onResume() {
-                  super.onResume()
-
-                  if (
-                      waitOverlay &&
-                      Settings.canDrawOverlays(this)
-                  ) {
-                      waitOverlay = false
-                      startGama()
-                  }
-              }
-
-              private fun askOverlay() {
-
-                  if (
-                      Settings.canDrawOverlays(this)
-                  ) {
-                      status.text =
-                          "Bolinha flutuante permitida"
-
-                      return
-                  }
-
-                  waitOverlay = true
-
-                  startActivity(
-                      Intent(
-                          Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                          Uri.parse(
-                              "package:$packageName"
-                          )
-                      )
-                  )
-              }
-
-              private fun startGama() {
-
-                  val needed =
-                      mutableListOf<String>()
-
-                  if (
-                      checkSelfPermission(
-                          Manifest.permission.RECORD_AUDIO
-                      ) !=
-                      PackageManager.PERMISSION_GRANTED
-                  ) {
-                      needed +=
-                          Manifest.permission.RECORD_AUDIO
-                  }
-
-                  if (
-                      checkSelfPermission(
-                          Manifest.permission.CAMERA
-                      ) !=
-                      PackageManager.PERMISSION_GRANTED
-                  ) {
-                      needed +=
-                          Manifest.permission.CAMERA
-                  }
-
-                  if (
-                      Build.VERSION.SDK_INT >= 33 &&
-                      checkSelfPermission(
-                          Manifest.permission.POST_NOTIFICATIONS
-                      ) !=
-                      PackageManager.PERMISSION_GRANTED
-                  ) {
-                      needed +=
-                          Manifest.permission.POST_NOTIFICATIONS
-                  }
-
-                  if (
-                      needed.isNotEmpty()
-                  ) {
-                      requestPermissions(
-                          needed.toTypedArray(),
-                          10
-                      )
-
-                      return
-                  }
-
-                  if (
-                      !Settings.canDrawOverlays(this)
-                  ) {
-                      askOverlay()
-                      return
-                  }
-
-                  val intent =
-                      Intent(
-                          this,
-                          GamaService::class.java
-                      )
-
-                  if (
-                      Build.VERSION.SDK_INT >= 26
-                  ) {
-                      startForegroundService(
-                          intent
-                      )
-                  } else {
-                      startService(
-                          intent
-                      )
-                  }
-
-                  status.text =
-                      "Status: ativo. Diga “Gama”."
-              }
-
-              override fun onRequestPermissionsResult(
-                  requestCode: Int,
-                  permissions: Array<out String>,
-                  grantResults: IntArray
-              ) {
-                  super.onRequestPermissionsResult(
-                      requestCode,
-                      permissions,
-                      grantResults
-                  )
-
-                  if (
-                      requestCode == 10 &&
-                      grantResults.isNotEmpty() &&
-                      grantResults.all {
-                          it ==
-                          PackageManager.PERMISSION_GRANTED
-                      }
-                  ) {
-                      startGama()
-                  } else if (
-                      requestCode == 10
-                  ) {
-                      status.text =
-                          "Permita microfone e câmera."
-                  }
-              }
-          }
-          EOF_MAIN
-
-          cat > 'app/src/main/java/com/gama/assistant/GamaService.kt' <<'EOF_SERVICE'
-          package com.gama.assistant
-
-          import android.animation.AnimatorSet
-          import android.animation.ObjectAnimator
-          import android.app.*
-          import android.content.Context
-          import android.content.Intent
-          import android.content.pm.PackageManager
-          import android.graphics.PixelFormat
-          import android.hardware.camera2.CameraCharacteristics
-          import android.hardware.camera2.CameraManager
-          import android.media.*
-          import android.os.*
-          import android.provider.MediaStore
-          import android.provider.Settings
-          import android.speech.tts.TextToSpeech
-          import android.speech.tts.UtteranceProgressListener
-          import android.view.*
-          import android.widget.ImageView
-          import org.json.JSONObject
-          import org.vosk.Model
-          import org.vosk.Recognizer
-          import java.io.File
-          import java.io.FileOutputStream
-          import java.text.Normalizer
-          import java.util.Locale
-          import kotlin.concurrent.thread
-
-          class GamaService :
-              Service(),
-              TextToSpeech.OnInitListener {
-
-              companion object {
-                  const val CH =
-                      "gama_voice"
-
-                  const val ID =
-                      42
-
-                  const val SR =
-                      16000
-
-                  const val WINDOW =
-                      9000L
-              }
-
-              @Volatile
-              private var running =
-                  false
-
-              @Volatile
-              private var speaking =
-                  false
-
-              private var awakeUntil =
-                  0L
-
-              private var ttsReady =
-                  false
-
-              private var pending:
-                  String? = null
-
-              private var audio:
-                  AudioRecord? = null
-
-              private var recognizer:
-                  Recognizer? = null
-
-              private var model:
-                  Model? = null
-
-              private var tts:
-                  TextToSpeech? = null
-
-              private var windowManager:
-                  WindowManager? = null
-
-              private var orb:
-                  ImageView? = null
-
-              private var orbParams:
-                  WindowManager.LayoutParams? =
-                  null
-
-              private var spin:
-                  ObjectAnimator? = null
-
-              override fun onCreate() {
-                  super.onCreate()
-
-                  createChannel()
-
-                  startForeground(
-                      ID,
-                      notification(
-                          "Preparando reconhecimento..."
-                      )
-                  )
-
-                  tts =
-                      TextToSpeech(
-                          this,
-                          this
-                      )
-
-                  showOrb()
-
-                  running = true
-
-                  thread(
-                      name = "gama-listener"
-                  ) {
-                      listen()
-                  }
-              }
-
-              override fun onStartCommand(
-                  intent: Intent?,
-                  flags: Int,
-                  startId: Int
-              ): Int {
-                  return START_STICKY
-              }
-
-              override fun onBind(
-                  intent: Intent?
-              ): IBinder? {
-                  return null
-              }
-
-              override fun onDestroy() {
-
-                  running = false
-
-                  try {
-                      audio?.stop()
-                  } catch (_: Exception) {
-                  }
-
-                  audio?.release()
-                  recognizer?.close()
-                  model?.close()
-
-                  tts?.stop()
-                  tts?.shutdown()
-
-                  removeOrb()
-
-                  super.onDestroy()
-              }
-
-              override fun onInit(
-                  status: Int
-              ) {
-
-                  if (
-                      status !=
-                      TextToSpeech.SUCCESS
-                  ) {
-                      updateNotification(
-                          "TTS indisponível."
-                      )
-
-                      return
-                  }
-
-                  ttsReady = true
-
-                  tts?.language =
-                      Locale(
-                          "pt",
-                          "BR"
-                      )
-
-                  tts?.setPitch(
-                      0.82f
-                  )
-
-                  tts?.setSpeechRate(
-                      0.94f
-                  )
-
-                  tts?.setOnUtteranceProgressListener(
-                      object :
-                          UtteranceProgressListener() {
-
-                          override fun onStart(
-                              utteranceId: String?
-                          ) {
-                              speaking = true
-
-                              pulse(
-                                  1.15f,
-                                  900
-                              )
-                          }
-
-                          override fun onDone(
-                              utteranceId: String?
-                          ) {
-                              speaking = false
-
-                              try {
-                                  recognizer?.reset()
-                              } catch (_: Exception) {
-                              }
-                          }
-
-                          @Deprecated(
-                              "Deprecated in Java"
-                          )
-                          override fun onError(
-                              utteranceId: String?
-                          ) {
-                              speaking = false
-                          }
-                      }
-                  )
-
-                  pending?.let {
-
-                      pending = null
-
-                      speak(it)
-                  }
-              }
-
-              private fun listen() {
-
-                  try {
-
-                      val modelDirectory =
-                          ensureModel()
-
-                      model =
-                          Model(
-                              modelDirectory.absolutePath
-                          )
-
-                      recognizer =
-                          Recognizer(
-                              model,
-                              SR.toFloat()
-                          )
-
-                      val minimumBuffer =
-                          AudioRecord.getMinBufferSize(
-                              SR,
-                              AudioFormat.CHANNEL_IN_MONO,
-                              AudioFormat.ENCODING_PCM_16BIT
-                          ).coerceAtLeast(
-                              4096
-                          )
-
-                      audio =
-                          AudioRecord(
-                              MediaRecorder.AudioSource.MIC,
-                              SR,
-                              AudioFormat.CHANNEL_IN_MONO,
-                              AudioFormat.ENCODING_PCM_16BIT,
-                              minimumBuffer * 2
-                          )
-
-                      if (
-                          audio?.state !=
-                          AudioRecord.STATE_INITIALIZED
-                      ) {
-                          error(
-                              "microfone não inicializou"
-                          )
-                      }
-
-                      val buffer =
-                          ByteArray(
-                              minimumBuffer
-                          )
-
-                      audio?.startRecording()
-
-                      updateNotification(
-                          "Gama ouvindo. Diga “Gama”."
-                      )
-
-                      while (
-                          running
-                      ) {
-
-                          val amount =
-                              audio?.read(
-                                  buffer,
-                                  0,
-                                  buffer.size
-                              ) ?: 0
-
-                          if (
-                              amount <= 0 ||
-                              speaking
-                          ) {
-                              continue
-                          }
-
-                          val r =
-                              recognizer
-                                  ?: continue
-
-                          if (
-                              r.acceptWaveForm(
-                                  buffer,
-                                  amount
-                              )
-                          ) {
-
-                              val text =
-                                  JSONObject(
-                                      r.result
-                                  ).optString(
-                                      "text"
-                                  )
-
-                              handle(
-                                  text
-                              )
-
-                          } else {
-
-                              val partial =
-                                  normalize(
-                                      JSONObject(
-                                          r.partialResult
-                                      ).optString(
-                                          "partial"
-                                      )
-                                  )
-
-                              if (
-                                  partial.contains(
-                                      "gama"
-                                  )
-                              ) {
-
-                                  awakeUntil =
-                                      SystemClock
-                                          .elapsedRealtime() +
-                                      WINDOW
-
-                                  pulse(
-                                      1.22f,
-                                      450
-                                  )
-
-                                  updateNotification(
-                                      "Ouvi você. Pode falar."
-                                  )
-                              }
-                          }
-                      }
-
-                  } catch (
-                      exception: Exception
-                  ) {
-
-                      updateNotification(
-                          "Erro de voz: " +
-                                  (
-                                          exception.message
-                                              ?: "falha"
-                                          )
-                      )
-
-                      speak(
-                          "Tive um problema ao iniciar o microfone."
-                      )
-                  }
-              }
-
-              private fun handle(
-                  raw: String
-              ) {
-
-                  val text =
-                      normalize(
-                          raw
-                      )
-
-                  if (
-                      text.isBlank()
-                  ) {
-                      return
-                  }
-
-                  val wakeIndex =
-                      text.indexOf(
-                          "gama"
-                      )
-
-                  if (
-                      wakeIndex >= 0
-                  ) {
-
-                      awakeUntil =
-                          SystemClock
-                              .elapsedRealtime() +
-                          WINDOW
-
-                      pulse(
-                          1.22f,
-                          450
-                      )
-
-                      val command =
-                          text.substring(
-                              wakeIndex + 4
-                          ).trim()
-
-                      if (
-                          command.isBlank()
-                      ) {
-
-                          speak(
-                              "Sim?"
-                          )
-
-                          updateNotification(
-                              "Gama ativo. Fale o comando."
-                          )
-
-                      } else {
-
-                          reply(
-                              command
-                          )
-                      }
-
-                      return
-                  }
-
-                  if (
-                      SystemClock
-                          .elapsedRealtime() <=
-                      awakeUntil
-                  ) {
-                      reply(
-                          text
-                      )
-                  }
-              }
-
-              private fun reply(
-                  command: String
-              ) {
-
-                  awakeUntil = 0L
-
-                  val response =
-                      execute(
-                          command
-                      )
-
-                  updateNotification(
-                      response
-                  )
-
-                  speak(
-                      response
-                  )
-              }
-
-              private fun execute(
-                  command: String
-              ): String {
-
-                  return when {
-
-                      command.contains(
-                          "whatsapp"
-                      ) ->
-                          openPackage(
-                              "com.whatsapp",
-                              "WhatsApp"
-                          )
-
-                      command.contains(
-                          "instagram"
-                      ) ||
-                      command.contains(
-                          "insta"
-                      ) ->
-                          openPackage(
-                              "com.instagram.android",
-                              "Instagram"
-                          )
-
-                      command.contains(
-                          "youtube"
-                      ) ->
-                          openPackage(
-                              "com.google.android.youtube",
-                              "YouTube"
-                          )
-
-                      command.contains(
-                          "camera"
-                      ) ->
-                          launch(
-                              Intent(
-                                  MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
-                              ),
-                              "Abrindo a câmera.",
-                              "Não consegui abrir a câmera."
-                          )
-
-                      command.contains(
-                          "configur"
-                      ) ||
-                      command.contains(
-                          "ajustes"
-                      ) ->
-                          launch(
-                              Intent(
-                                  Settings.ACTION_SETTINGS
-                              ),
-                              "Abrindo as configurações.",
-                              "Não consegui abrir as configurações."
-                          )
-
-                      command.contains(
-                          "tela inicial"
-                      ) ||
-                      command == "inicio" ->
-                          launch(
-                              Intent(
-                                  Intent.ACTION_MAIN
-                              ).addCategory(
-                                  Intent.CATEGORY_HOME
-                              ),
-                              "Voltando para a tela inicial.",
-                              "Não consegui voltar."
-                          )
-
-                      command.contains(
-                          "aument"
-                      ) &&
-                      command.contains(
-                          "volume"
-                      ) -> {
-
-                          audioManager()
-                              .adjustStreamVolume(
-                                  AudioManager.STREAM_MUSIC,
-                                  AudioManager.ADJUST_RAISE,
-                                  AudioManager.FLAG_SHOW_UI
-                              )
-
-                          "Aumentei o volume."
-                      }
-
-                      (
-                              command.contains(
-                                  "diminu"
-                              ) ||
-                              command.contains(
-                                  "abaix"
-                              )
-                              ) &&
-                      command.contains(
-                          "volume"
-                      ) -> {
-
-                          audioManager()
-                              .adjustStreamVolume(
-                                  AudioManager.STREAM_MUSIC,
-                                  AudioManager.ADJUST_LOWER,
-                                  AudioManager.FLAG_SHOW_UI
-                              )
-
-                          "Diminuí o volume."
-                      }
-
-                      command.contains(
-                          "silenci"
-                      ) &&
-                      command.contains(
-                          "volume"
-                      ) -> {
-
-                          audioManager()
-                              .adjustStreamVolume(
-                                  AudioManager.STREAM_MUSIC,
-                                  AudioManager.ADJUST_MUTE,
-                                  AudioManager.FLAG_SHOW_UI
-                              )
-
-                          "Volume silenciado."
-                      }
-
-                      command.contains(
-                          "pause"
-                      ) ||
-                      command.contains(
-                          "pausar"
-                      ) -> {
-
-                          mediaKey(
-                              KeyEvent.KEYCODE_MEDIA_PAUSE
-                          )
-
-                          "Música pausada."
-                      }
-
-                      command.contains(
-                          "continue"
-                      ) ||
-                      command.contains(
-                          "retome"
-                      ) ||
-                      command.contains(
-                          "reprodu"
-                      ) -> {
-
-                          mediaKey(
-                              KeyEvent.KEYCODE_MEDIA_PLAY
-                          )
-
-                          "Continuando."
-                      }
-
-                      command.contains(
-                          "proxima"
-                      ) &&
-                      command.contains(
-                          "musica"
-                      ) -> {
-
-                          mediaKey(
-                              KeyEvent.KEYCODE_MEDIA_NEXT
-                          )
-
-                          "Próxima música."
-                      }
-
-                      command.contains(
-                          "anterior"
-                      ) &&
-                      (
-                              command.contains(
-                                  "musica"
-                              ) ||
-                              command.contains(
-                                  "faixa"
-                              )
-                              ) -> {
-
-                          mediaKey(
-                              KeyEvent.KEYCODE_MEDIA_PREVIOUS
-                          )
-
-                          "Música anterior."
-                      }
-
-                      command.contains(
-                          "lanterna"
-                      ) &&
-                      command.contains(
-                          "lig"
-                      ) -> {
-
-                          if (
-                              torch(
-                                  true
-                              )
-                          ) {
-                              "Lanterna ligada."
-                          } else {
-                              "Não encontrei a lanterna."
-                          }
-                      }
-
-                      command.contains(
-                          "lanterna"
-                      ) &&
-                      (
-                              command.contains(
-                                  "deslig"
-                              ) ||
-                              command.contains(
-                                  "apague"
-                              )
-                              ) -> {
-
-                          if (
-                              torch(
-                                  false
-                              )
-                          ) {
-                              "Lanterna desligada."
-                          } else {
-                              "Não encontrei a lanterna."
-                          }
-                      }
-
-                      command.startsWith(
-                          "abra "
-                      ) ||
-                      command.startsWith(
-                          "abrir "
-                      ) -> {
-
-                          openByName(
-                              command
-                                  .removePrefix(
-                                      "abra "
-                                  )
-                                  .removePrefix(
-                                      "abrir "
-                                  )
-                                  .trim()
-                          )
-                      }
-
-                      else ->
-                          "Ainda não reconheço esse comando."
-                  }
-              }
-
-              private fun launch(
-                  intent: Intent,
-                  success: String,
-                  failure: String
-              ): String {
-
-                  return try {
-
-                      intent.addFlags(
-                          Intent.FLAG_ACTIVITY_NEW_TASK
-                      )
-
-                      startActivity(
-                          intent
-                      )
-
-                      success
-
-                  } catch (
-                      _: Exception
-                  ) {
-                      failure
-                  }
-              }
-
-              private fun openPackage(
-                  packageName: String,
-                  appName: String
-              ): String {
-
-                  return try {
-
-                      val intent =
-                          packageManager
-                              .getLaunchIntentForPackage(
-                                  packageName
-                              )
-                              ?: return
-                              "Não encontrei o $appName neste celular."
-
-                      intent.addFlags(
-                          Intent.FLAG_ACTIVITY_NEW_TASK
-                      )
-
-                      startActivity(
-                          intent
-                      )
-
-                      "Abrindo $appName."
-
-                  } catch (
-                      _: Exception
-                  ) {
-
-                      "Não consegui abrir o $appName."
-                  }
-              }
-
-              private fun openByName(
-                  query: String
-              ): String {
-
-                  return try {
-
-                      val normalizedQuery =
-                          normalize(
-                              query
-                          )
-
-                      val launcher =
-                          Intent(
-                              Intent.ACTION_MAIN
-                          ).addCategory(
-                              Intent.CATEGORY_LAUNCHER
-                          )
-
-                      val activity =
-                          packageManager
-                              .queryIntentActivities(
-                                  launcher,
-                                  PackageManager.MATCH_ALL
-                              )
-                              .firstOrNull {
-
-                                  val label =
-                                      normalize(
-                                          it
-                                              .loadLabel(
-                                                  packageManager
-                                              )
-                                              .toString()
-                                      )
-
-                                  label ==
-                                  normalizedQuery ||
-                                  label.contains(
-                                      normalizedQuery
-                                  ) ||
-                                  normalizedQuery.contains(
-                                      label
-                                  )
-                              }
-                              ?: return
-                              "Não encontrei o aplicativo $query."
-
-                      val intent =
-                          packageManager
-                              .getLaunchIntentForPackage(
-                                  activity
-                                      .activityInfo
-                                      .packageName
-                              )
-                              ?: return
-                              "Esse aplicativo não pode ser aberto diretamente."
-
-                      intent.addFlags(
-                          Intent.FLAG_ACTIVITY_NEW_TASK
-                      )
-
-                      startActivity(
-                          intent
-                      )
-
-                      "Abrindo ${
-                          activity.loadLabel(
-                              packageManager
-                          )
-                      }."
-
-                  } catch (
-                      _: Exception
-                  ) {
-
-                      "Não consegui abrir o aplicativo $query."
-                  }
-              }
-
-              private fun audioManager():
-                  AudioManager {
-
-                  return getSystemService(
-                      Context.AUDIO_SERVICE
-                  ) as AudioManager
-              }
-
-              private fun mediaKey(
-                  key: Int
-              ) {
-
-                  audioManager()
-                      .dispatchMediaKeyEvent(
-                          KeyEvent(
-                              KeyEvent.ACTION_DOWN,
-                              key
-                          )
-                      )
-
-                  audioManager()
-                      .dispatchMediaKeyEvent(
-                          KeyEvent(
-                              KeyEvent.ACTION_UP,
-                              key
-                          )
-                      )
-              }
-
-              private fun torch(
-                  enabled: Boolean
-              ): Boolean {
-
-                  return try {
-
-                      val cameraManager =
-                          getSystemService(
-                              Context.CAMERA_SERVICE
-                          ) as CameraManager
-
-                      val id =
-                          cameraManager
-                              .cameraIdList
-                              .firstOrNull {
-
-                                  cameraManager
-                                      .getCameraCharacteristics(
-                                          it
-                                      )
-                                      .get(
-                                          CameraCharacteristics
-                                              .FLASH_INFO_AVAILABLE
-                                      ) == true
-                              }
-                              ?: return false
-
-                      cameraManager
-                          .setTorchMode(
-                              id,
-                              enabled
-                          )
-
-                      true
-
-                  } catch (
-                      _: Exception
-                  ) {
-                      false
-                  }
-              }
-
-              private fun speak(
-                  text: String
-              ) {
-
-                  if (
-                      !ttsReady
-                  ) {
-                      pending = text
-                      return
-                  }
-
-                  tts?.speak(
-                      text,
-                      TextToSpeech.QUEUE_FLUSH,
-                      null,
-                      "gama_${
-                          SystemClock.elapsedRealtime()
-                      }"
-                  )
-              }
-
-              private fun normalize(
-                  text: String
-              ): String {
-
-                  return Normalizer
-                      .normalize(
-                          text.lowercase(
-                              Locale(
-                                  "pt",
-                                  "BR"
-                              )
-                          ),
-                          Normalizer.Form.NFD
-                      )
-                      .replace(
-                          "\\p{Mn}+".toRegex(),
-                          ""
-                      )
-                      .replace(
-                          "[^a-z0-9 ]".toRegex(),
-                          " "
-                      )
-                      .replace(
-                          "\\s+".toRegex(),
-                          " "
-                      )
-                      .trim()
-              }
-
-              private fun ensureModel():
-                  File {
-
-                  val directory =
-                      File(
-                          filesDir,
-                          "vosk-pt"
-                      )
-
-                  val marker =
-                      File(
-                          directory,
-                          ".ok"
-                      )
-
-                  if (
-                      marker.exists()
-                  ) {
-                      return directory
-                  }
-
-                  if (
-                      directory.exists()
-                  ) {
-                      directory.deleteRecursively()
-                  }
-
-                  directory.mkdirs()
-
-                  copyTree(
-                      "model",
-                      directory
-                  )
-
-                  marker.writeText(
-                      "ok"
-                  )
-
-                  return directory
-              }
-
-              private fun copyTree(
-                  path: String,
-                  output: File
-              ) {
-
-                  val list =
-                      assets.list(
-                          path
-                      )
-                          ?: emptyArray()
-
-                  if (
-                      list.isEmpty()
-                  ) {
-
-                      output
-                          .parentFile
-                          ?.mkdirs()
-
-                      assets.open(
-                          path
-                      ).use { input ->
-
-                          FileOutputStream(
-                              output
-                          ).use { file ->
-
-                              input.copyTo(
-                                  file
-                              )
-                          }
-                      }
-
-                  } else {
-
-                      output.mkdirs()
-
-                      list.forEach {
-
-                          copyTree(
-                              "$path/$it",
-                              File(
-                                  output,
-                                  it
-                              )
-                          )
-                      }
-                  }
-              }
-
-              private fun showOrb() {
-
-                  if (
-                      !Settings.canDrawOverlays(
-                          this
-                      )
-                  ) {
-                      return
-                  }
-
-                  windowManager =
-                      getSystemService(
-                          Context.WINDOW_SERVICE
-                      ) as WindowManager
-
-                  orb =
-                      ImageView(
-                          this
-                      ).apply {
-
-                          setImageResource(
-                              R.drawable.gama_orb
-                          )
-
-                          scaleType =
-                              ImageView
-                                  .ScaleType
-                                  .FIT_CENTER
-
-                          alpha =
-                              0.96f
-                      }
-
-                  val windowType =
-                      if (
-                          Build.VERSION.SDK_INT >=
-                          26
-                      ) {
-                          WindowManager
-                              .LayoutParams
-                              .TYPE_APPLICATION_OVERLAY
-                      } else {
-                          WindowManager
-                              .LayoutParams
-                              .TYPE_PHONE
-                      }
-
-                  orbParams =
-                      WindowManager
-                          .LayoutParams(
-                              dp(92),
-                              dp(92),
-                              windowType,
-                              WindowManager
-                                  .LayoutParams
-                                  .FLAG_NOT_FOCUSABLE or
-                                      WindowManager
-                                          .LayoutParams
-                                          .FLAG_NOT_TOUCH_MODAL,
-                              PixelFormat.TRANSLUCENT
-                          )
-                          .apply {
-
-                              gravity =
-                                  Gravity.BOTTOM or
-                                      Gravity.END
-
-                              x =
-                                  dp(14)
-
-                              y =
-                                  dp(42)
-                          }
-
-                  orb?.setOnTouchListener(
-                      object :
-                          View.OnTouchListener {
-
-                          var startX =
-                              0
-
-                          var startY =
-                              0
-
-                          var touchX =
-                              0f
-
-                          var touchY =
-                              0f
-
-                          override fun onTouch(
-                              view: View?,
-                              event: MotionEvent
-                          ): Boolean {
-
-                              val p =
-                                  orbParams
-                                      ?: return false
-
-                              when (
-                                  event.action
-                              ) {
-
-                                  MotionEvent.ACTION_DOWN -> {
-
-                                      startX =
-                                          p.x
-
-                                      startY =
-                                          p.y
-
-                                      touchX =
-                                          event.rawX
-
-                                      touchY =
-                                          event.rawY
-
-                                      return true
-                                  }
-
-                                  MotionEvent.ACTION_MOVE -> {
-
-                                      p.x =
-                                          (
-                                                  startX -
-                                                  (
-                                                          event.rawX -
-                                                          touchX
-                                                          )
-                                                  )
-                                              .toInt()
-
-                                      p.y =
-                                          (
-                                                  startY -
-                                                  (
-                                                          event.rawY -
-                                                          touchY
-                                                          )
-                                                  )
-                                              .toInt()
-
-                                      try {
-                                          windowManager
-                                              ?.updateViewLayout(
-                                                  orb,
-                                                  p
-                                              )
-                                      } catch (
-                                          _: Exception
-                                      ) {
-                                      }
-
-                                      return true
-                                  }
-                              }
-
-                              return false
-                          }
-                      }
-                  )
-
-                  windowManager
-                      ?.addView(
-                          orb,
-                          orbParams
-                      )
-
-                  spin =
-                      ObjectAnimator
-                          .ofFloat(
-                              orb,
-                              "rotation",
-                              0f,
-                              360f
-                          )
-                          .apply {
-
-                              duration =
-                                  14000
-
-                              repeatCount =
-                                  ObjectAnimator
-                                      .INFINITE
-
-                              start()
-                          }
-              }
-
-              private fun pulse(
-                  scale: Float,
-                  durationMs: Long
-              ) {
-
-                  orb?.post {
-
-                      AnimatorSet()
-                          .apply {
-
-                              playTogether(
-                                  ObjectAnimator.ofFloat(
-                                      orb,
-                                      "scaleX",
-                                      1f,
-                                      scale,
-                                      1f
-                                  ),
-                                  ObjectAnimator.ofFloat(
-                                      orb,
-                                      "scaleY",
-                                      1f,
-                                      scale,
-                                      1f
-                                  ),
-                                  ObjectAnimator.ofFloat(
-                                      orb,
-                                      "alpha",
-                                      0.78f,
-                                      1f,
-                                      0.94f
-                                  )
-                              )
-
-                              duration =
-                                  durationMs
-
-                              start()
-                          }
-                  }
-              }
-
-              private fun removeOrb() {
-
-                  spin?.cancel()
-
-                  orb?.let {
-
-                      try {
-                          windowManager
-                              ?.removeView(
-                                  it
-                              )
-                      } catch (
-                          _: Exception
-                      ) {
-                      }
-                  }
-
-                  orb = null
-              }
-
-              private fun dp(
-                  value: Int
-              ): Int {
-
-                  return (
-                          value *
-                          resources
-                              .displayMetrics
-                              .density
-                          )
-                      .toInt()
-              }
-
-              private fun createChannel() {
-
-                  if (
-                      Build.VERSION.SDK_INT >=
-                      26
-                  ) {
-
-                      getSystemService(
-                          NotificationManager::class.java
-                      )
-                          .createNotificationChannel(
-                              NotificationChannel(
-                                  CH,
-                                  "Gama em segundo plano",
-                                  NotificationManager
-                                      .IMPORTANCE_LOW
-                              )
-                          )
-                  }
-              }
-
-              private fun notification(
-                  text: String
-              ): Notification {
-
-                  val pendingIntent =
-                      PendingIntent
-                          .getActivity(
-                              this,
-                              0,
-                              Intent(
-                                  this,
-                                  MainActivity::class.java
-                              ),
-                              PendingIntent
-                                  .FLAG_IMMUTABLE or
-                                  PendingIntent
-                                      .FLAG_UPDATE_CURRENT
-                          )
-
-                  val builder =
-                      if (
-                          Build.VERSION.SDK_INT >=
-                          26
-                      ) {
-                          Notification.Builder(
-                              this,
-                              CH
-                          )
-                      } else {
-                          Notification.Builder(
-                              this
-                          )
-                      }
-
-                  return builder
-                      .setSmallIcon(
-                          android.R.drawable
-                              .ic_btn_speak_now
-                      )
-                      .setContentTitle(
-                          "Gama"
-                      )
-                      .setContentText(
-                          text
-                      )
-                      .setContentIntent(
-                          pendingIntent
-                      )
-                      .setOngoing(
-                          true
-                      )
-                      .build()
-              }
-
-              private fun updateNotification(
-                  text: String
-              ) {
-
-                  (
-                          getSystemService(
-                              Context.NOTIFICATION
+          set -e
+          cat > /tmp/gama.tar.gz.b64 <<'EOF'
+          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
+          xa6xzgzeFPm95UbVj3TDz086+vCueZ0fCd+TWRKGvrpjrY0cGz7YfThVKr27reK2bLdXXFdQixxtqrFhuBFl8Y0045hPBxJMFt1Q
+          KIt53oAoy2kLqlLsWRyYse9JwNZnB35USOtOurTlZlSR3Zak1NyzsZuWWpVOL1Kw7l3XueUdpkt7AiKsHp9yd5qHnabSqeZvD5xC
+          3235VHvUg/qq9lFikXyy+fK2F8meX119961cdHoajZS2LMF773TbtJRG9+CHR+bcxUYZOTZ91ZlttGDPxionjeOmPj679/gsW7bh
+          ekDRwdPBi4vGpna/6VGVfr8wvPazcV+W3rHFhHuV6edH7f3W1pr0fd2ym6uK53ZfQ+I07jhka70vXtH2UPJ4IjWRVbn07G7/+3ur
+          DHad8f9wEmgLphnE9V7FbtypvreM+PRqYoXNe93T2dQys5jY3dqBV++Vl8qHMNgme40bUieUzL4i/8gnuoDRa+lEmJ5vtySg7Pqy
+          ruP1SMVCG73rh68/zD3mu3CsXb6EjdrEjp9K9/OZO5UlwruvMG+MO1t56nvSjq6MtOWT09UJjze6KbRH3ZNZvM3u3NMrzqvG4aSm
+          jp6nQtE9te5YToOFxZL6e1LvUJ75hOMmxzsLQzcnHHuzVj52ySaKrlZSnwTudfJJ+sJu7esnM2YGaGP2ap63krALrly4UZJspnph
+          sUan7kNL32ZdmUD30ZnOXfWH5YLO3V8td+/RLwJqbHkSbY7e4SxKbnrhlF0Rz1ZskfuWaXl8SdCWPQRt09bNGbKvrnlr3LXBZzRZ
+          bYwJu52vtZVQtCzm7tdVvaGNb1Jkkggd3x5neCc/Tdt1/OCli6unLfAucvjxrKp0s1Fv277T5j9aTtWGPdfUNnLWw2l0e1VLYF4t
+          L5e4bNFsKyX2tqg2Y0374xjnd15lfTOSPomxa57OzUxN27dt0vZXJzoefFq2xWm/W1vgadV0RYyVKlmppeLa/o6tX93jrXqRWtKy
+          Hp9qzRruF/utaZhivdin+5IN+5D66vTpbQYmCxYsMPnY87ydVg9q7Bv5pVM3lhRgdRuVmubYZ/dorqzy8mI72rGkX1/oWphKAjAz
+          Rpecy3q5cHHR92rEmTVb9d3W9nhSfE8FfDh52qdE8Ul4x621UTRPw44Dlm1f8j4vTqmf2eTveq1iqWGWq+/ptvm7OvdeSMt3aE9W
+          FG+u73GXSiKggMsx2SYnpr2/MHrfVLTJ476+LHkSOeKQ+vtiNvFdQX17d8Hz9hjJ782GrFdb1iZ5JofePrp+PWGu4p3iOWt0zjlJ
+          vcsm1+50XCy9oTRdUqGzek4YrXf88mn+EcV+zw7+2rQ40PNCynGZV3lNxJWSCkqo0NujozOVvUN227ZNmL6WemOC+UMl1QvLdNRP
+          5I06lipP8vrCTrp39+z9jGD2pacXjlvU0cKU97WsLbTXIdxvkPxQNOtesYRBtbMZivgkdXvQLL/qoPPPFrX6LXvX8Jp09OmovHPb
+          Hj/1Ta7fSLQqTs09EfOo/mj57N51FXcvvJZ9b5f2xS9vvu+TPftsVNurTN1nO79LWW+n/sn59k3dqiO/NuU3NS4irro9xZV+1DUs
+          MjbCXytutEPKh+UsWV21TWWLVbDM7HYHvyeel1ZH6tcHpXhVN6hnf+qKwPvUFE5BBfR0HE53bNk1oaJBavpqm2Un805mnzwQ+XqT
+          jvuhmvdHi36tAeRu3fywv42IzLTyjXGV1Jo/m1Knxq7R6Nz8Auu0YboK1j7bRzJ8xdb7X9ast7ykUdroM/3dfekqyRzxoOnVN8XH
+          yUzoIkihWdNAceOCcei8EeLbFdR+YIL55/FP2SYY7a23dmTOkKrbML2VFNL9MrtIbWeVCfpFMln2ZHaNjK8G9dAFp6h8HGvHrqaG
+          qRlfk9688dWrbXn9c6djjLVtQdydOGONlj5j5+o32dtP0d2l3fPDA0hdwSda8/TDLT4XprS9pn6v/3Dh5PL0Tcs6w1ea4ErnGCcg
+          dyPlbs0kVHb3hvU1kJquEG8r1U9yytzW5rrN/NzhOTaHV3w+Giy3wbVv3023DH/ZL6xdh+eirTKR3SXzVvk8XEcLQ70Tm7YhqOWX
+          8tKZQZKOlGaxJV3I6wWJBeNjd6u8POR3vaG9ooZV2Geq09vZafi6h/5KTCFEMfLAJnxkuk8l81L9/OxxOEKHBm6zSo6UgsX2rZro
+          GUQ7whMfHZ3Uhk3z3mYverBN9/XtPTXuO64Va8mdjwzLzH0bqrxtVmefj9z5DcQJUrdyn5rurT5xOANfefnTDG/t464ph4wI31/d
+          w743+07fT5dvVY5hrb36WSOAtr7DRKzcNdw20ng7oQndxNyzMXZc/kKNe/J9TmfsXMxM58+Yew2PX7edPb3H34DUEakvV7g2QCLj
+          mdJS45QZTU/uJDo2VNRenfQy1lGecPVq2eHqXB+TjQnfoj49V5rv0n3RYP+RoyU3p87KXbtrbCOTpOXrc3iZjsoy3cObZs4psdJZ
+          d27XjTvPM71ttl7bfE4yqc6pOxgjbRR80MNLO8zQ/cam0ceeTJafrx9mbZK4Sz7vUcVluy3pGT2KfZuOTbuxP3fxdemck8tuPCYY
+          ie+kMqZW9m22eW2c2R1SNfnlhKsJMzbcxSDnBlYfPxRCkpL0n/m9RVneZ0b67kloccdiHZUZ4+59dgj4WZsbkhawM9lUZf6adye+
+          jtpm65iCsmyMtW121tM9U5CHP6mcqZzRu6Pg6vprM6udl5pWqj/KtT9p+27inZux8/AbHyNzG/a5ZdRht/R1Z6U+r+syL9bL9KQ/
+          D5HFE7KirjK/ov0dZh5c1BK7es2OjVqMqiT33nAs8bFKS70ewd1kRbJyG95Xx7bwYu/utf637+S6X+6tWyJnOMXj1IULZVEtMeq4
+          W7G5gOK+SINfVSnTA3PS3siLzfnGcpwFBB1JHf3ykTypatO92cTi+oIJmol9TlGX7+gzL6FrxBXoIZG1mmELkKnRO2/6HRy1PSDa
+          +q/sI3ulNzgHJn2xmvrLbzrhRR3O+EFvzJJTa7dXxmfqjN7Uur7xjJQq3pnkeIKgUJiw5MU4cc+skoUJk2/9/P55vtzDstMTDWTr
+          7zcd6bh+pS7K0ibiywbmGUzNoZNvrjXmGQFtu1dqn/oZ4XA+t1DWOSWHaJhWGP6DdFzM/5a73O4JJWn0J3vuoE+c/pKIHDV1VoP0
+          bHs2sfLiV3PUhdIfV9ZqzPfybPEtw1/p1ch+tSvnQvqojJXTbiUw4ifP0rqkYvv08VarvA0bv9799mnJ+r5cNzeFPRlrpmU5ORfG
+          Mn5gqvvyTFVUf35vrhOvzRof6z/u0cQY3Sf3d0Z/OLpN7wjmhp7M/DHjsRvXuXZE39q5VvXR0rjYsqXPXt+8/C0lTeMveeWZTwIq
+          9zYcnutmH4u4lXi6ffN7PzGJlRsyT71q0Nl0ZIs2ffWPryyndqtdLYG33Val9DmYPNQIClf8pfO9ZF4UMs3m2Pdt+19lvH8f5RXK
+          KpS0+CV3ySH5ZcZY17qVBYhqqwPiZ5KXhChLj/WPztX1+ER+Z7C94KpXRXCPgkJMcPl9h8jzxW226ZpeFyb5ftcaN2Zf0cRVYjfa
+          3A/uLquZHbvnwA+cNXrWMjdMiFrX+nG6asrvZz7/XtpVveGR2czUQ7+cCXqAmOo1tMfX5Tol5acmdS7KCblUNXZsYkv1469lh9Ce
+          0RtSa0jT0VOYGleVFV5mL5VM222p6HhtC21uung5yqU119D9YO8DOQ0Xiiu9qpa2k7iweVJVaCwylz1nw7M3Bu4aMokXPHw2rt1W
+          nLA6N2P8Zj29OWI9ifkbw5+Vki11sMx5cmIZBvtl5pWe2xxt5zUfffhWskNWV/PNcsk9eYqLp+LdlgFzf3xOzn5zra74bLNxNTVk
+          w5OyJBIKQJVXt8kv61vvOGHXXoWiOesWebJ1EqNNdzbinIonql5WOv9ot1d1yKo4X1nihbS7fQnrZiXn6Ub+vJx6XWIHc3pqw/jI
+          82MkHh/I2FU1uTA2f612e/h3sql/4G77aPPLnmi7opnYlW+PyS9ozaKrRctZR3XePzknWO8LybTr2lcLMeNxH1s+LL1zAdlcvvXd
+          Rptgsv8ssaUukoXSmc/a4nu6q86OSyJJ9W3cnbvO+TwDm3D1uyRzfqJj4tX8B8gVE79sXLku65Fj17jZC2oiO+f2hjYBT5wf3Aqf
+          X0g2a0V9XdGYGF6zIzWtx15jbvM9+6qzFMriUX2lZs3+wXFp25d8xr+hrF7z8/Whh8etaVukfxqQ386fH7KVVLKxSb1s0fqG24Vz
+          D+/KdmWdmVQZmPZF3M3FtL510937vk4Su81+7d55+PE1zLe1+y+szlF4e9om5KZC19pbWWJaj9fnhXSO+jqRunm5X1z4nsNbkRi5
+          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
+          OUM3b2LoilGIjxtQWJJCkMKjqXndM68/8T4ntr+1ZrfW7dM/rGj7TO3rDlMOdGTOT98zUynvr10TDk9wWhRxs7fCJe5i1tZ4vJJm
+          hCsl31pnSuTFVd01twLzt6zcLjnJ1bRgn47/m7veHU8XiplR7CZ+G+soduhOk8T0VtvzSzW0Xt9pe+QrdqlUrggnYd9Yub3N9ANR
+          Ial+urb01HlrTwc2Tzy+a1d5ubx6pt5Z5gTauBlr8is+v0ZlU1AS5Yf82kvm045EKZ5fxWBqZEj4W+/zqvbPuFFSJf8w8kj0L13a
+          VD+No+brGkfNPaAm87zANyWwklKrWKd6QL8cnXv9jlRDu1Nm72JxTYtRT99aPvI+PRFTcTq8Xla86PWMF7NCmMfVyPSqON+2XiRe
+          F63qudAlxocVcTSGnWO7YmLim8caB6awN76yPbIu6G1isirrR+LREG+9i3l57+2dCTPN8qd83O9vowuI+7/xUUqWb+1EVY85n6v1
+          QGXr4bmJD1ZlmZV98V8QVjnaYmevxqXUcAnfqJJjC3s2Xb0TKiHdvExMKj7gckppwfIilq8sGktaKr3twylkyZozhebactJyjr9O
+          5VZNrdhyVQII0MOpYBOoW4I7yl3ulLJKmek3K+Lpd4NJUXZeRVMScs+uu55KzXqy/9XKNtlnwV2K4S9IYqRnSdfWWKS4KV3dE9FU
+          IK2T8lJiZ3nStCLKl/uHPywI8NZc3Eg724vC/RyzyHGWK+n8A0P9BSvSc61DF6fLOSWFqUvZHFtpHvn+0K8u25m3PtzcrOoVU70l
+          OW1iy9nnt9e160iZkrfM3pmBqwpVfFaQO8b5yebKaaOKX/5wrXcK3oDNnDTLqlahVDXdmdWeYHnBNfjxG3at83ZrRWST8sLSpYZH
+          f2xO3Cv388qom2LJ0z/QFrza+dyL5J2rinZU0W+2E3dRva5cVzo3Te58XHdI69vgd4bHLuDyOuM+iVurYB+sud2tWbvmgYrC2nLm
+          mlFdze33F8/znrvS/fnHrhUpyOw6VVIabSoOH+J959icp9mnU6/enzNLc/Ny3dOL/Xp/9MnMExvbrqMrXmVo2iK1J+B2+ZNVxkrh
+          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
+          T2tL4TexBMY+9ZBk73UqTn5PZ+dKSeSt9vUCbp4+XbDn2eYl18cYsTsWXXwX4Xy9/lGfWRdaz0pjbOYKwEpW58mLsJye1X3erABq
+          qCq6VU42qS7zfOGtb8GOPrkXUNqzHpedWJ3964b+r/TtC5APT4ZKj55VEDM1J3xc3z2Uwztp4MyMuwoPVI+9YUWtmBUBVIjfIR/f
+          3pk8x0WucN65n4e99u7I9K+upZ9aGNb2ltmmfgLDmBesl5ZuTVLKnvVVi32uqfVU019VBrveKh0PWK10qNfGKsbjoX+790ZZ6ZQn
+          B7fUPSqX1B3nuKF8j+rj3UxvikVW6crCguBF04Olpz79+ubbGxlWOnG89F+YBw2XO6cmdtUaSux9v+ia5MeZJ/b3JaB2daXjzi7f
+          a5SSozIlhcyavzWxzII+SZNKKLJDjH4VOzEmE/i2W30u7WO6p6lq/Q2rV6woSdKPrE0kt0P1GrfVYjLmr3C4Mk6p+xw7Zuk4Ey+F
+          ScoBxmss510SK1ddOLYpveRLXFccqqdX7znqSmu4zAngWZJl5+GPhEcTyJlXAKBg0rEZp8+m18qNO1nm/iw3bH/x952XKukn6l+d
+          6zGrL6UtePRhUk6hxJrGMdavrA+OfnkrJeJm8bnV7+dHrG+aqb9k1/IPRxvqYveHfd2yymlL+27NSsolTNlfr2tLH9/7Efko2zkk
+          5ZFy+/3R6fpXtHp2l5bmHb5t6vm0IbBr2fEN7VYvKr6d6sb63Rur/On7/NA4897KipyED3+Z79FKkvJQTXH+VpXYdrnGe67BJ2IM
+          64Ra5cpLvYVTW7AJ1182UZOevrqn5VLgUnti7Nzixo6H46ZsMIgFbk4wDk9WxRBVWqyyb7osD1CccKs28RolLgqTPV8tMiInLqOV
+          Zb/vJ2KTi84vasr9G5OvSSk2qYT9lSY2o+fxmexPo/ey1FkNB3poO+5HK9YbNSpdUO5S83dc+SvNAxll/jLH3/eyRnhSjF3kuykL
+          fTZ3zDuFxCbvac16f9n0SuMLsnrsKhPbZcatRe8VrhdhOo59/iKzitVOkJeVW5gsXUxq/Fgdmm57TGv8WmedLJePdPWtv+7I7AiI
+          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
+          o6Ojo6Ojo6Oj+7/3P5F8Ry0A8AAA
+          EOF
+          tr -d '\n\r ' < /tmp/gama.tar.gz.b64 | base64 -d > /tmp/gama.tar.gz
+          tar -xzf /tmp/gama.tar.gz -C "$GITHUB_WORKSPACE"
+
+      - name: Install Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Prepare Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android platform
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Download Portuguese offline speech model
+        shell: bash
+        run: |
+          set -e
+          mkdir -p app/src/main/assets
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip" \
+            -o /tmp/vosk.zip
+          rm -rf /tmp/vosk app/src/main/assets/model
+          mkdir -p /tmp/vosk
+          unzip -q /tmp/vosk.zip -d /tmp/vosk
+          mv /tmp/vosk/vosk-model-small-pt-0.3 app/src/main/assets/model
+          test -d app/src/main/assets/model
+
+      - name: Build APK
+        shell: bash
+        run: |
+          gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk Gama-Orb.apk
+          ls -lh Gama-Orb.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-Orb-APK
+          path: Gama-Orb.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG="gama-${{ github.run_number }}"
+          gh release create "$TAG" Gama-Orb.apk \
+            --title "Gama Orb $TAG" \
+            --notes "Gama com reconhecimento offline corrigido, resposta por voz, abertura de apps e orbe laranja."
