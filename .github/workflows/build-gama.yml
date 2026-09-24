@@ -1,4 +1,4 @@
-name: Build Gama 3.5 APK
+name: Build Gama 3.5 APK (complete source and diagnostics)
 
 on:
   workflow_dispatch:
@@ -1243,9 +1243,50 @@ jobs:
         working-directory: _gama_build
         run: bash tools/download_models.sh
 
-      - name: Unit tests and build APK
+      # A etapa de restauracao foi aprovada na execucao anterior.
+      # Executar compilacao e testes separadamente mostra a causa de erros futuros.
+      - name: Compile Gama APK
         working-directory: _gama_build
-        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
+
+      - name: Run Gama unit tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+
+      - name: Show first build failure in workflow summary
+        if: failure()
+        run: |
+          python3 - <<'PY_DIAG'
+          from pathlib import Path
+          import os, re
+          path = Path(os.environ['GITHUB_STEP_SUMMARY'])
+          with path.open('a', encoding='utf-8') as out:
+              out.write('## Gama: diagnóstico de compilação ou testes\n\n')
+              for name in ('gama-build.log', 'gama-tests.log'):
+                  log = Path(name)
+                  if not log.is_file():
+                      continue
+                  lines = log.read_text(encoding='utf-8', errors='replace').splitlines()
+                  problems = [line for line in lines if re.search(r'(^e: |\berror:|^FAILURE:|^> Task .* FAILED|^\* What went wrong:|^Caused by:)', line)]
+                  excerpt = problems[:45] if problems else lines[-45:]
+                  out.write(f'### {name}\n\n```text\n')
+                  out.write(chr(10).join(excerpt))
+                  out.write('\n```\n\n')
+          PY_DIAG
+
+      - name: Upload build diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-build-logs
+          path: |
+            gama-build.log
+            gama-tests.log
+          if-no-files-found: warn
 
       - name: Sign and verify Gama.apk
         working-directory: _gama_build
