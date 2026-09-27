@@ -1611,7 +1611,7 @@ jobs:
               fun prompt(question: String, history: String, title: String, facts: List<String>, focus: Boolean): String {
                   val chosen = title.takeIf { it in titles } ?: "Senhor"
                   val profile = if (facts.isEmpty()) "Nenhuma preferência pessoal explicitamente memorizada." else
-                      facts.takeLast(6).joinToString("\\n") { "- ${it.take(160).replace('\\n', ' ')}" }
+                      facts.takeLast(6).joinToString("\n") { "- ${it.take(160).replace('\n', ' ')}" }
                   val focusText = if (focus) "Modo foco local ativado: somente o essencial, sem humor nem perguntas dispensáveis." else
                       "Humor seco e discreto somente em situações leves; nunca seja rude, invasivo ou sarcástico em urgências."
                   return """
