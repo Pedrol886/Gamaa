@@ -402,18 +402,17 @@ jobs:
           manifest = Path('app/src/main/AndroidManifest.xml')
           m = manifest.read_text(encoding='utf-8')
           if '.GamaLockConversationActivity' not in m:
-              marker = '''        <activity
-              android:name=".LockScreenActivity"'''
-              block = '''        <activity
-              android:name=".GamaLockConversationActivity"
-              android:exported="false"
-              android:excludeFromRecents="true"
-              android:launchMode="singleTop"
-              android:showWhenLocked="true"
-              android:turnScreenOn="true"
-              android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>
-
-          '''
+              marker = '        <activity\n            android:name=".LockScreenActivity"'
+              block = (
+                  '        <activity\n'
+                  '            android:name=".GamaLockConversationActivity"\n'
+                  '            android:exported="false"\n'
+                  '            android:excludeFromRecents="true"\n'
+                  '            android:launchMode="singleTop"\n'
+                  '            android:showWhenLocked="true"\n'
+                  '            android:turnScreenOn="true"\n'
+                  '            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>\n\n'
+              )
               if marker not in m:
                   raise SystemExit('Marcador LockScreenActivity não encontrado no Manifest.')
               m = m.replace(marker, block + marker, 1)
