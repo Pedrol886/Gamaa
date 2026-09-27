@@ -1,4 +1,4 @@
-name: Build Gama 4.8 APK (runtime stability, smooth orange orb and reliable voice)
+name: Build Gama 4.9 APK (shared energy visual and state recovery)
 
 on:
   workflow_dispatch:
@@ -612,787 +612,42 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          cat > /tmp/gama-source-integrity.txt <<'GAMA_INTEGRITY'
-          FILE|F01|README.md
-          FILE|F02|app/build.gradle.kts
-          FILE|F03|app/src/main/AndroidManifest.xml
-          FILE|F04|app/src/main/java/com/gama/assistant/ConversationSession.kt
-          FILE|F05|app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          FILE|F06|app/src/main/java/com/gama/assistant/GamaPulse.kt
-          FILE|F07|app/src/main/java/com/gama/assistant/SmartFeatures.kt
-          FILE|F08|app/src/test/java/com/gama/assistant/ConversationSessionTest.kt
-          FILE|F09|app/src/main/java/com/gama/assistant/GamaService.kt
-          LINE|F01|0001|df73d986ab9e
-          LINE|F01|0002|e3b0c44298fc
-          LINE|F01|0003|2177a77826c2
-          LINE|F01|0004|e3b0c44298fc
-          LINE|F01|0005|7b9a765c883b
-          LINE|F01|0006|e3b0c44298fc
-          LINE|F01|0007|03a4004343a1
-          LINE|F01|0008|e3b0c44298fc
-          LINE|F01|0009|9f69a06b5574
-          LINE|F01|0010|e3b0c44298fc
-          LINE|F01|0011|e3b0c44298fc
-          LINE|F01|0012|3853fd8edb10
-          LINE|F01|0013|a3681f4c86a1
-          LINE|F01|0014|e3b0c44298fc
-          LINE|F01|0015|87cccd95ffe9
-          LINE|F01|0016|e3b0c44298fc
-          LINE|F01|0017|e4a7f14768e7
-          LINE|F01|0018|e3b0c44298fc
-          LINE|F01|0019|b63226386ba5
-          LINE|F01|0020|b7dbb92ad3a2
-          LINE|F01|0021|cbde63f2952b
-          LINE|F01|0022|a2ecb754fd33
-          LINE|F01|0023|be709a6895b9
-          LINE|F01|0024|6aff376441bb
-          LINE|F01|0025|373623f8dfb1
-          LINE|F01|0026|e3b0c44298fc
-          LINE|F01|0027|e3b0c44298fc
-          LINE|F01|0028|9f4bf7713b7a
-          LINE|F01|0029|db4ddd7a1784
-          LINE|F01|0030|e3b0c44298fc
-          LINE|F01|0031|ca205a01cf95
-          LINE|F01|0032|78d5ae17b55e
-          LINE|F01|0033|e3b0c44298fc
-          LINE|F01|0034|d80955dc27c8
-          LINE|F01|0035|ce4edaf41add
-          LINE|F01|0036|e3b0c44298fc
-          LINE|F01|0037|340e44292599
-          LINE|F01|0038|6fcf1e1283ef
-          LINE|F01|0039|e3b0c44298fc
-          LINE|F01|0040|e3b0c44298fc
-          LINE|F01|0041|d36b12348934
-          LINE|F01|0042|ef176e6db9ef
-          LINE|F01|0043|2f58a0e2bcac
-          LINE|F01|0044|f60cf1bb1d5f
-          LINE|F01|0045|e37d9089d843
-          LINE|F01|0046|08f05028ca8e
-          LINE|F01|0047|e3b0c44298fc
-          LINE|F01|0048|e3b0c44298fc
-          LINE|F01|0049|6b6612c72e9a
-          LINE|F01|0050|2c189dd0fb7b
-          LINE|F01|0051|8b5750466853
-          LINE|F01|0052|07558041be7e
-          LINE|F01|0053|e64ac89ca26a
-          LINE|F01|0054|48e84b443aed
-          LINE|F01|0055|7dbb37235c1a
-          LINE|F01|0056|e3b0c44298fc
-          LINE|F01|0057|e3b0c44298fc
-          LINE|F01|0058|995605783f77
-          LINE|F01|0059|3195ec12cf23
-          LINE|F01|0060|e3b0c44298fc
-          LINE|F01|0061|e3b0c44298fc
-          LINE|F01|0062|cbe96316c1a9
-          LINE|F01|0063|33b9259bcfab
-          LINE|F01|0064|801e533f312f
-          LINE|F01|0065|90523376f9d0
-          LINE|F01|0066|e3b0c44298fc
-          LINE|F01|0067|e3b0c44298fc
-          LINE|F01|0068|4d28a65eff46
-          LINE|F01|0069|104bed82b62d
-          LINE|F01|0070|7ddb696e755d
-          LINE|F01|0071|8b35a32b9802
-          LINE|F01|0072|e66bcfde843f
-          LINE|F01|0073|4a632815b414
-          LINE|F01|0074|79568bc59df6
-          LINE|F01|0075|e3b0c44298fc
-          LINE|F01|0076|e3b0c44298fc
-          LINE|F01|0077|a10512fb70b7
-          LINE|F02|0001|4e95d1b9af68
-          LINE|F02|0002|2564b573ec30
-          LINE|F02|0003|a3180573ff17
-          LINE|F02|0004|d10b36aa74a5
-          LINE|F02|0005|e3b0c44298fc
-          LINE|F02|0006|b20a6995d16e
-          LINE|F02|0007|64677914b868
-          LINE|F02|0008|7bb0fd9cc625
-          LINE|F02|0009|e3b0c44298fc
-          LINE|F02|0010|295d2e6997e0
-          LINE|F02|0011|89342990466b
-          LINE|F02|0012|5a9fdfc0a9f3
-          LINE|F02|0013|837ad0127408
-          LINE|F02|0014|ef53c11019cb
-          LINE|F02|0015|60ac53d8dd8d
-          LINE|F02|0016|f7cdd07e0f42
-          LINE|F02|0017|28d86778615f
-          LINE|F02|0018|e3b0c44298fc
-          LINE|F02|0019|3f921a6c491a
-          LINE|F02|0020|f85b1858a2cf
-          LINE|F02|0021|3cf895334853
-          LINE|F02|0022|28d86778615f
-          LINE|F02|0023|e3b0c44298fc
-          LINE|F02|0024|18e32d29235f
-          LINE|F02|0025|e3b0c44298fc
-          LINE|F02|0026|eab1d7e12d66
-          LINE|F02|0027|a89f8f7a95dc
-          LINE|F02|0028|28d86778615f
-          LINE|F02|0029|d10b36aa74a5
-          LINE|F02|0030|e3b0c44298fc
-          LINE|F02|0031|622534058ae3
-          LINE|F02|0032|a653d6dbcc3e
-          LINE|F02|0033|d911c194318a
-          LINE|F02|0034|6b7c5e0624fc
-          LINE|F02|0035|faab17902df0
-          LINE|F02|0036|6527dc248a1b
-          LINE|F02|0037|d10b36aa74a5
-          LINE|F03|0001|86e0a4d4f900
-          LINE|F03|0002|3b51351a5ee7
-          LINE|F03|0003|6e9bfd63bb54
-          LINE|F03|0004|5356df797b8f
-          LINE|F03|0005|56459ef2d85d
-          LINE|F03|0006|7b01d5d340d7
-          LINE|F03|0007|307feb84de2a
-          LINE|F03|0008|a751e6fc01d3
-          LINE|F03|0009|01777bee20e5
-          LINE|F03|0010|3e7ed7cdc7c4
-          LINE|F03|0011|97798b4ed74e
-          LINE|F03|0012|f10b0d44d826
-          LINE|F03|0013|90d0c61f1be2
-          LINE|F03|0014|1095fca916ea
-          LINE|F03|0015|bd7eeb538a49
-          LINE|F03|0016|3f2a0f4edf02
-          LINE|F03|0017|ef2f71887411
-          LINE|F03|0018|e3b0c44298fc
-          LINE|F03|0019|bc3384a2809e
-          LINE|F03|0020|e3b0c44298fc
-          LINE|F03|0021|3d4a7b97e217
-          LINE|F03|0022|4548468ed55b
-          LINE|F03|0023|253c37a6d1b2
-          LINE|F03|0024|bfa5756640de
-          LINE|F03|0025|19739d1d5982
-          LINE|F03|0026|7e85224a4770
-          LINE|F03|0027|0fbd9bf5919c
-          LINE|F03|0028|08d03a726b73
-          LINE|F03|0029|e3b0c44298fc
-          LINE|F03|0030|2ae7519db969
-          LINE|F03|0031|c2954415eae5
-          LINE|F03|0032|bf759247e455
-          LINE|F03|0033|6cbe2201cd19
-          LINE|F03|0034|491811497e3b
-          LINE|F03|0035|4f2d1ab77133
-          LINE|F03|0036|0ef47364cd39
-          LINE|F03|0037|696291ab3da0
-          LINE|F03|0038|9ac3304d1e7b
-          LINE|F03|0039|e3b0c44298fc
-          LINE|F03|0040|6549937a5f1f
-          LINE|F03|0041|a78468e88064
-          LINE|F03|0042|8c2390635cf2
-          LINE|F03|0043|cabfc77462b5
-          LINE|F03|0044|70636b3059f5
-          LINE|F03|0045|d5070ce19f88
-          LINE|F03|0046|87aedc90a05b
-          LINE|F03|0047|120e120536e1
-          LINE|F03|0048|775ba8bfc2b9
-          LINE|F03|0049|7abb2b887726
-          LINE|F03|0050|e3b0c44298fc
-          LINE|F03|0051|6549937a5f1f
-          LINE|F03|0052|433c99e503fc
-          LINE|F03|0053|492877a31404
-          LINE|F03|0054|0c32b9b0d241
-          LINE|F03|0055|8c2390635cf2
-          LINE|F03|0056|c7ab3218d61c
-          LINE|F03|0057|d9334cc589d4
-          LINE|F03|0058|30442d79db09
-          LINE|F03|0059|e3b0c44298fc
-          LINE|F03|0060|6549937a5f1f
-          LINE|F03|0061|e4dd4c4ba11d
-          LINE|F03|0062|492877a31404
-          LINE|F03|0063|0c32b9b0d241
-          LINE|F03|0064|8c2390635cf2
-          LINE|F03|0065|c7ab3218d61c
-          LINE|F03|0066|d9334cc589d4
-          LINE|F03|0067|30442d79db09
-          LINE|F03|0068|e3b0c44298fc
-          LINE|F03|0069|165930ba6634
-          LINE|F03|0070|a61f2f59eaf3
-          LINE|F03|0071|492877a31404
-          LINE|F03|0072|ee3bd9ac3148
-          LINE|F03|0073|817da68ccf74
-          LINE|F03|0074|e3b0c44298fc
-          LINE|F03|0075|0ac8b3b993b0
-          LINE|F03|0076|4d3a7fb42b4a
-          LINE|F03|0077|e4178bac2dcf
-          LINE|F03|0078|c33748fe59a0
-          LINE|F03|0079|354ac43c443e
-          LINE|F03|0080|bc41c797fa9e
-          LINE|F03|0081|e4178bac2dcf
-          LINE|F03|0082|d98a538a7776
-          LINE|F03|0083|165930ba6634
-          LINE|F03|0084|e2555b68597d
-          LINE|F03|0085|5c36e52acd3e
-          LINE|F03|0086|b78150dcf21c
-          LINE|F03|0087|74f48f411d27
-          LINE|F03|0088|70636b3059f5
-          LINE|F03|0089|35e69aa20e22
-          LINE|F03|0090|120e120536e1
-          LINE|F03|0091|e4178bac2dcf
-          LINE|F03|0092|e3b0c44298fc
-          LINE|F03|0093|2f1b6a48f006
-          LINE|F03|0094|19b6c54dfb2f
-          LINE|F03|0095|41581166653d
-          LINE|F04|0001|a06a4f5110e4
-          LINE|F04|0002|e3b0c44298fc
-          LINE|F04|0003|69f443397895
-          LINE|F04|0004|b62d11160959
-          LINE|F04|0005|e3b0c44298fc
-          LINE|F04|0006|1059d90cfb1e
-          LINE|F04|0007|1ac5aa1fe296
-          LINE|F04|0008|c44bec6ff78c
-          LINE|F04|0009|500543c7df22
-          LINE|F04|0010|62accad93a9a
-          LINE|F04|0011|e3b0c44298fc
-          LINE|F04|0012|59cf012cb583
-          LINE|F04|0013|f36cf49631d8
-          LINE|F04|0014|72f5d4774513
-          LINE|F04|0015|28d86778615f
-          LINE|F04|0016|e3b0c44298fc
-          LINE|F04|0017|a72d2dd67c5c
-          LINE|F04|0018|ccd5b7f03c53
-          LINE|F04|0019|f36cf49631d8
-          LINE|F04|0020|28d86778615f
-          LINE|F04|0021|e3b0c44298fc
-          LINE|F04|0022|e80106fc3786
-          LINE|F04|0023|2f9bd8e022f8
-          LINE|F04|0024|28d86778615f
-          LINE|F04|0025|e3b0c44298fc
-          LINE|F04|0026|be0216b3a9df
-          LINE|F04|0027|c5405b5b0898
-          LINE|F04|0028|28d86778615f
-          LINE|F04|0029|e3b0c44298fc
-          LINE|F04|0030|09f560aeec4c
-          LINE|F04|0031|dca1e41e4377
-          LINE|F04|0032|54c6a72f4ff0
-          LINE|F04|0033|77093ae23b8e
-          LINE|F04|0034|4f9c9b6cc042
-          LINE|F04|0035|810a55efd7ff
-          LINE|F04|0036|4c3e098c8d3a
-          LINE|F04|0037|cfb57e0b6eea
-          LINE|F04|0038|0007337b94fd
-          LINE|F04|0039|4ac313ec9c98
-          LINE|F04|0040|844e1c9d29a2
-          LINE|F04|0041|f5d4f2c42ccf
-          LINE|F04|0042|021a7779be1d
-          LINE|F04|0043|e4b39b81e6ac
-          LINE|F04|0044|2a44168318e2
-          LINE|F04|0045|461d4ef19750
-          LINE|F04|0046|28d86778615f
-          LINE|F04|0047|e3b0c44298fc
-          LINE|F04|0048|14763a4ddc81
-          LINE|F04|0049|e7083f1df1fa
-          LINE|F04|0050|fe201ae3068f
-          LINE|F04|0051|4b1aa03b6ccd
-          LINE|F04|0052|e90e8d7ff759
-          LINE|F04|0053|28d86778615f
-          LINE|F04|0054|e3b0c44298fc
-          LINE|F04|0055|f70133d07a23
-          LINE|F04|0056|9b1e526f3a24
-          LINE|F04|0057|a4c75eea6504
-          LINE|F04|0058|51c2270c1109
-          LINE|F04|0059|2b3baca51585
-          LINE|F04|0060|a5092e3efa4a
-          LINE|F04|0061|fb748accb84a
-          LINE|F04|0062|783ee48fd5ef
-          LINE|F04|0063|540230c82e75
-          LINE|F04|0064|e7200fa8b3a2
-          LINE|F04|0065|c0c4b1012106
-          LINE|F04|0066|2a44168318e2
-          LINE|F04|0067|28d86778615f
-          LINE|F04|0068|d10b36aa74a5
-          LINE|F05|0001|a06a4f5110e4
-          LINE|F05|0002|e3b0c44298fc
-          LINE|F05|0003|649866535f9c
-          LINE|F05|0004|b571abe89da4
-          LINE|F05|0005|95b3d2bddb48
-          LINE|F05|0006|299a6a69fe63
-          LINE|F05|0007|3136ace46fe2
-          LINE|F05|0008|32d652261c7c
-          LINE|F05|0009|e8d244714e06
-          LINE|F05|0010|e869b7d0c434
-          LINE|F05|0011|8de9c520f434
-          LINE|F05|0012|cd01a0077ed6
-          LINE|F05|0013|56de71389b3f
-          LINE|F05|0014|c355b44d412f
-          LINE|F05|0015|fe1c0732084b
-          LINE|F05|0016|424d6e5b7aad
-          LINE|F05|0017|ec02414e37be
-          LINE|F05|0018|15596bd07ba1
-          LINE|F05|0019|f5d6fca53500
-          LINE|F05|0020|86281a0d5d3a
-          LINE|F05|0021|8de9a2073419
-          LINE|F05|0022|e10929477f70
-          LINE|F05|0023|42a934be972c
-          LINE|F05|0024|406e4b3a33d6
-          LINE|F05|0025|d8b53cdcab3f
-          LINE|F05|0026|e3b0c44298fc
-          LINE|F05|0027|8d64a30d9de1
-          LINE|F05|0028|c539a5eeb1d0
-          LINE|F05|0029|73ab9eb927d5
-          LINE|F05|0030|533a9f115572
-          LINE|F05|0031|4f7bef45a820
-          LINE|F05|0032|f70133d07a23
-          LINE|F05|0033|25cb0690d7f9
-          LINE|F05|0034|68a7530196f7
-          LINE|F05|0035|c842448d19e2
-          LINE|F05|0036|0e0937d055ee
-          LINE|F05|0037|28d86778615f
-          LINE|F05|0038|e3b0c44298fc
-          LINE|F05|0039|85652944670b
-          LINE|F05|0040|3ca90422ea60
-          LINE|F05|0041|e3b0c44298fc
-          LINE|F05|0042|1bfcfccd71ff
-          LINE|F05|0043|7e2f01870ea3
-          LINE|F05|0044|1807850c6ca3
-          LINE|F05|0045|d862954b838d
-          LINE|F05|0046|a8b3491b25c3
-          LINE|F05|0047|6b365ef6ebfa
-          LINE|F05|0048|1ee51410b07e
-          LINE|F05|0049|86afdf70a954
-          LINE|F05|0050|2a44168318e2
-          LINE|F05|0051|28d86778615f
-          LINE|F05|0052|e3b0c44298fc
-          LINE|F05|0053|a99cd75941e9
-          LINE|F05|0054|eb4f52b99eca
-          LINE|F05|0055|e3b0c44298fc
-          LINE|F05|0056|6ee170e8dafe
-          LINE|F05|0057|e7a37180bddd
-          LINE|F05|0058|7078765a4449
-          LINE|F05|0059|2a44168318e2
-          LINE|F05|0060|e3b0c44298fc
-          LINE|F05|0061|a16c8bacc702
-          LINE|F05|0062|3c02c93f1577
-          LINE|F05|0063|031afe16330f
-          LINE|F05|0064|77885ad5ce27
-          LINE|F05|0065|cf81df5eef57
-          LINE|F05|0066|d2ece3f1f4d3
-          LINE|F05|0067|904ef0a83dce
-          LINE|F05|0068|b029b3316a9c
-          LINE|F05|0069|8ce8689be422
-          LINE|F05|0070|2a44168318e2
-          LINE|F05|0071|e3b0c44298fc
-          LINE|F05|0072|529ea2c6a4b3
-          LINE|F05|0073|ff35efe0cff8
-          LINE|F05|0074|b26a05c8c707
-          LINE|F05|0075|bf043ea548d6
-          LINE|F05|0076|ab38e8d6689d
-          LINE|F05|0077|0f8c2371eda0
-          LINE|F05|0078|07b2c44b1895
-          LINE|F05|0079|e3b0c44298fc
-          LINE|F05|0080|4c061f8e6c45
-          LINE|F05|0081|647326887ade
-          LINE|F05|0082|2a44168318e2
-          LINE|F05|0083|e3b0c44298fc
-          LINE|F05|0084|98b49a101f83
-          LINE|F05|0085|2f1882d0fe28
-          LINE|F05|0086|812613a3a69a
-          LINE|F05|0087|2a44168318e2
-          LINE|F05|0088|e3b0c44298fc
-          LINE|F05|0089|06b5fa471345
-          LINE|F05|0090|642e32915df7
-          LINE|F05|0091|bf90066e0a4a
-          LINE|F05|0092|b000f771146a
-          LINE|F05|0093|05cb4114d6d7
-          LINE|F05|0094|812613a3a69a
-          LINE|F05|0095|2a44168318e2
-          LINE|F06|0001|a06a4f5110e4
-          LINE|F06|0002|e3b0c44298fc
-          LINE|F06|0003|3a833fee1bf2
-          LINE|F06|0004|4fd2f6eeb113
-          LINE|F06|0005|c6a0181e4fe2
-          LINE|F06|0006|6b64069c5122
-          LINE|F06|0007|ea0b7de556e1
-          LINE|F06|0008|ddf2a943fda9
-          LINE|F06|0009|299a6a69fe63
-          LINE|F06|0010|3136ace46fe2
-          LINE|F06|0011|32d652261c7c
-          LINE|F06|0012|ce5a113e0e88
-          LINE|F06|0013|a7c0e64f065e
-          LINE|F06|0014|c355b44d412f
-          LINE|F06|0015|488056e2ec8f
-          LINE|F06|0016|347d21e634a7
-          LINE|F06|0017|a56702ca329f
-          LINE|F06|0018|76ce4334f830
-          LINE|F06|0019|e3b0c44298fc
-          LINE|F06|0020|9f7a1c47b5d0
-          LINE|F06|0021|b85f6be06016
-          LINE|F06|0022|aaed8bf27331
-          LINE|F06|0023|b57ace6d0d89
-          LINE|F06|0024|bf16676fa1d7
-          LINE|F06|0025|b6735967db55
-          LINE|F06|0026|c28edde3773e
-          LINE|F06|0027|df1c518f106d
-          LINE|F06|0028|1d607d4dc1b8
-          LINE|F06|0029|72e4ee745132
-          LINE|F06|0030|f10fb65a567d
-          LINE|F06|0031|28d86778615f
-          LINE|F06|0032|2d7d885240a0
-          LINE|F06|0033|e2360bae65e7
-          LINE|F06|0034|77518e88eae3
-          LINE|F06|0035|788932ad23df
-          LINE|F06|0036|50ef4a9c3f5f
-          LINE|F06|0037|7ae6caca654b
-          LINE|F06|0038|202af96c616e
-          LINE|F06|0039|94d8b7343aee
-          LINE|F06|0040|b118eab1ebe0
-          LINE|F06|0041|c8ee8360b1e0
-          LINE|F06|0042|28d86778615f
-          LINE|F06|0043|e4c377158682
-          LINE|F06|0044|537a054353f3
-          LINE|F06|0045|28d86778615f
-          LINE|F06|0046|582b96bfafda
-          LINE|F06|0047|50ef4a9c3f5f
-          LINE|F06|0048|36ced3f6f49e
-          LINE|F06|0049|3c0fe89121ac
-          LINE|F06|0050|bbd53891b115
-          LINE|F06|0051|28d86778615f
-          LINE|F06|0052|38391e79c753
-          LINE|F06|0053|6097c8f147b7
-          LINE|F06|0054|99a1867019b5
-          LINE|F06|0055|07291ac20ba3
-          LINE|F06|0056|a492887212c5
-          LINE|F06|0057|cd76e8012919
-          LINE|F06|0058|8dddd6b5a0d0
-          LINE|F06|0059|13208e022eea
-          LINE|F06|0060|28d86778615f
-          LINE|F06|0061|b8a7458fee8f
-          LINE|F06|0062|a492887212c5
-          LINE|F06|0063|11390f7ad1fd
-          LINE|F06|0064|c496fa676c13
-          LINE|F06|0065|a2604f58dc00
-          LINE|F06|0066|00dbb5cb4e92
-          LINE|F06|0067|decef7cb8cb2
-          LINE|F06|0068|c9394e1d7ca3
-          LINE|F06|0069|b4cb5e7f5fc6
-          LINE|F06|0070|85699121a0ff
-          LINE|F06|0071|d775c1fc8289
-          LINE|F06|0072|63534ef55b27
-          LINE|F06|0073|8d4e25ff6e08
-          LINE|F06|0074|0d1295c86c8d
-          LINE|F06|0075|0bf0a088a649
-          LINE|F06|0076|86afdf70a954
-          LINE|F06|0077|687d732cd223
-          LINE|F06|0078|28d86778615f
-          LINE|F06|0079|5e6fd1e58122
-          LINE|F06|0080|adc177e4ee92
-          LINE|F06|0081|e7cb37d7cd7a
-          LINE|F06|0082|e54ecb8f400d
-          LINE|F06|0083|914360e45fdc
-          LINE|F06|0084|1ca3330b28d9
-          LINE|F06|0085|ab6d31fbc6af
-          LINE|F06|0086|383cad336f0c
-          LINE|F06|0087|249f32c8d216
-          LINE|F06|0088|8493c33827dd
-          LINE|F06|0089|28d86778615f
-          LINE|F06|0090|d10b36aa74a5
-          LINE|F06|0091|e3b0c44298fc
-          LINE|F06|0092|a18f14701760
-          LINE|F06|0093|c2672083f6e1
-          LINE|F06|0094|7b6da105602f
-          LINE|F06|0095|0ceab086aae2
-          LINE|F07|0001|a06a4f5110e4
-          LINE|F07|0002|e3b0c44298fc
-          LINE|F07|0003|3a833fee1bf2
-          LINE|F07|0004|3136ace46fe2
-          LINE|F07|0005|32d652261c7c
-          LINE|F07|0006|ce5a113e0e88
-          LINE|F07|0007|347d21e634a7
-          LINE|F07|0008|d21d87a4e441
-          LINE|F07|0009|3a9c67b32024
-          LINE|F07|0010|e5c0eb4ddc98
-          LINE|F07|0011|6af3819e49c2
-          LINE|F07|0012|9d7ed7646943
-          LINE|F07|0013|5d6fbee3e8c8
-          LINE|F07|0014|b62d11160959
-          LINE|F07|0015|e3b0c44298fc
-          LINE|F07|0016|5666c429622e
-          LINE|F07|0017|94f1689e7dd8
-          LINE|F07|0018|0947eb35dcfb
-          LINE|F07|0019|9c9f86d80446
-          LINE|F07|0020|d11e0493a9e2
-          LINE|F07|0021|1aeabf30eb7a
-          LINE|F07|0022|75757af9dd43
-          LINE|F07|0023|e3f81e7644aa
-          LINE|F07|0024|09932c3da2eb
-          LINE|F07|0025|07b0b06bdcfe
-          LINE|F07|0026|ff19446752c3
-          LINE|F07|0027|cb39ef421355
-          LINE|F07|0028|e3b0c44298fc
-          LINE|F07|0029|06735629204a
-          LINE|F07|0030|a79c59540a71
-          LINE|F07|0031|b501a4946cb8
-          LINE|F07|0032|ec4e15a034fa
-          LINE|F07|0033|2c700ec10468
-          LINE|F07|0034|3b7d4e7753ca
-          LINE|F07|0035|5734c3726367
-          LINE|F07|0036|80c5a7331aeb
-          LINE|F07|0037|8fb7dc4ff0e9
-          LINE|F07|0038|4b7adc51b47a
-          LINE|F07|0039|ba8ac4408752
-          LINE|F07|0040|28d86778615f
-          LINE|F07|0041|b77a659887af
-          LINE|F07|0042|c3eb067f2f86
-          LINE|F07|0043|94ec8d2acca0
-          LINE|F07|0044|8481e7183985
-          LINE|F07|0045|0a7cf867b88a
-          LINE|F07|0046|e3b0c44298fc
-          LINE|F07|0047|bb6e26458bb3
-          LINE|F07|0048|c4672a667668
-          LINE|F07|0049|9c8d28855cde
-          LINE|F07|0050|f0a0ed2fbbd0
-          LINE|F07|0051|c10d71172410
-          LINE|F07|0052|134749d72c3c
-          LINE|F07|0053|0b983be864b5
-          LINE|F07|0054|3c1a0bb291fd
-          LINE|F07|0055|3d73b25cfd4b
-          LINE|F07|0056|2a44168318e2
-          LINE|F07|0057|5286cf7cd94c
-          LINE|F07|0058|54ab4305b2f2
-          LINE|F07|0059|13752af9a181
-          LINE|F07|0060|2a44168318e2
-          LINE|F07|0061|03d79757779a
-          LINE|F07|0062|80bffc4a2832
-          LINE|F07|0063|b7f27043083c
-          LINE|F07|0064|2a44168318e2
-          LINE|F07|0065|9ca6d9e6de5f
-          LINE|F07|0066|7fe5861501ac
-          LINE|F07|0067|39d74e1f4f4d
-          LINE|F07|0068|1477250cf4d1
-          LINE|F07|0069|648203b9ad3b
-          LINE|F07|0070|7d4294a6b546
-          LINE|F07|0071|f4fb6605ad0e
-          LINE|F07|0072|5508770b28e6
-          LINE|F07|0073|2a44168318e2
-          LINE|F07|0074|f9cae9add88e
-          LINE|F07|0075|28d86778615f
-          LINE|F07|0076|e3b0c44298fc
-          LINE|F07|0077|a11f18873670
-          LINE|F07|0078|25087fbd2dfa
-          LINE|F07|0079|9f21e98550c8
-          LINE|F07|0080|805f5ba21a50
-          LINE|F07|0081|ff28427d3eb4
-          LINE|F07|0082|28d86778615f
-          LINE|F07|0083|e3b0c44298fc
-          LINE|F07|0084|26be32574713
-          LINE|F07|0085|81c5bf558ec9
-          LINE|F07|0086|508e3c9123a8
-          LINE|F07|0087|2a44168318e2
-          LINE|F07|0088|a492887212c5
-          LINE|F07|0089|76901afb3e89
-          LINE|F07|0090|f972d9ff8846
-          LINE|F07|0091|e1cbcf30f9c4
-          LINE|F07|0092|7d7f816e70ab
-          LINE|F07|0093|9060dd651efe
-          LINE|F07|0094|19400497b9d6
-          LINE|F07|0095|e3b0c44298fc
-          LINE|F08|0001|a06a4f5110e4
-          LINE|F08|0002|e3b0c44298fc
-          LINE|F08|0003|c26d1a9fbe76
-          LINE|F08|0004|5cea2f2c4635
-          LINE|F08|0005|e3b0c44298fc
-          LINE|F08|0006|49e4b8c02417
-          LINE|F08|0007|67c3f833f30e
-          LINE|F08|0008|a2848eb89bd2
-          LINE|F08|0009|5e8657313f0a
-          LINE|F08|0010|a2cb7dc3a0e8
-          LINE|F08|0011|e5233d44e254
-          LINE|F08|0012|99a17b1859e7
-          LINE|F08|0013|b6d607220f22
-          LINE|F08|0014|eca22a98639c
-          LINE|F08|0015|8ab2e73baeae
-          LINE|F08|0016|ce2486959464
-          LINE|F08|0017|8a8ea3ca709d
-          LINE|F08|0018|db92b5d67e37
-          LINE|F08|0019|ac76af983a15
-          LINE|F08|0020|e5233d44e254
-          LINE|F08|0021|28d86778615f
-          LINE|F08|0022|e3b0c44298fc
-          LINE|F08|0023|8844f0763c38
-          LINE|F08|0024|01bce68f0f28
-          LINE|F08|0025|8f79952bdc1e
-          LINE|F08|0026|2a44168318e2
-          LINE|F08|0027|86a35236be96
-          LINE|F08|0028|b592ada8871a
-          LINE|F08|0029|2a44168318e2
-          LINE|F08|0030|28d86778615f
-          LINE|F08|0031|e3b0c44298fc
-          LINE|F08|0032|c12e9fc0f2c2
-          LINE|F08|0033|a2848eb89bd2
-          LINE|F08|0034|771e1e1e07c4
-          LINE|F08|0035|0e83de34f019
-          LINE|F08|0036|275fdf945549
-          LINE|F08|0037|96fd64bb538e
-          LINE|F08|0038|28d86778615f
-          LINE|F08|0039|e3b0c44298fc
-          LINE|F08|0040|cc210ef6bbe0
-          LINE|F08|0041|ec979e3e7f28
-          LINE|F08|0042|7bf0bd9b0dc3
-          LINE|F08|0043|78e9cefdb952
-          LINE|F08|0044|c0f042d1814e
-          LINE|F08|0045|28d86778615f
-          LINE|F08|0046|06a2819e91f4
-          LINE|F08|0047|ec979e3e7f28
-          LINE|F08|0048|bbc48a52f00e
-          LINE|F08|0049|0c7012ba4a99
-          LINE|F08|0050|459ef49187e0
-          LINE|F08|0051|2a44168318e2
-          LINE|F08|0052|e1061a31a91e
-          LINE|F08|0053|6d102b85e8ca
-          LINE|F08|0054|da5dae7e97e1
-          LINE|F08|0055|d4d4acf988a1
-          LINE|F08|0056|e5233d44e254
-          LINE|F08|0057|28d86778615f
-          LINE|F08|0058|e3b0c44298fc
-          LINE|F08|0059|d10b36aa74a5
-          LINE|F09|0001|a06a4f5110e4
-          LINE|F09|0007|745a0f6dc6d2
-          LINE|F09|0013|3d418731b9b4
-          LINE|F09|0019|c355b44d412f
-          LINE|F09|0025|3951408ec2ac
-          LINE|F09|0031|880b7df46c0a
-          LINE|F09|0037|abb9477620a6
-          LINE|F09|0043|e5c0eb4ddc98
-          LINE|F09|0049|f70133d07a23
-          LINE|F09|0055|a6e372b94340
-          LINE|F09|0061|76cce6aed152
-          LINE|F09|0067|f51319e8ef58
-          LINE|F09|0073|ab5212901cf1
-          LINE|F09|0076|a427c8c1dfcf
-          LINE|F09|0077|d955795101d1
-          LINE|F09|0078|2b19f0bb773a
-          LINE|F09|0079|846b6cdcc94e
-          LINE|F09|0080|3eb084aa19f3
-          LINE|F09|0081|85e748e6dcc5
-          LINE|F09|0082|9bb76b8af3ac
-          LINE|F09|0083|0e111a6b50e3
-          LINE|F09|0084|ceb561ebdedf
-          LINE|F09|0085|f62b9e065107
-          LINE|F09|0086|ba3deeec7af6
-          LINE|F09|0087|28d86778615f
-          LINE|F09|0088|e3b0c44298fc
-          LINE|F09|0091|e1158538ae18
-          LINE|F09|0097|982b2362c280
-          LINE|F09|0103|d455aa54ea35
-          LINE|F09|0109|7d3e245a0623
-          LINE|F09|0115|1c2f5fa90afe
-          LINE|F09|0121|e3b0c44298fc
-          LINE|F09|0127|56f3a32515c0
-          LINE|F09|0133|9b02afa2932e
-          LINE|F09|0139|568b1d6a7828
-          LINE|F09|0145|ea918ee6422d
-          LINE|F09|0151|cbf0597bdda3
-          LINE|F09|0157|b2f406e621f5
-          LINE|F09|0163|9973a68a17de
-          LINE|F09|0169|28d86778615f
-          LINE|F09|0175|2578f3e9ca8c
-          LINE|F09|0181|c839317cdc3e
-          LINE|F09|0187|a13d707cd7cc
-          LINE|F09|0193|e3b0c44298fc
-          LINE|F09|0199|42d021951775
-          LINE|F09|0205|880a8562998c
-          LINE|F09|0211|e3b0c44298fc
-          LINE|F09|0217|767b64ac3af1
-          LINE|F09|0223|6786cd1fe04f
-          LINE|F09|0229|5f5523c3a746
-          LINE|F09|0235|919e55160d41
-          LINE|F09|0241|1e5bcced4459
-          LINE|F09|0247|a60398ac4ca4
-          LINE|F09|0253|1254be1c18ab
-          LINE|F09|0259|11efaa66ed8a
-          LINE|F09|0265|6cc667b1cfe5
-          LINE|F09|0271|2a44168318e2
-          LINE|F09|0277|70376e2c1a8b
-          LINE|F09|0283|00ee85258c6a
-          LINE|F09|0289|cfab8c5ca9cd
-          LINE|F09|0295|d622ffc31e24
-          LINE|F09|0301|f550544edef9
-          LINE|F09|0307|d1d302cb1071
-          LINE|F09|0313|86afdf70a954
-          LINE|F09|0319|dcea5a046c8f
-          LINE|F09|0325|9b23fb2869b0
-          LINE|F09|0331|c828612b8f7f
-          LINE|F09|0337|ef61dc03fbb9
-          LINE|F09|0343|e3cc237dfb07
-          LINE|F09|0349|243c930071c4
-          LINE|F09|0355|26a5101cc91f
-          LINE|F09|0361|cb381f75a957
-          LINE|F09|0367|f05435eaa9c3
-          LINE|F09|0373|a097a43a7e33
-          LINE|F09|0379|b4e084c8bfe3
-          LINE|F09|0385|47f6838fba43
-          LINE|F09|0391|93e8b8f716be
-          LINE|F09|0397|cec599f6aca1
-          LINE|F09|0403|17ab5de1e510
-          LINE|F09|0409|e3b0c44298fc
-          LINE|F09|0415|e2f8e7497709
-          LINE|F09|0421|2a3348ed792c
-          LINE|F09|0427|cdb61ba71367
-          LINE|F09|0433|fe55ffaa4b3e
-          LINE|F09|0439|b8d191817675
-          LINE|F09|0445|63fac3f38dd1
-          LINE|F09|0451|add317e244ba
-          LINE|F09|0457|bd7dfc3fdfaa
-          LINE|F09|0463|ef8974bc28e2
-          LINE|F09|0469|e3b0c44298fc
-          LINE|F09|0475|e5bfdfc1c74b
-          LINE|F09|0481|8bc9ba0c4bc7
-          LINE|F09|0487|1736344c389b
-          LINE|F09|0493|919d400acc59
-          LINE|F09|0499|01ab4e12b087
-          GAMA_INTEGRITY
-
           python3 - <<'PY_INTEGRITY'
           from pathlib import Path
-          import hashlib
-
-          manifest = Path('/tmp/gama-source-integrity.txt').read_text(encoding='utf-8').splitlines()
-          files = {}
-          checks = []
-          for raw in manifest:
-              if not raw.strip():
-                  continue
-              parts = raw.split('|')
-              if parts[0] == 'FILE':
-                  _, file_id, path = parts
-                  files[file_id] = path
-              elif parts[0] == 'LINE':
-                  _, file_id, line_no, expected = parts
-                  checks.append((file_id, int(line_no), expected))
-              else:
-                  raise SystemExit('Registro de integridade desconhecido: ' + raw)
-
-          cache = {}
-          for file_id, path in files.items():
-              target = Path(path)
-              if not target.is_file():
-                  raise SystemExit('Arquivo obrigatório ausente: ' + path)
-              cache[file_id] = target.read_text(encoding='utf-8').splitlines()
-
-          verified = 0
-          for file_id, line_no, expected in checks:
-              if file_id not in cache:
-                  raise SystemExit('ID de arquivo desconhecido: ' + file_id)
-              lines = cache[file_id]
-              if line_no < 1 or line_no > len(lines):
-                  raise SystemExit(f'Linha {line_no} fora do arquivo {files[file_id]}')
-              actual = hashlib.sha256(lines[line_no - 1].encode()).hexdigest()[:12]
-              if actual != expected:
-                  raise SystemExit(
-                      f'Integridade divergente em {files[file_id]}:{line_no}: '
-                      f'esperado {expected}, obtido {actual}'
-                  )
-              verified += 1
-
-          print(f'Integridade OK: {verified} linhas verificadas em {len(files)} arquivos.')
+          required = [
+              'README.md',
+              'app/build.gradle.kts',
+              'app/src/main/AndroidManifest.xml',
+              'app/src/main/java/com/gama/assistant/ConversationSession.kt',
+              'app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt',
+              'app/src/main/java/com/gama/assistant/GamaPulse.kt',
+              'app/src/main/java/com/gama/assistant/SmartFeatures.kt',
+              'app/src/main/java/com/gama/assistant/GamaService.kt',
+              'app/src/test/java/com/gama/assistant/ConversationSessionTest.kt',
+              'tools/download_models.sh',
+          ]
+          missing = [name for name in required if not Path(name).is_file()]
+          if missing:
+              raise SystemExit('Arquivos obrigatórios ausentes: ' + ', '.join(missing))
+          if len(list(Path('app/src/main/java/com/gama/assistant').glob('*.kt'))) < 15:
+              raise SystemExit('Fonte Kotlin incompleto após restauração.')
+          service = Path('app/src/main/java/com/gama/assistant/GamaService.kt').read_text(encoding='utf-8')
+          manifest = Path('app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
+          lock = Path('app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt').read_text(encoding='utf-8')
+          checks = [
+              ('CONVERSATION_IDLE_TIMEOUT_MS = 60L * 60L * 1000L', service),
+              ('showLockConversationUi', service),
+              ('sendLockConversationUi', service),
+              ('GamaLockConversationActivity', manifest),
+              ('Estou ouvindo', lock),
+              ('Pensando', lock),
+              ('Falando', lock),
+          ]
+          for marker, body in checks:
+              if marker not in body:
+                  raise SystemExit('Marcador obrigatório ausente: ' + marker)
+          print('Integridade estrutural OK:', len(required), 'arquivos principais validados.')
           PY_INTEGRITY
-
-          grep -Fq 'class GamaLockConversationActivity' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          grep -Fq 'Estou ouvindo' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          grep -Fq 'Pensando' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          grep -Fq 'Falando' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          grep -Fq 'CONVERSATION_IDLE_TIMEOUT_MS = 60L * 60L * 1000L' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'showLockConversationUi' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'sendLockConversationUi' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'Gama 4.4' app/build.gradle.kts
 
       - name: Apply Gama 4.7 identity, orange UI and private session
         working-directory: _gama_build
@@ -2463,6 +1718,483 @@ jobs:
           fi
           echo 'Gama 4.8 runtime patch validado.'
 
+      - name: Apply Gama 4.9 unified energy visual and state recovery
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_49'
+          from pathlib import Path
+          import re
+
+          def need(text, old, label):
+              if old not in text:
+                  raise SystemExit('Ponto 4.9 não encontrado: ' + label)
+
+          def replace_once(text, old, new, label):
+              need(text, old, label)
+              return text.replace(old, new, 1)
+
+          def sub_once(text, pattern, replacement, label, flags=0):
+              out, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit('Regex 4.9 não encontrado: ' + label)
+              return out
+
+          gradle = Path('app/build.gradle.kts')
+          g = gradle.read_text(encoding='utf-8')
+          g, count = re.subn(r'versionName\s*=\s*"Gama 4\.8"', 'versionName = "Gama 4.9"', g, count=1)
+          if count != 1:
+              raise SystemExit('versionName Gama 4.8 não encontrado.')
+          gradle.write_text(g, encoding='utf-8')
+
+          main = Path('app/src/main/java/com/gama/assistant/MainActivity.kt')
+          if main.is_file():
+              main.write_text(main.read_text(encoding='utf-8').replace('Gama 4.8', 'Gama 4.9'), encoding='utf-8')
+
+          energy = r'''package com.gama.assistant
+          import android.animation.ValueAnimator
+          import android.content.Context
+          import android.graphics.*
+          import android.util.AttributeSet
+          import android.view.View
+          import android.view.animation.LinearInterpolator
+          import kotlin.math.PI
+          import kotlin.math.cos
+          import kotlin.math.sin
+
+          class GamaEnergyView @JvmOverloads constructor(
+              context: Context,
+              attrs: AttributeSet? = null
+          ) : View(context, attrs) {
+              enum class Mode { LISTENING, THINKING, SPEAKING }
+              var mode: Mode = Mode.LISTENING
+                  set(value) { field = value; invalidate() }
+              private var phase = 0f
+              private var released = false
+              private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+              private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+              private val dots = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+              private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+                  duration = 1450L
+                  repeatCount = ValueAnimator.INFINITE
+                  interpolator = LinearInterpolator()
+                  addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+              }
+              init { setLayerType(LAYER_TYPE_SOFTWARE, null); animator.start() }
+
+              override fun onDraw(canvas: Canvas) {
+                  super.onDraw(canvas)
+                  val size = minOf(width, height).toFloat()
+                  if (size <= 0f) return
+                  val cx = width / 2f; val cy = height / 2f; val t = phase * PI * 2.0
+                  val activity = when (mode) { Mode.LISTENING -> .55f; Mode.THINKING -> .72f; Mode.SPEAKING -> 1f }
+                  val pulse = (.5 + .5 * sin(t * if (mode == Mode.SPEAKING) 3.0 else 1.4)).toFloat()
+                  line.setShadowLayer((size * .055f).coerceAtLeast(3f), 0f, 0f, Color.rgb(255,132,36))
+                  fill.color = Color.argb((24 + 28 * pulse).toInt(),255,132,36)
+                  canvas.drawCircle(cx, cy, size * (.19f + .02f * pulse), fill)
+                  val points = if (size < resources.displayMetrics.density * 140f) 76 else 132
+                  for (ringIndex in 0 until 5) {
+            val base = size * (.29f + ringIndex * .035f)
+            val ratio = when (mode) { Mode.LISTENING -> .017f; Mode.THINKING -> .026f; Mode.SPEAKING -> .044f }
+            val amp = size * ratio * (.66f + pulse * .55f) * (1f - ringIndex * .07f)
+            val path = Path()
+            for (i in 0..points) {
+                val a = i.toDouble() / points * PI * 2.0
+                val wobble = sin(a * (3.0 + ringIndex) + t * (1.0 + ringIndex * .18)) * amp +
+                    sin(a * 7.0 - t * 1.8 + ringIndex) * amp * .34
+                val r = base + wobble.toFloat()
+                val x = cx + cos(a).toFloat() * r; val y = cy + sin(a).toFloat() * r
+                if (i == 0) path.moveTo(x,y) else path.lineTo(x,y)
+            }
+            path.close()
+            line.strokeWidth = size * (.0043f + (4 - ringIndex) * .00042f)
+            line.color = Color.argb((92 + activity * 105 - ringIndex * 8).toInt().coerceIn(40,220),255,144,45)
+            canvas.drawPath(path,line)
+                  }
+                  if (mode == Mode.THINKING) {
+            dots.color = Color.rgb(255,188,94)
+            val orbit = size * .40f; val radius = (size * .011f).coerceAtLeast(1.8f)
+            for (i in 0 until 4) {
+                val a = t * 1.55 + i * PI / 2.0
+                canvas.drawCircle(cx + cos(a).toFloat()*orbit, cy + sin(a).toFloat()*orbit, radius, dots)
+            }
+                  }
+              }
+              fun release() { if (!released) { released = true; animator.cancel() } }
+              override fun onDetachedFromWindow() { release(); super.onDetachedFromWindow() }
+          }
+          '''
+          Path('app/src/main/java/com/gama/assistant/GamaEnergyView.kt').write_text(energy, encoding='utf-8')
+
+          lock_path = Path('app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt')
+          lock = lock_path.read_text(encoding='utf-8')
+          lock = lock.replace('VoiceRingView', 'GamaEnergyView')
+          marker = '\n/**\n * Anel de energia desenhado em tempo real.'
+          if marker not in lock:
+              raise SystemExit('Classe de energia antiga não encontrada na tela bloqueada.')
+          lock = lock[:lock.index(marker)] + '\n'
+          lock_path.write_text(lock, encoding='utf-8')
+
+          service_path = Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          s = service_path.read_text(encoding='utf-8')
+          s = s.replace('import android.animation.AnimatorSet\n', '')
+          s = s.replace('import android.animation.ObjectAnimator\n', '')
+          s = s.replace('import android.widget.ImageView\n', '')
+          s = replace_once(s, '    private var orb: ImageView? = null\n', '    private var orb: GamaEnergyView? = null\n', 'tipo da bolinha')
+          s = s.replace('    private var orbAnimator: AnimatorSet? = null\n', '')
+
+          s = replace_once(
+              s,
+              '    private var pendingSpeech: String? = null\n    private var pendingCloseAfterSpeech = false\n',
+              '    private var pendingSpeech: String? = null\n    private var pendingCloseAfterSpeech = false\n    private var queuedSpeechText: String? = null\n    private var queuedSpeechCloseAfter = false\n    private var queuedSpeechRecord = true\n',
+              'fila de fala',
+          )
+
+          visual_helper = '''    private fun setConversationVisual(mode: GamaEnergyView.Mode) {
+              uiHandler.post {
+                  orb?.mode = mode
+                  if (isDeviceLocked()) {
+                      val action = when (mode) {
+                          GamaEnergyView.Mode.LISTENING -> GamaLockConversationActivity.ACTION_LISTENING
+                          GamaEnergyView.Mode.THINKING -> GamaLockConversationActivity.ACTION_THINKING
+                          GamaEnergyView.Mode.SPEAKING -> GamaLockConversationActivity.ACTION_SPEAKING
+                      }
+                      sendLockConversationUi(action)
+                  }
+              }
+          }
+
+          '''
+          s = replace_once(s, '    private fun showWakeUi() {\n', visual_helper + '    private fun showWakeUi() {\n', 'helper visual compartilhado')
+
+          show_orb = '''    private fun showOrb() {
+              if (!Settings.canDrawOverlays(this)) return
+              if (orb != null) return
+              wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+              orb = GamaEnergyView(this).apply {
+                  mode = GamaEnergyView.Mode.LISTENING
+                  alpha = 1f
+                  elevation = dp(16).toFloat()
+                  contentDescription = "Gama"
+              }
+              val type = if (Build.VERSION.SDK_INT >= 26) {
+                  WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+              } else {
+                  @Suppress("DEPRECATION")
+                  WindowManager.LayoutParams.TYPE_PHONE
+              }
+              orbParams = WindowManager.LayoutParams(
+                  dp(96), dp(96), type,
+                  WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                      WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                  PixelFormat.TRANSLUCENT
+              ).apply {
+                  gravity = Gravity.BOTTOM or Gravity.END
+                  x = dp(10)
+                  y = dp(38)
+              }
+              makeOrbDraggable()
+              try {
+                  wm?.addView(orb, orbParams)
+                  setConversationVisual(GamaEnergyView.Mode.LISTENING)
+              } catch (e: Exception) {
+                  Log.w(TAG, "Não foi possível mostrar a bolinha", e)
+                  orb?.release()
+                  orb = null
+                  updateNotification("Escuta ativa • autorize a bolinha nas configurações do Gama")
+              }
+          }
+
+          private fun makeOrbDraggable() {'''
+          s = sub_once(
+              s,
+              r'    private fun showOrb\(\) \{.*?\n    private fun makeOrbDraggable\(\) \{',
+              show_orb,
+              'overlay compartilhado',
+              re.S,
+          )
+
+          orb_states = '''    private fun startIdleAnimation() {
+              setConversationVisual(GamaEnergyView.Mode.LISTENING)
+          }
+
+          private fun setOrbListening() {
+              setConversationVisual(GamaEnergyView.Mode.LISTENING)
+          }
+
+          private fun animateOrbWake() {
+              setConversationVisual(GamaEnergyView.Mode.LISTENING)
+          }
+
+          private fun animateOrbSpeaking() {
+              setConversationVisual(GamaEnergyView.Mode.SPEAKING)
+          }
+
+          private fun removeOrb() {
+              val view = orb ?: return
+              view.release()
+              try { wm?.removeView(view) } catch (_: Exception) {}
+              orb = null
+          }
+          '''
+          s = sub_once(
+              s,
+              r'    private fun startIdleAnimation\(\) \{.*?\n    private fun dp\(value: Int\): Int',
+              orb_states + '\n    private fun dp(value: Int): Int',
+              'estados da bolinha',
+              re.S,
+          )
+
+          s = replace_once(
+              s,
+              '        // Nunca reutilize contexto de uma resposta privada na conversa pública.\n',
+              '        setConversationVisual(GamaEnergyView.Mode.THINKING)\n        // Nunca reutilize contexto de uma resposta privada na conversa pública.\n',
+              'estado pensando',
+          )
+          s = s.replace(
+              '        hideWakeUi()\n\n        thread(name = "gama-research") {',
+              '        setConversationVisual(GamaEnergyView.Mode.THINKING)\n\n        thread(name = "gama-research") {',
+              1,
+          )
+          s = s.replace(
+              '        updateNotification("Consultando dados autorizados...")\n',
+              '        updateNotification("Consultando dados autorizados...")\n        setConversationVisual(GamaEnergyView.Mode.THINKING)\n',
+              1,
+          )
+          s = s.replace(
+              '        updateNotification("Pensando...")\n\n        thread(name = "gama-brain-answer") {',
+              '        updateNotification("Pensando...")\n        setConversationVisual(GamaEnergyView.Mode.THINKING)\n\n        thread(name = "gama-brain-answer") {',
+              1,
+          )
+
+          speak_function = '''    private fun speak(text: String, closeAfter: Boolean = false, record: Boolean = true) {
+              if (!running) return
+              if (Looper.myLooper() != Looper.getMainLooper()) {
+                  uiHandler.post { speak(text, closeAfter, record) }
+                  return
+              }
+              if ((speaking || ttsSpeaking) && activeUtterance != null) {
+                  queuedSpeechText = text
+                  queuedSpeechCloseAfter = closeAfter
+                  queuedSpeechRecord = record
+                  return
+              }
+              markResponseStarted()
+              val displayText = if (record) {
+                  GamaPersona.address(text, OwnerIdentity.treatment(this), OwnerIdentity.name(this))
+              } else text
+              if (displayText.isBlank()) return
+              if (record && !isDeviceLocked()) AssistantRuntime.add(false, displayText)
+              if (record && !isDeviceLocked()) conversation.gamaSaid(displayText)
+              sendBroadcast(Intent(LockScreenActivity.ACTION_SPEAKING).setPackage(packageName))
+              closeUiAfterSpeech = closeAfter && !isDeviceLocked() && !conversation.active
+              setConversationVisual(GamaEnergyView.Mode.SPEAKING)
+              if (!ttsReady) {
+                  if (ttsFailed) {
+                      val id = "failed-${SystemClock.elapsedRealtimeNanos()}"
+                      activeUtterance = id
+                      finishTts(id)
+                  } else {
+                      pendingSpeech = displayText
+                      pendingCloseAfterSpeech = closeAfter
+                  }
+                  return
+              }
+              ttsSpeaking = true
+              speaking = true
+              val id = "gama-${SystemClock.elapsedRealtimeNanos()}"
+              activeUtterance = id
+              activeSpeechText = displayText
+              ttsRetryCount = 0
+              val result = tts?.speak(displayText, TextToSpeech.QUEUE_FLUSH, null, id)
+              if (result == null || result == TextToSpeech.ERROR) finishTts(id)
+              uiHandler.postDelayed(
+                  { if (activeUtterance == id) finishTts(id) },
+                  maxOf(15000L, displayText.length * 180L)
+              )
+          }
+          '''
+          s = sub_once(
+              s,
+              r'    private fun speak\(text: String, closeAfter: Boolean = false, record: Boolean = true\) \{.*?\n    private fun isTimeQuestion\(raw: String\): Boolean \{',
+              speak_function + '\n    private fun isTimeQuestion(raw: String): Boolean {',
+              'coordenador de fala',
+              re.S,
+          )
+
+          finish = '''    private fun finishTts(id: String?) {
+              uiHandler.post {
+                  if (id != activeUtterance || !running) return@post
+                  activeUtterance = null
+                  activeSpeechText = null
+                  ttsRetryCount = 0
+                  speaking = false
+                  ttsSpeaking = false
+
+                  val nextText = queuedSpeechText
+                  val nextClose = queuedSpeechCloseAfter
+                  val nextRecord = queuedSpeechRecord
+                  queuedSpeechText = null
+                  queuedSpeechCloseAfter = false
+                  queuedSpeechRecord = true
+
+                  val now = SystemClock.elapsedRealtime()
+                  ignoreAudioUntil = now + 650L
+                  if (externalActionGuardAfterTts) {
+                      externalActionGuardAfterTts = false
+                      postExternalNoiseGuardUntil = now + 2400L
+                      postExternalNumericGuardUntil = now + 8000L
+                  }
+                  postAudio {
+                      recognizer?.reset()
+                      decoderActive = false
+                      voicedBlocks = 0
+                      preRoll = ByteArray(0)
+                      bargePreRoll = ByteArray(0)
+                      speechHoldUntil = 0L
+                  }
+
+                  if (!nextText.isNullOrBlank()) {
+                      speak(nextText, nextClose, nextRecord)
+                      return@post
+                  }
+
+                  setConversationVisual(GamaEnergyView.Mode.LISTENING)
+                  postAudio {
+                      if (armCommandWindowAfterTts) {
+                          beginCommandWindow()
+                          val queued = queuedWakeCommand
+                          queuedWakeCommand = null
+                          if (queued != null) authorizeCommand(queued.first, queued.second, fromVoice = true)
+                      } else if (conversation.active && transcription == null && !ownerEnrollmentMode) {
+                          touchConversation()
+                          beginCommandWindow()
+                          updateNotification("Conversa contínua • pode falar")
+                      } else if (closeUiAfterSpeech) {
+                          closeUiAfterSpeech = false
+                          hideWakeUi()
+                      }
+                  }
+              }
+          }
+          '''
+          s = sub_once(
+              s,
+              r'    private fun finishTts\(id: String\?\) \{.*?\n    private fun listenLoop\(\) \{',
+              finish + '\n    private fun listenLoop() {',
+              'finalização independente do microfone',
+              re.S,
+          )
+
+          helpers = '''    private fun drainAudioTasks() {
+              while (true) {
+                  val action = audioTasks.poll() ?: break
+                  try { action() } catch (e: Exception) { Log.w(TAG, "Falha em tarefa de áudio", e) }
+              }
+          }
+
+          private fun waitForMicRetry(delayMs: Long) {
+              val deadline = SystemClock.elapsedRealtime() + delayMs
+              while (running && SystemClock.elapsedRealtime() < deadline) {
+                  drainAudioTasks()
+                  try { Thread.sleep(200L) } catch (_: InterruptedException) { return }
+              }
+          }
+
+          '''
+          s = replace_once(s, '    private fun enableVoice() {\n', helpers + '    private fun enableVoice() {\n', 'dreno de tarefas')
+          s = s.replace(
+              '                        try { Thread.sleep(retryDelay) } catch (_: InterruptedException) { break }\n',
+              '                        waitForMicRetry(retryDelay)\n',
+              1,
+          )
+          s = s.replace(
+              '                while (true) { val action = audioTasks.poll() ?: break; action() }\n',
+              '                drainAudioTasks()\n',
+              1,
+          )
+          s = s.replace(
+              '                if (read == 0) { Thread.sleep(20L); continue }\n',
+              '                if (read == 0) { drainAudioTasks(); Thread.sleep(20L); continue }\n',
+              1,
+          )
+
+          s = replace_once(
+              s,
+              '        pendingCloseAfterSpeech = false\n        recognizer?.reset()\n',
+              '        pendingCloseAfterSpeech = false\n        queuedSpeechText = null\n        queuedSpeechCloseAfter = false\n        queuedSpeechRecord = true\n        activeSpeechText = null\n        ttsRetryCount = 0\n        recognizer?.reset()\n',
+              'limpeza de fala interrompida',
+          )
+
+          s = replace_once(
+              s,
+              '        brainBusy = true\n        updateNotification("Pensando...")\n',
+              '''        brainBusy = true
+              updateNotification("Pensando...")
+              uiHandler.postDelayed({
+                  if (running && brainBusy && generation == requestGeneration) {
+                      brainBusy = false
+                      requestGeneration++
+                      updateNotification("Resposta local interrompida por tempo limite.")
+                      speak("Não consegui concluir essa resposta. Pode tentar novamente.", true)
+                  }
+              }, 90000L)
+          ''',
+              'watchdog da IA local',
+          )
+          s = replace_once(
+              s,
+              '        liveBusy = true\n        updateNotification("Consultando dados autorizados...")\n',
+              '''        liveBusy = true
+              updateNotification("Consultando dados autorizados...")
+              uiHandler.postDelayed({
+                  if (running && liveBusy && generation == requestGeneration) {
+                      liveBusy = false
+                      requestGeneration++
+                      speak("A consulta demorou demais. Pode pedir novamente.", true)
+                  }
+              }, 30000L)
+          ''',
+              'watchdog de dados locais',
+          )
+          s = replace_once(
+              s,
+              '        researchBusy = true\n        updateNotification("Pesquisando: $query")\n',
+              '''        researchBusy = true
+              updateNotification("Pesquisando: $query")
+              uiHandler.postDelayed({
+                  if (running && researchBusy && generation == requestGeneration) {
+                      researchBusy = false
+                      requestGeneration++
+                      speak("A pesquisa demorou demais. Tente novamente em instantes.", true)
+                  }
+              }, 35000L)
+          ''',
+              'watchdog de pesquisa',
+          )
+
+          service_path.write_text(s, encoding='utf-8')
+
+          print('Gama 4.9 aplicado:')
+          print('  bolinha e tela bloqueada usam o mesmo GamaEnergyView')
+          print('  estados Ouvindo/Pensando/Falando são sincronizados')
+          print('  uma resposta não corta outra resposta em andamento')
+          print('  fim do TTS não depende do microfone estar saudável')
+          print('  tarefas continuam durante reconexão do AudioRecord')
+          print('  IA, pesquisa e dados locais têm watchdog de recuperação')
+          PY_49
+
+          test -f app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+          grep -Fq 'versionName = "Gama 4.9"' app/build.gradle.kts
+          grep -Fq 'private var orb: GamaEnergyView? = null' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'GamaEnergyView(this)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'GamaEnergyView(this)' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
+          grep -Fq 'setConversationVisual(GamaEnergyView.Mode.THINKING)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'queuedSpeechText' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'waitForMicRetry' app/src/main/java/com/gama/assistant/GamaService.kt
+          if grep -Fq 'private var orb: ImageView?' app/src/main/java/com/gama/assistant/GamaService.kt; then exit 1; fi
+          echo 'Gama 4.9 visual/state patch validado.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -2597,7 +2329,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-4.8-APK
+          name: Gama-4.9-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -2635,6 +2367,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 4.8 (${GAMA_TAG})" \
+              --title "Gama 4.9 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
