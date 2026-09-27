@@ -1,4 +1,4 @@
-name: Build Gama 4.7 APK (Android identity session, configured name and orange orb)
+name: Build Gama 4.8 APK (runtime stability, smooth orange orb and reliable voice)
 
 on:
   workflow_dispatch:
@@ -2076,6 +2076,393 @@ jobs:
           if grep -q 'vosk-model-spk' tools/download_models.sh; then exit 1; fi
           echo 'Gama 4.7 validado.'
 
+      - name: Apply Gama 4.8 runtime stability fixes
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_48'
+          from pathlib import Path
+          import re
+
+
+          def must_replace(text, old, new, label):
+              if old not in text:
+                  raise SystemExit('Ponto do patch 4.8 não encontrado: ' + label)
+              return text.replace(old, new, 1)
+
+
+          def sub_once(text, pattern, replacement, label, flags=0):
+              out, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+              if count != 1:
+                  raise SystemExit('Ponto regex do patch 4.8 não encontrado: ' + label)
+              return out
+
+
+          gradle = Path('app/build.gradle.kts')
+          g = gradle.read_text(encoding='utf-8')
+          g = re.sub(r'versionName\s*=\s*"Gama 4\.7"', 'versionName = "Gama 4.8"', g, count=1)
+          gradle.write_text(g, encoding='utf-8')
+
+          main = Path('app/src/main/java/com/gama/assistant/MainActivity.kt')
+          if main.is_file():
+              ms = main.read_text(encoding='utf-8').replace('Gama 4.7', 'Gama 4.8')
+              main.write_text(ms, encoding='utf-8')
+
+          service_path = Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          s = service_path.read_text(encoding='utf-8')
+
+          receiver_block = '''        if (Build.VERSION.SDK_INT >= 33) registerReceiver(deviceStateReceiver, stateFilter, Context.RECEIVER_NOT_EXPORTED)
+                  else registerReceiver(deviceStateReceiver, stateFilter)
+          '''
+          if 'recentAndroidAuth = SystemClock.elapsedRealtime() // trusted unlocked service start' not in s:
+              s = must_replace(
+                  s,
+                  receiver_block,
+                  receiver_block + '''        if (!isDeviceLocked()) {
+                      recentAndroidAuth = SystemClock.elapsedRealtime() // trusted unlocked service start
+                  }
+          ''',
+                  'sessão Android já desbloqueada',
+              )
+
+          s = sub_once(
+              s,
+              r'''                        if \(consecutiveFailures >= 3\) \{\n.*?                            try \{ Thread\.sleep\(2000L \* consecutiveFailures\) \} catch \(_: InterruptedException\) \{ break \}\n''',
+              '''                        val retryDelay = minOf(10000L, 1500L * consecutiveFailures.coerceAtMost(6))
+                                  updateNotification("Reconectando o microfone...")
+                                  try { Thread.sleep(retryDelay) } catch (_: InterruptedException) { break }
+                                  if (consecutiveFailures > 6) consecutiveFailures = 3
+          ''',
+              'recuperação contínua do microfone',
+              re.S,
+          )
+
+          s = sub_once(
+              s,
+              r'''                if \(speaking \|\| ttsSpeaking\) \{\n                    // Full-duplex interruption is limited to headphone output: on the\n                    // phone speaker, Gama would otherwise transcribe its own TTS\.\n                    if \(conversation\.active && !armCommandWindowAfterTts && headsetAudioOutput\(now\)\) \{.*?\n                    continue\n                \}''',
+              '''                if (speaking || ttsSpeaking) {
+                              // Prioridade total à fala do Gama. A bolinha ainda pode ser tocada para interromper.
+                              // Isso impede eco/ruído do próprio TTS de cortar respostas no meio.
+                              bargePreRoll = ByteArray(0)
+                              voicedBlocks = 0
+                              continue
+                          }''',
+              'bloqueio de eco durante TTS',
+              re.S,
+          )
+
+          old_ack = '''    private fun acknowledgeWake() {
+                  transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+                  transcription = null
+                  clearOwnerVoiceRetry()
+                  commandWindow.clear()
+                  queuedWakeCommand = null
+                  conversation.open()
+                  touchConversation()
+                  interactionToken++
+                  waitingForCommandStart = false
+                  commandSpeechStarted = false
+                  conversationUntil = 0L
+                  wakeUntil = 0L
+                  lastWakeAt = SystemClock.elapsedRealtime()
+                  showWakeUi()
+                  animateOrbWake()
+                  uiHandler.removeCallbacks(uiTimeout)
+                  armCommandWindowAfterTts = true
+                  updateNotification("Conversa contínua iniciada")
+                  speak("Estou ouvindo.", false)
+              }
+          '''
+          new_ack = '''    private fun acknowledgeWake(speakAcknowledgement: Boolean = true) {
+                  transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+                  transcription = null
+                  clearOwnerVoiceRetry()
+                  commandWindow.clear()
+                  queuedWakeCommand = null
+                  conversation.open()
+                  touchConversation()
+                  interactionToken++
+                  waitingForCommandStart = false
+                  commandSpeechStarted = false
+                  conversationUntil = 0L
+                  wakeUntil = 0L
+                  lastWakeAt = SystemClock.elapsedRealtime()
+                  showWakeUi()
+                  animateOrbWake()
+                  uiHandler.removeCallbacks(uiTimeout)
+                  if (speakAcknowledgement) {
+                      armCommandWindowAfterTts = true
+                      updateNotification("Conversa contínua iniciada")
+                      speak("Estou ouvindo.", false)
+                  } else {
+                      armCommandWindowAfterTts = false
+                      updateNotification("Pedido reconhecido")
+                  }
+              }
+          '''
+          s = must_replace(s, old_ack, new_ack, 'acknowledgeWake sem fala intermediária')
+
+          old_final = '''        } else if (VoicePolicy.hasWake(spoken)) {
+                      val command = VoicePolicy.command(spoken)
+                      acknowledgeWake()
+                      if (command.isNotBlank()) queuedWakeCommand = command to json
+                  }
+          '''
+          new_final = '''        } else if (VoicePolicy.hasWake(spoken)) {
+                      val command = VoicePolicy.command(spoken)
+                      if (command.isBlank()) {
+                          acknowledgeWake()
+                      } else {
+                          acknowledgeWake(false)
+                          authorizeCommand(command, json, fromVoice = true)
+                      }
+                  }
+          '''
+          s = must_replace(s, old_final, new_final, 'hotword + comando direto')
+
+          if 'private var activeSpeechText: String? = null' not in s:
+              s = must_replace(
+                  s,
+                  '    @Volatile private var activeUtterance: String? = null\n',
+                  '    @Volatile private var activeUtterance: String? = null\n    @Volatile private var activeSpeechText: String? = null\n    @Volatile private var ttsRetryCount = 0\n',
+                  'estado de retry do TTS',
+              )
+
+          s = must_replace(
+              s,
+              '''                override fun onDone(utteranceId: String?) = finishTts(utteranceId)
+                          @Deprecated("Deprecated in Java")
+                          override fun onError(utteranceId: String?) = finishTts(utteranceId)
+                          override fun onStop(utteranceId: String?, interrupted: Boolean) = finishTts(utteranceId)
+          ''',
+              '''                override fun onDone(utteranceId: String?) = finishTts(utteranceId)
+                          @Deprecated("Deprecated in Java")
+                          override fun onError(utteranceId: String?) = retryOrFinishTts(utteranceId)
+                          override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                              if (interrupted) retryOrFinishTts(utteranceId) else finishTts(utteranceId)
+                          }
+          ''',
+              'callbacks robustos do TTS',
+          )
+
+          retry_helper = '''    private fun retryOrFinishTts(id: String?) {
+                  uiHandler.post {
+                      if (id != activeUtterance || !running) return@post
+                      val text = activeSpeechText
+                      if (text.isNullOrBlank() || ttsRetryCount >= 1 || !ttsReady) {
+                          finishTts(id)
+                          return@post
+                      }
+                      ttsRetryCount++
+                      val retryId = "gama-retry-${SystemClock.elapsedRealtimeNanos()}"
+                      activeUtterance = retryId
+                      speaking = true
+                      ttsSpeaking = true
+                      val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, retryId)
+                      if (result == null || result == TextToSpeech.ERROR) {
+                          finishTts(retryId)
+                      } else {
+                          uiHandler.postDelayed(
+                              { if (activeUtterance == retryId) finishTts(retryId) },
+                              maxOf(15000L, text.length * 180L)
+                          )
+                      }
+                  }
+              }
+
+          '''
+          if 'private fun retryOrFinishTts(' not in s:
+              s = must_replace(s, '    private fun finishTts(id: String?) {\n', retry_helper + '    private fun finishTts(id: String?) {\n', 'helper retry TTS')
+
+          s = must_replace(
+              s,
+              '''            activeUtterance = null
+                      speaking = false
+                      ttsSpeaking = false
+          ''',
+              '''            activeUtterance = null
+                      activeSpeechText = null
+                      ttsRetryCount = 0
+                      speaking = false
+                      ttsSpeaking = false
+          ''',
+              'limpeza do retry TTS',
+          )
+
+          s = must_replace(
+              s,
+              '''        val id = "gama-${SystemClock.elapsedRealtimeNanos()}"
+                  activeUtterance = id
+                  val result = tts?.speak(displayText, TextToSpeech.QUEUE_FLUSH, null, id)
+          ''',
+              '''        val id = "gama-${SystemClock.elapsedRealtimeNanos()}"
+                  activeUtterance = id
+                  activeSpeechText = displayText
+                  ttsRetryCount = 0
+                  val result = tts?.speak(displayText, TextToSpeech.QUEUE_FLUSH, null, id)
+          ''',
+              'registro do texto ativo do TTS',
+          )
+
+          smooth_orb = '''    private fun startIdleAnimation() {
+                  setOrbListening()
+              }
+
+              private fun setOrbListening() {
+                  val v = orb ?: return
+                  v.post {
+                      orbAnimator?.cancel()
+                      v.animate().cancel()
+                      v.setColorFilter(Color.rgb(255, 140, 40))
+                      v.rotation = 0f
+                      v.scaleX = 1f
+                      v.scaleY = 1f
+                      v.alpha = 0.94f
+                      val sx = ObjectAnimator.ofFloat(v, "scaleX", 1f, 1.035f, 1f).apply {
+                          duration = 1900L; repeatCount = ObjectAnimator.INFINITE
+                      }
+                      val sy = ObjectAnimator.ofFloat(v, "scaleY", 1f, 1.035f, 1f).apply {
+                          duration = 1900L; repeatCount = ObjectAnimator.INFINITE
+                      }
+                      val a = ObjectAnimator.ofFloat(v, "alpha", 0.90f, 1f, 0.92f).apply {
+                          duration = 1900L; repeatCount = ObjectAnimator.INFINITE
+                      }
+                      orbAnimator = AnimatorSet().apply { playTogether(sx, sy, a); start() }
+                  }
+              }
+
+              private fun animateOrbWake() {
+                  val v = orb ?: return
+                  v.post {
+                      orbAnimator?.cancel()
+                      v.animate().cancel()
+                      v.setColorFilter(Color.rgb(255, 153, 51))
+                      v.rotation = 0f
+                      v.scaleX = 1f
+                      v.scaleY = 1f
+                      val sx = ObjectAnimator.ofFloat(v, "scaleX", 1f, 1.11f, 1f)
+                      val sy = ObjectAnimator.ofFloat(v, "scaleY", 1f, 1.11f, 1f)
+                      val a = ObjectAnimator.ofFloat(v, "alpha", 0.88f, 1f, 0.95f)
+                      orbAnimator = AnimatorSet().apply { playTogether(sx, sy, a); duration = 420L; start() }
+                  }
+              }
+
+              private fun animateOrbSpeaking() {
+                  val v = orb ?: return
+                  v.post {
+                      orbAnimator?.cancel()
+                      v.animate().cancel()
+                      v.setColorFilter(Color.rgb(255, 125, 28))
+                      v.rotation = 0f
+                      v.scaleX = 1f
+                      v.scaleY = 1f
+                      val sx = ObjectAnimator.ofFloat(v, "scaleX", 1f, 1.055f, 1f).apply {
+                          duration = 1050L; repeatCount = ObjectAnimator.INFINITE
+                      }
+                      val sy = ObjectAnimator.ofFloat(v, "scaleY", 1f, 1.055f, 1f).apply {
+                          duration = 1050L; repeatCount = ObjectAnimator.INFINITE
+                      }
+                      val a = ObjectAnimator.ofFloat(v, "alpha", 0.88f, 1f, 0.91f).apply {
+                          duration = 1050L; repeatCount = ObjectAnimator.INFINITE
+                      }
+                      orbAnimator = AnimatorSet().apply { playTogether(sx, sy, a); start() }
+                  }
+              }
+
+              private fun removeOrb() {'''
+          s = sub_once(
+              s,
+              r'    private fun startIdleAnimation\(\) \{.*?\n    private fun removeOrb\(\) \{',
+              smooth_orb,
+              'animação suave da bolinha',
+              re.S,
+          )
+
+          service_path.write_text(s, encoding='utf-8')
+
+          smart_path = Path('app/src/main/java/com/gama/assistant/SmartFeatures.kt')
+          smart = smart_path.read_text(encoding='utf-8')
+          smart = must_replace(
+              smart,
+              '        "tenho algum evento", "tenho compromissos", "tenho eventos"\n',
+              '        "tenho algum evento", "tenho compromissos", "tenho eventos",\n        "tem algo marcado para hoje", "tenho algo marcado para hoje", "algo marcado para hoje",\n        "tem alguma coisa marcada para hoje", "alguma coisa marcada para hoje",\n        "ha algo marcado para hoje", "algum compromisso hoje", "algum evento hoje"\n',
+              'sinônimos de agenda',
+          )
+          smart = must_replace(
+              smart,
+              '''        return hasCalendarNoun && personalOrTime
+              }''',
+              '''        val markedTime = n.contains("marcad") && listOf(
+                      "hoje", "amanha", "semana", "proximos dias", "dias seguintes"
+                  ).any { n.contains(it) }
+                  return (hasCalendarNoun && personalOrTime) || markedTime
+              }''',
+              'roteamento marcado para hoje',
+          )
+          smart_path.write_text(smart, encoding='utf-8')
+
+          identity_path = Path('app/src/main/java/com/gama/assistant/GamaIdentity.kt')
+          ident = identity_path.read_text(encoding='utf-8')
+          ident = must_replace(
+              ident,
+              '''        val calendarPersonal =
+                      listOf("agenda", "compromisso", "compromissos", "evento", "eventos").any { c.contains(it) } &&
+                      listOf("tenho", "minha", "meu", "meus", "minhas", "proximo", "proximos", "hoje", "amanha", "semana", "dias").any { c.contains(it) }
+                  return personal.any { c == it || c.startsWith(it) || c.contains(" $it") } ||
+                      calendarPersonal ||''',
+              '''        val calendarPersonal =
+                      listOf("agenda", "compromisso", "compromissos", "evento", "eventos").any { c.contains(it) } &&
+                      listOf("tenho", "minha", "meu", "meus", "minhas", "proximo", "proximos", "hoje", "amanha", "semana", "dias").any { c.contains(it) }
+                  val markedCalendarPersonal = c.contains("marcad") &&
+                      listOf("hoje", "amanha", "semana", "proximos dias", "dias seguintes").any { c.contains(it) }
+                  return personal.any { c == it || c.startsWith(it) || c.contains(" $it") } ||
+                      calendarPersonal || markedCalendarPersonal ||''',
+              'privacidade para frases marcado',
+          )
+          identity_path.write_text(ident, encoding='utf-8')
+
+          sf_test = Path('app/src/test/java/com/gama/assistant/SmartFeaturesTest.kt')
+          st = sf_test.read_text(encoding='utf-8')
+          st = must_replace(
+              st,
+              '        assertTrue(SmartFeatures.isAsync("qual e meu proximo evento"))\n',
+              '        assertTrue(SmartFeatures.isAsync("qual e meu proximo evento"))\n        assertTrue(SmartFeatures.isAsync("tem algo marcado para hoje"))\n        assertTrue(SmartFeatures.isAsync("alguma coisa marcada para hoje"))\n',
+              'teste agenda natural',
+          )
+          sf_test.write_text(st, encoding='utf-8')
+
+          id_test = Path('app/src/test/java/com/gama/assistant/GamaIdentityTest.kt')
+          it = id_test.read_text(encoding='utf-8')
+          it = must_replace(
+              it,
+              '        assertTrue(IdentityIntent.requiresDeviceProof("Qual é meu nome?"))\n',
+              '        assertTrue(IdentityIntent.requiresDeviceProof("Qual é meu nome?"))\n        assertTrue(IdentityIntent.requiresDeviceProof("Tem algo marcado para hoje?"))\n',
+              'teste privacidade agenda natural',
+          )
+          id_test.write_text(it, encoding='utf-8')
+
+          print('Gama 4.8 runtime fixes aplicados:')
+          print('  hotword + comando responde direto, sem TTS intermediário')
+          print('  TTS faz uma tentativa de recuperação se o engine interromper a fala')
+          print('  escuta se reconecta sem desligar o serviço após falhas transitórias')
+          print('  barge-in por eco desativado; toque na bolinha ainda interrompe')
+          print('  bolinha laranja com animação suave e sem rotação')
+          print('  frases como tem algo marcado para hoje entram na agenda')
+          print('  sessão Android é inicializada quando o serviço começa já desbloqueado')
+          PY_48
+
+          grep -Fq 'versionName = "Gama 4.8"' app/build.gradle.kts
+          grep -Fq 'acknowledgeWake(false)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'retryOrFinishTts' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'retryDelay = minOf(10000L' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'tem algo marcado para hoje' app/src/main/java/com/gama/assistant/SmartFeatures.kt
+          grep -Fq 'markedCalendarPersonal' app/src/main/java/com/gama/assistant/GamaIdentity.kt
+          if grep -Fq 'ObjectAnimator.ofFloat(v, "rotation",' app/src/main/java/com/gama/assistant/GamaService.kt; then
+            echo 'Ainda existe rotação da bolinha no patch 4.8.' >&2
+            exit 1
+          fi
+          echo 'Gama 4.8 runtime patch validado.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -2210,7 +2597,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-4.7-APK
+          name: Gama-4.8-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -2248,6 +2635,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 4.7 (${GAMA_TAG})" \
+              --title "Gama 4.8 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
