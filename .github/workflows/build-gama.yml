@@ -2245,7 +2245,7 @@ jobs:
           grep -Fq 'Falando' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
           grep -Fq 'CONVERSATION_IDLE_TIMEOUT_MS = 60L * 60L * 1000L' app/src/main/java/com/gama/assistant/GamaService.kt
           grep -Fq 'showLockConversationUi' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'maybeShowLockConversationVisual' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'sendLockConversationUi' app/src/main/java/com/gama/assistant/GamaService.kt
           grep -Fq 'Gama 4.4' app/build.gradle.kts
 
       - name: Java 17
