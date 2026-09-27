@@ -1644,6 +1644,39 @@ jobs:
           }
           '''
           write('app/src/main/java/com/gama/assistant/GamaPersona.kt', persona)
+
+          # Atualiza os testes legados para a identidade configurável da Gama 4.7.
+          persona_test = r'''package com.gama.assistant
+
+          import org.junit.Assert.*
+          import org.junit.Test
+
+          class GamaPersonaTest {
+              @Test fun addressesWithoutDuplicatingTitle() {
+                  assertEquals("Senhor, Feito.", GamaPersona.address("Feito.", "Senhor"))
+                  assertEquals("Senhora, Certo.", GamaPersona.address("Certo.", "Senhora"))
+                  assertEquals("Senhor Pedro, Feito.", GamaPersona.address("Feito.", "Senhor", "Pedro"))
+                  assertEquals("Senhor Pedro, estou ouvindo", GamaPersona.address("Sim senhor, estou ouvindo", "Senhor", "Pedro"))
+                  assertEquals("Senhor Pedro, Feito.", GamaPersona.address("Senhor Pedro, Feito.", "Senhor", "Pedro"))
+              }
+
+              @Test fun batteryAdviceUsesOnlyMeasuredLevel() {
+                  assertTrue(GamaPersona.batteryAdvice(9).contains("carregador"))
+                  assertEquals("", GamaPersona.batteryAdvice(75))
+              }
+
+              @Test fun offlinePromptForbidsInventedActionsAndUsesOnlyExplicitFacts() {
+                  val result = GamaPersona.prompt("Qual a agenda?", "", "Senhor", listOf("Prefere café"), true)
+                  assertTrue(result.contains("Trate o usuário como Senhor"))
+                  assertTrue(result.contains("não armazena perfil de voz", ignoreCase = true))
+                  assertTrue(result.contains("Prefere café"))
+                  assertTrue(result.contains("Modo foco local ativado"))
+                  assertTrue(result.contains("Nunca diga que acessou"))
+                  assertTrue(result.contains("Dados pessoais dependem de uma sessão autenticada pelo Android"))
+              }
+          }
+          '''
+          write('app/src/test/java/com/gama/assistant/GamaPersonaTest.kt', persona_test)
           
           # Tratamento vem do perfil autenticado, não de comando de voz.
           profile_path = Path('app/src/main/java/com/gama/assistant/GamaProfile.kt')
@@ -2038,6 +2071,7 @@ jobs:
           grep -Fq 'setColorFilter(Color.rgb(255, 132, 36))' app/src/main/java/com/gama/assistant/GamaService.kt
           grep -Fq 'Color.rgb(255, 153, 51)' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
           grep -Fq 'recognizer = Recognizer(model, SAMPLE_RATE.toFloat())' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'Senhor Pedro, estou ouvindo' app/src/test/java/com/gama/assistant/GamaPersonaTest.kt
           if grep -Fq 'Recognizer(model, SAMPLE_RATE.toFloat(), speakerModel)' app/src/main/java/com/gama/assistant/GamaService.kt; then exit 1; fi
           if grep -q 'vosk-model-spk' tools/download_models.sh; then exit 1; fi
           echo 'Gama 4.7 validado.'
