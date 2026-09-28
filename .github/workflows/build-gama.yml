@@ -1,4 +1,4 @@
-name: Build Gama 5.4 APK (smart intent router and reliable app opening)
+name: Build Gama 5.5 APK (continuous private conversation and WhatsApp recovery)
 
 on:
   workflow_dispatch:
@@ -1646,6 +1646,78 @@ jobs:
           grep -Fq 'abre o zap pra mim' app/src/test/java/com/gama/assistant/CommandRouterTest.kt
           echo 'Gama 5.4 validado: comandos locais antes da IA e proteção contra transcrição ruim.'
 
+      - name: Apply Gama 5.5 continuous private conversation and WhatsApp recovery
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama55.patch.gz.b64 <<'GAMA55_PATCH'
+          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
+          Ci3g/wKgnITOWjoAAA==
+          GAMA55_PATCH
+          base64 -d /tmp/gama55.patch.gz.b64 | gzip -d > /tmp/gama55.patch
+          patch -p1 < /tmp/gama55.patch
+          grep -Fq 'versionName = "Gama 5.5"' app/build.gradle.kts
+          grep -Fq 'ownerAuthResumeConversation' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'speakCommandReply(answer, privateData)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'installedAppsCache' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'abre apesar' app/src/test/java/com/gama/assistant/CommandRouterTest.kt
+          echo 'Gama 5.5 validado: conversa continua após dados privados e WhatsApp tolera a transcrição apesar.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -1712,7 +1784,7 @@ jobs:
           import re
 
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 5.3: diagnóstico\n\n')
+              out.write('## Gama 5.5: diagnóstico\n\n')
               for name in ('gama-build.log', 'gama-tests.log'):
                   log = Path(name)
                   if not log.is_file():
@@ -1780,7 +1852,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-5.4-APK
+          name: Gama-5.5-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1803,7 +1875,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama-release.md <<'NOTES'
-          Gama 5.3 preserva as correções da 5.2 e melhora a velocidade e a continuidade da conversa. O modelo local gera respostas curtas, usa histórico somente em perguntas que realmente dependem do turno anterior e não bloqueia mais o executor rápido. O Gama também entende pedidos de mensagem pelo WhatsApp: pode responder diretamente por uma notificação com resposta rápida quando disponível; caso contrário, localiza o contato autorizado e abre a conversa com a mensagem pronta.
+          Gama 5.5 preserva o roteador inteligente da 5.4 e corrige a conversa contínua após consultar mensagens, notificações e calendário. Pedidos privados continuam na sessão de voz sem serem enviados ao histórico da IA. O roteador também recupera o erro observado em que o Vosk transcreve WhatsApp como “apesar”, evita buscas pesadas repetidas na lista de apps e protege a abertura de aplicativos contra exceções.
           NOTES
 
           if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
@@ -1816,6 +1888,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 5.4 (${GAMA_TAG})" \
+              --title "Gama 5.5 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
