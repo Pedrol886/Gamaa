@@ -1,4 +1,4 @@
-name: Build Gama 5.8 APK (stable signing and reliable updates)
+name: Build Gama 5.8.1 APK (robust signing and install recovery)
 
 on:
   workflow_dispatch:
@@ -32,15 +32,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require stable signing seed
+      - name: Resolve signing mode
+        id: signing_mode
         env:
           GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
         run: |
           set -euo pipefail
-          printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$' || {
-            echo "::error::Configure o secret GAMA_SIGNING_SEED antes de gerar o APK."
+
+          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
+            echo "mode=fresh" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-5.8.1-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+            echo "Stable signing: unavailable" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::GAMA_SIGNING_SEED não está configurado. O build continuará, mas o APK será apenas para instalação limpa."
+          elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+            echo "mode=stable" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-5.8.1-APK" >> "$GITHUB_OUTPUT"
+            echo "Stable signing: enabled" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::GAMA_SIGNING_SEED existe, mas não possui exatamente 64 caracteres hexadecimais."
             exit 1
-          }
+          fi
 
       - name: Restore exact Gama 4.3 Android source
         run: |
@@ -2046,7 +2057,7 @@ jobs:
           grep -Fq 'gama_crash_log' app/src/main/java/com/gama/assistant/AssistantRuntime.kt
           echo 'Gama 5.7 validado: leitura de notificações por snapshot, isolamento de TTS/notificação e diagnóstico local de crash.'
 
-      - name: Apply Gama 5.8 install identity
+      - name: Apply Gama 5.8.1 install identity
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -2055,12 +2066,37 @@ jobs:
           import re
           p = Path('app/build.gradle.kts')
           s = p.read_text(encoding='utf-8')
-          s, n = re.subn(r'versionName\s*=\s*"Gama 5\.7"', 'versionName = "Gama 5.8"', s, count=1)
+          s, n = re.subn(r'versionName\s*=\s*"Gama 5\.7"', 'versionName = "Gama 5.8.1"', s, count=1)
           if n != 1:
               raise SystemExit('versionName 5.7 não encontrado.')
           p.write_text(s, encoding='utf-8')
           PY_58
-          grep -Fq 'versionName = "Gama 5.8"' app/build.gradle.kts
+          grep -Fq 'versionName = "Gama 5.8.1"' app/build.gradle.kts
+
+      - name: Preflight source and install invariants
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/com/gama/assistant/GamaService.kt
+          test -f app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          test -f app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+          test -f app/src/test/java/com/gama/assistant/CommandRouterTest.kt
+          grep -Fq 'applicationId = "com.gama.assistant"' app/build.gradle.kts
+          grep -Fq 'versionName = "Gama 5.8.1"' app/build.gradle.kts
+          grep -Fq 'snapshotReady' app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          grep -Fq 'safeTtsSpeak' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'crashDiagnosticReply' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'installedAppsCache' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'ownerAuthResumeConversation' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'CommandRouter.appToOpen(command)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'WhatsAppCommandParser.parse(command)' app/src/main/java/com/gama/assistant/GamaService.kt
+          if grep -q 'vosk-model-spk' tools/download_models.sh; then
+            echo "::error::Modelo de locutor antigo reapareceu."
+            exit 1
+          fi
+          echo "Gama 5.8.1 preflight passed."
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -2094,7 +2130,7 @@ jobs:
           run = int(os.environ['GITHUB_RUN_NUMBER'])
           source, count = re.subn(
               r'versionCode\s*=\s*\d+',
-              f'versionCode = {20270000 + run}',
+              f'versionCode = {20280000 + run}',
               source,
               count=1,
           )
@@ -2102,8 +2138,8 @@ jobs:
               raise SystemExit('versionCode não encontrado.')
           file.write_text(source, encoding='utf-8')
           PY_VERSION
-          grep -Eq 'versionCode = 2027[0-9]+' app/build.gradle.kts
-          grep -Fq 'versionName = "Gama 5.8"' app/build.gradle.kts
+          grep -Eq 'versionCode = 2028[0-9]+' app/build.gradle.kts
+          grep -Fq 'versionName = "Gama 5.8.1"' app/build.gradle.kts
 
       - name: Download and verify offline voice models
         working-directory: _gama_build
@@ -2130,7 +2166,7 @@ jobs:
           import re
 
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 5.8: diagnóstico\n\n')
+              out.write('## Gama 5.8.1: diagnóstico\n\n')
               for name in ('gama-build.log', 'gama-tests.log'):
                   log = Path(name)
                   if not log.is_file():
@@ -2159,94 +2195,96 @@ jobs:
             gama-tests.log
           if-no-files-found: warn
 
-      - name: Sign and verify Gama.apk with stable identity
+      - name: Sign and verify Gama.apk
+        id: sign_apk
         working-directory: _gama_build
         env:
           GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
+          GAMA_SIGNING_MODE: ${{ steps.signing_mode.outputs.mode }}
         run: |
           set -euo pipefail
-          cat > /tmp/gama58sign.sh.gz.b64 <<'GAMA58SIGN_STEP'
-          H4sIAF2LumoC/61WWXPiSBJ+51dUEJ6WvT
-          PCJQkwdIwdgY4CYyNaJZWw1dvrEJQ4rLMl
-          YYO3979vCny0vfZET8SKB7Iqjy+Pyqwqgh
-          KJwTpF2SoL5v4qqsUhX+VIzBBfFSVqLPzY
-          F4vVIlkli9psGaccnWD8Zj/LV0k5R8JvhY
-          DqB/3eqHdjn/fNc7N/YxuGXkc/0CIPMiQa
-          35Hwr69Y7PZE4ovzb/9uN/9zINRq2bZcpo
-          mCxPfVX6Edh8G2wYMc/fmn8OX65sK4Fmqr
-          OEvzEhXbopb79+gUTbdlUDTmeRovg80h7D
-          f8fHH3Vfp2VEvzSvkUgcuHAnn88ONH3nyq
-          ZrRJr6f3TqSTrtFpEkXtaj1NJlpbkVstSf
-          gDSe2jGgd7h2Bwh3izAz8ER/5AwnS1EI7Q
-          b+hwDysi6egI/Y6kGkQBSrxRpo/yivwkXt
-          s7+DoGQcGKhGUswa8pY6GyUtn4/a1cD+Me
-          buOO3Ou0mx3NUHSsgM4J2E2zIHlJhvwNAO
-          +nwlHjPl+VwSGgHtX2Ga3tRIsiQsEMiatk
-          nuYx0g1a0R9UQ0zX5TusLIjR2TEP7o6TdR
-          Qh+eyT9Oq4CJc2Li9tSaOMD52VqlN3yGzm
-          DS1MGN3xcKmF0tBmQykITd1y+cDDRIG16u
-          GIWC51pxIxLFZqnsw3fr/87kgqZYyqfmjI
-          jjtUOObJhNEJc4lBjeHYJtHVaLK4AJzxCG
-          g7MX2Gh+za5SGfkCtz0jKZoyqWwj1KPLBV
-          GpY7PJ+4s41vSHSmcJ25keFGhFLsKnZoun
-          5IEprM7gMrGwOu5EyyJDBazHHoGDCXFBvN
-          gEnMdoYm7ZeKE1IyYlLbe1BNGncVR87INZ
-          a0KebqyHWJdcUVl5xvaUK9yjctpgMaRysq
-          uYnrDItpPCynA9cPQnfsMPIA9jcuc3VP4Y
-          TdDvucRIyyjWlNyoHlEJeyYeowk06NSHEl
-          qrrGMLlWjIunfEE+X+XPgTXHLd1ihLkyMW
-          dKmF/HnebYSHObzDZWWGZuH4rFWm1qGA9c
-          7toWS7GFl1deL2taCbdMbF5STJrWhHgXit
-          eEOqgO8RxTIiaTvdTH7jXoNU0j2vo43Hhs
-          SWdhq3QezDvIjeK6VPXATyfyzplDiRZ6CX
-          NZ05e929nDcjPSuiMr6rXMAR06dmfrXnlX
-          0yvqeA9LxR7sameP+plmxVyBHKuus8y92H
-          wYD4z7S7zRmB5iboQXb3Xpky6hKmOLOysk
-          LoczR9n5XRCSS7CXzCbL3A+7VnWmrAkf2w
-          z+Q0/1mav6t17sWZkx2xYPtu5ZlkO/01C6
-          tTGxqJwZ19hQ/HgmzVh34t0umnbIMNPp3Y
-          Xk6jajl7ai9keRJ48cd8Ad7jvOYksj9YtH
-          lqUWm5YzMPUxi0IuQSwsuxzhljeLlhfaat
-          8vlLWMc8MkLKJDGkbQM5Ts+wxfCDCMp34R
-          tJtIFHkwS3mAzt407izIy6pza9WUWvrF8r
-          R+cPg0EbJq6rw/B6pmF7P1tBoF1Tx4Hhs/
-          ULH05Va7WMdAzyo2h95H4lw6qtcquLcomx
-          buvoPy5NkOZudIklZoP9Br94ALun/DBxih
-          JVw+j/HWYfzWD578qtdqcwAP8t3g+lte7r
-          0Tf1JH4t6NZx9OgS3DqoQZypHwWdjTwtfP
-          UXof5J+/CRW9zrId/eLqTzYrd4V2V1EMvd
-          fpYk3uttonvQ5pqm3N6OknPaXbazZlnUi4
-          qzcVtSMpPalLFAJ32wlRuio+6WjCy9DPwl
-          khyfAw2OyuVQiwSuoH9f6L6P/3SqgWjayy
-          nfhxgKolFMsvikq0+v/chy279KdRIGO5XV
-          sl2bq88bOwSjuEzJGfZcfT9Srix6ADzOIY
-          uHDDTNcLJMb+hgdZuUQSEsttFqD5I5Lwjw
-          aIVbldBj6HzeeiiwUk8xmmXqsf9Eydjs/1
-          m8F4ZOyhxDJNo+JYaTVwAx8/rDI/goDqUD
-          nUfKW9ezUdVzGIO5GAV7C/YBOkqhwFeR1V
-          /9CbYfFh7oC3j+7LhWY/bUBBKky/eMxqtV
-          dl9L20VlwQ/wt2VY/nWKoYPogMmguS8H+I
-          +i7IV3PoXBGIaVoEQO3Otlgdp+KNL9AhQb
-          Dfq/T9cp0Hu2dKo9yUv4LrZ9A0fB1nMAv5
-          ArL7BuBsvwbyxez+CRtL8ITN/FnoLwLo1Y
-          /EvqM6BFKs0kSDCXsqQFpP6r8gbcJhPRUq
-          P1Cr0RHeU3l5Pv0zEd4OgrOXrMD2LnmPA2
-          enezjj+4f9p08/jcOfwn4iG3vu0a7A+fzN
-          g/+/MfOzUDcMAAA=
-          GAMA58SIGN_STEP
-          base64 --decode /tmp/gama58sign.sh.gz.b64 | gzip -dc > /tmp/gama58sign.sh
-          bash /tmp/gama58sign.sh
+          mkdir -p dist
+
+          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
+            cat > /tmp/gama581sign.sh.gz.b64 <<'GAMA581SIGN_STEP'
+          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
+          GAMA581SIGN_STEP
+            base64 --decode /tmp/gama581sign.sh.gz.b64 | gzip -dc > /tmp/gama581sign.sh
+            bash /tmp/gama581sign.sh
+            printf '%s\n' 'stable' > dist/install-mode.txt
+            echo "install_mode=stable" >> "$GITHUB_OUTPUT"
+          else
+            input_apk="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n1)"
+            test -s "$input_apk"
+            cp "$input_apk" dist/Gama.apk
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/Gama.apk | tee dist/signature-info.txt
+            "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Gama.apk > dist/apk-info.txt
+            grep -m1 '^package:' dist/apk-info.txt
+            grep -q "versionCode='2028" dist/apk-info.txt
+            grep -q "versionName='Gama 5.8.1'" dist/apk-info.txt
+            printf '%s\n' 'FRESH INSTALL ONLY - configure GAMA_SIGNING_SEED for reliable future updates.' > dist/install-mode.txt
+            printf '%s\n' 'debug-runner-signature' > dist/signing-cert-sha256.txt
+            (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
+            echo "install_mode=fresh" >> "$GITHUB_OUTPUT"
+            echo "::warning::APK gerado em modo instalação limpa. Desinstale a instalação anterior antes de instalar este APK."
+          fi
+
+      - name: Verify final APK metadata
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          test -s dist/Gama.apk
+          test -s dist/Gama.apk.sha256
+          test -s dist/apk-info.txt
+          test -s dist/install-mode.txt
+          grep -q "name='com.gama.assistant'" dist/apk-info.txt
+          grep -q "versionCode='2028" dist/apk-info.txt
+          grep -q "versionName='Gama 5.8.1'" dist/apk-info.txt
+          sha256sum -c dist/Gama.apk.sha256
+          echo "Install mode: $(cat dist/install-mode.txt)" >> "$GITHUB_STEP_SUMMARY"
+
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-5.8-APK
+          name: ${{ steps.signing_mode.outputs.artifact }}
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
             _gama_build/dist/apk-info.txt
             _gama_build/dist/signature-info.txt
             _gama_build/dist/signing-cert-sha256.txt
+            _gama_build/dist/install-mode.txt
           if-no-files-found: error
 
       - name: Upload test reports
@@ -2265,19 +2303,21 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama-release.md <<'NOTES'
-          Gama 5.8 preserva as correções da 5.7 e corrige instalação e atualização com assinatura stable-v1 e versionCode crescente.
+          Gama 5.8.1 preserva todas as correções anteriores. O APK informa se foi assinado em modo stable ou fresh-install-only.
           NOTES
 
           if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
             gh release upload "$GAMA_TAG" \
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
+              _gama_build/dist/install-mode.txt \
               --clobber
           else
             gh release create "$GAMA_TAG" \
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
+              _gama_build/dist/install-mode.txt \
               --target "$GAMA_COMMIT" \
-              --title "Gama 5.8 (${GAMA_TAG})" \
+              --title "Gama 5.8.1 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
