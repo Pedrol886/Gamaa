@@ -1,4 +1,4 @@
-name: Build Gama 5.2 APK (fresh calendar and current-facts guard)
+name: Build Gama 5.4 APK (smart intent router and reliable app opening)
 
 on:
   workflow_dispatch:
@@ -1183,478 +1183,82 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          python3 - <<'PY_49'
-          from pathlib import Path
-          import re
-
-          def need(text, old, label):
-              if old not in text:
-                  raise SystemExit('Ponto 4.9 não encontrado: ' + label)
-
-          def replace_once(text, old, new, label):
-              need(text, old, label)
-              return text.replace(old, new, 1)
-
-          def sub_once(text, pattern, replacement, label, flags=0):
-              out, count = re.subn(pattern, replacement, text, count=1, flags=flags)
-              if count != 1:
-                  raise SystemExit('Regex 4.9 não encontrado: ' + label)
-              return out
-
-          gradle = Path('app/build.gradle.kts')
-          g = gradle.read_text(encoding='utf-8')
-          g, count = re.subn(r'versionName\s*=\s*"Gama 4\.8"', 'versionName = "Gama 4.9"', g, count=1)
-          if count != 1:
-              raise SystemExit('versionName Gama 4.8 não encontrado.')
-          gradle.write_text(g, encoding='utf-8')
-
-          main = Path('app/src/main/java/com/gama/assistant/MainActivity.kt')
-          if main.is_file():
-              main.write_text(main.read_text(encoding='utf-8').replace('Gama 4.8', 'Gama 4.9'), encoding='utf-8')
-
-          energy = r'''package com.gama.assistant
-          import android.animation.ValueAnimator
-          import android.content.Context
-          import android.graphics.*
-          import android.util.AttributeSet
-          import android.view.View
-          import android.view.animation.LinearInterpolator
-          import kotlin.math.PI
-          import kotlin.math.cos
-          import kotlin.math.sin
-
-          class GamaEnergyView @JvmOverloads constructor(
-              context: Context,
-              attrs: AttributeSet? = null
-          ) : View(context, attrs) {
-              enum class Mode { LISTENING, THINKING, SPEAKING }
-              var mode: Mode = Mode.LISTENING
-                  set(value) { field = value; invalidate() }
-              private var phase = 0f
-              private var released = false
-              private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
-              private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-              private val dots = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-              private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                  duration = 1450L
-                  repeatCount = ValueAnimator.INFINITE
-                  interpolator = LinearInterpolator()
-                  addUpdateListener { phase = it.animatedValue as Float; invalidate() }
-              }
-              init { setLayerType(LAYER_TYPE_SOFTWARE, null); animator.start() }
-
-              override fun onDraw(canvas: Canvas) {
-                  super.onDraw(canvas)
-                  val size = minOf(width, height).toFloat()
-                  if (size <= 0f) return
-                  val cx = width / 2f; val cy = height / 2f; val t = phase * PI * 2.0
-                  val activity = when (mode) { Mode.LISTENING -> .55f; Mode.THINKING -> .72f; Mode.SPEAKING -> 1f }
-                  val pulse = (.5 + .5 * sin(t * if (mode == Mode.SPEAKING) 3.0 else 1.4)).toFloat()
-                  line.setShadowLayer((size * .055f).coerceAtLeast(3f), 0f, 0f, Color.rgb(255,132,36))
-                  fill.color = Color.argb((24 + 28 * pulse).toInt(),255,132,36)
-                  canvas.drawCircle(cx, cy, size * (.19f + .02f * pulse), fill)
-                  val points = if (size < resources.displayMetrics.density * 140f) 76 else 132
-                  for (ringIndex in 0 until 5) {
-            val base = size * (.29f + ringIndex * .035f)
-            val ratio = when (mode) { Mode.LISTENING -> .017f; Mode.THINKING -> .026f; Mode.SPEAKING -> .044f }
-            val amp = size * ratio * (.66f + pulse * .55f) * (1f - ringIndex * .07f)
-            val path = Path()
-            for (i in 0..points) {
-                val a = i.toDouble() / points * PI * 2.0
-                val wobble = sin(a * (3.0 + ringIndex) + t * (1.0 + ringIndex * .18)) * amp +
-                    sin(a * 7.0 - t * 1.8 + ringIndex) * amp * .34
-                val r = base + wobble.toFloat()
-                val x = cx + cos(a).toFloat() * r; val y = cy + sin(a).toFloat() * r
-                if (i == 0) path.moveTo(x,y) else path.lineTo(x,y)
-            }
-            path.close()
-            line.strokeWidth = size * (.0043f + (4 - ringIndex) * .00042f)
-            line.color = Color.argb((92 + activity * 105 - ringIndex * 8).toInt().coerceIn(40,220),255,144,45)
-            canvas.drawPath(path,line)
-                  }
-                  if (mode == Mode.THINKING) {
-            dots.color = Color.rgb(255,188,94)
-            val orbit = size * .40f; val radius = (size * .011f).coerceAtLeast(1.8f)
-            for (i in 0 until 4) {
-                val a = t * 1.55 + i * PI / 2.0
-                canvas.drawCircle(cx + cos(a).toFloat()*orbit, cy + sin(a).toFloat()*orbit, radius, dots)
-            }
-                  }
-              }
-              fun release() { if (!released) { released = true; animator.cancel() } }
-              override fun onDetachedFromWindow() { release(); super.onDetachedFromWindow() }
-          }
-          '''
-          Path('app/src/main/java/com/gama/assistant/GamaEnergyView.kt').write_text(energy, encoding='utf-8')
-
-          lock_path = Path('app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt')
-          lock = lock_path.read_text(encoding='utf-8')
-          lock = lock.replace('VoiceRingView', 'GamaEnergyView')
-          marker = '\n/**\n * Anel de energia desenhado em tempo real.'
-          if marker not in lock:
-              raise SystemExit('Classe de energia antiga não encontrada na tela bloqueada.')
-          lock = lock[:lock.index(marker)] + '\n'
-          lock_path.write_text(lock, encoding='utf-8')
-
-          service_path = Path('app/src/main/java/com/gama/assistant/GamaService.kt')
-          s = service_path.read_text(encoding='utf-8')
-          s = s.replace('import android.animation.AnimatorSet\n', '')
-          s = s.replace('import android.animation.ObjectAnimator\n', '')
-          s = s.replace('import android.widget.ImageView\n', '')
-          s = replace_once(s, '    private var orb: ImageView? = null\n', '    private var orb: GamaEnergyView? = null\n', 'tipo da bolinha')
-          s = s.replace('    private var orbAnimator: AnimatorSet? = null\n', '')
-
-          s = replace_once(
-              s,
-              '    private var pendingSpeech: String? = null\n    private var pendingCloseAfterSpeech = false\n',
-              '    private var pendingSpeech: String? = null\n    private var pendingCloseAfterSpeech = false\n    private var queuedSpeechText: String? = null\n    private var queuedSpeechCloseAfter = false\n    private var queuedSpeechRecord = true\n',
-              'fila de fala',
-          )
-
-          visual_helper = '''    private fun setConversationVisual(mode: GamaEnergyView.Mode) {
-              uiHandler.post {
-                  orb?.mode = mode
-                  if (isDeviceLocked()) {
-                      val action = when (mode) {
-                          GamaEnergyView.Mode.LISTENING -> GamaLockConversationActivity.ACTION_LISTENING
-                          GamaEnergyView.Mode.THINKING -> GamaLockConversationActivity.ACTION_THINKING
-                          GamaEnergyView.Mode.SPEAKING -> GamaLockConversationActivity.ACTION_SPEAKING
-                      }
-                      sendLockConversationUi(action)
-                  }
-              }
-          }
-
-          '''
-          s = replace_once(s, '    private fun showWakeUi() {\n', visual_helper + '    private fun showWakeUi() {\n', 'helper visual compartilhado')
-
-          show_orb = '''    private fun showOrb() {
-              if (!Settings.canDrawOverlays(this)) return
-              if (orb != null) return
-              wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-              orb = GamaEnergyView(this).apply {
-                  mode = GamaEnergyView.Mode.LISTENING
-                  alpha = 1f
-                  elevation = dp(16).toFloat()
-                  contentDescription = "Gama"
-              }
-              val type = if (Build.VERSION.SDK_INT >= 26) {
-                  WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-              } else {
-                  @Suppress("DEPRECATION")
-                  WindowManager.LayoutParams.TYPE_PHONE
-              }
-              orbParams = WindowManager.LayoutParams(
-                  dp(96), dp(96), type,
-                  WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                      WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                  PixelFormat.TRANSLUCENT
-              ).apply {
-                  gravity = Gravity.BOTTOM or Gravity.END
-                  x = dp(10)
-                  y = dp(38)
-              }
-              makeOrbDraggable()
-              try {
-                  wm?.addView(orb, orbParams)
-                  setConversationVisual(GamaEnergyView.Mode.LISTENING)
-              } catch (e: Exception) {
-                  Log.w(TAG, "Não foi possível mostrar a bolinha", e)
-                  orb?.release()
-                  orb = null
-                  updateNotification("Escuta ativa • autorize a bolinha nas configurações do Gama")
-              }
-          }
-
-          private fun makeOrbDraggable() {'''
-          s = sub_once(
-              s,
-              r'    private fun showOrb\(\) \{.*?\n    private fun makeOrbDraggable\(\) \{',
-              show_orb,
-              'overlay compartilhado',
-              re.S,
-          )
-
-          orb_states = '''    private fun startIdleAnimation() {
-              setConversationVisual(GamaEnergyView.Mode.LISTENING)
-          }
-
-          private fun setOrbListening() {
-              setConversationVisual(GamaEnergyView.Mode.LISTENING)
-          }
-
-          private fun animateOrbWake() {
-              setConversationVisual(GamaEnergyView.Mode.LISTENING)
-          }
-
-          private fun animateOrbSpeaking() {
-              setConversationVisual(GamaEnergyView.Mode.SPEAKING)
-          }
-
-          private fun removeOrb() {
-              val view = orb ?: return
-              view.release()
-              try { wm?.removeView(view) } catch (_: Exception) {}
-              orb = null
-          }
-          '''
-          s = sub_once(
-              s,
-              r'    private fun startIdleAnimation\(\) \{.*?\n    private fun dp\(value: Int\): Int',
-              orb_states + '\n    private fun dp(value: Int): Int',
-              'estados da bolinha',
-              re.S,
-          )
-
-          s = replace_once(
-              s,
-              '        // Nunca reutilize contexto de uma resposta privada na conversa pública.\n',
-              '        setConversationVisual(GamaEnergyView.Mode.THINKING)\n        // Nunca reutilize contexto de uma resposta privada na conversa pública.\n',
-              'estado pensando',
-          )
-          s = s.replace(
-              '        hideWakeUi()\n\n        thread(name = "gama-research") {',
-              '        setConversationVisual(GamaEnergyView.Mode.THINKING)\n\n        thread(name = "gama-research") {',
-              1,
-          )
-          s = s.replace(
-              '        updateNotification("Consultando dados autorizados...")\n',
-              '        updateNotification("Consultando dados autorizados...")\n        setConversationVisual(GamaEnergyView.Mode.THINKING)\n',
-              1,
-          )
-          s = s.replace(
-              '        updateNotification("Pensando...")\n\n        thread(name = "gama-brain-answer") {',
-              '        updateNotification("Pensando...")\n        setConversationVisual(GamaEnergyView.Mode.THINKING)\n\n        thread(name = "gama-brain-answer") {',
-              1,
-          )
-
-          speak_function = '''    private fun speak(text: String, closeAfter: Boolean = false, record: Boolean = true) {
-              if (!running) return
-              if (Looper.myLooper() != Looper.getMainLooper()) {
-                  uiHandler.post { speak(text, closeAfter, record) }
-                  return
-              }
-              if ((speaking || ttsSpeaking) && activeUtterance != null) {
-                  queuedSpeechText = text
-                  queuedSpeechCloseAfter = closeAfter
-                  queuedSpeechRecord = record
-                  return
-              }
-              markResponseStarted()
-              val displayText = if (record) {
-                  GamaPersona.address(text, OwnerIdentity.treatment(this), OwnerIdentity.name(this))
-              } else text
-              if (displayText.isBlank()) return
-              if (record && !isDeviceLocked()) AssistantRuntime.add(false, displayText)
-              if (record && !isDeviceLocked()) conversation.gamaSaid(displayText)
-              sendBroadcast(Intent(LockScreenActivity.ACTION_SPEAKING).setPackage(packageName))
-              closeUiAfterSpeech = closeAfter && !isDeviceLocked() && !conversation.active
-              setConversationVisual(GamaEnergyView.Mode.SPEAKING)
-              if (!ttsReady) {
-                  if (ttsFailed) {
-                      val id = "failed-${SystemClock.elapsedRealtimeNanos()}"
-                      activeUtterance = id
-                      finishTts(id)
-                  } else {
-                      pendingSpeech = displayText
-                      pendingCloseAfterSpeech = closeAfter
-                  }
-                  return
-              }
-              ttsSpeaking = true
-              speaking = true
-              val id = "gama-${SystemClock.elapsedRealtimeNanos()}"
-              activeUtterance = id
-              activeSpeechText = displayText
-              ttsRetryCount = 0
-              val result = tts?.speak(displayText, TextToSpeech.QUEUE_FLUSH, null, id)
-              if (result == null || result == TextToSpeech.ERROR) finishTts(id)
-              uiHandler.postDelayed(
-                  { if (activeUtterance == id) finishTts(id) },
-                  maxOf(15000L, displayText.length * 180L)
-              )
-          }
-          '''
-          s = sub_once(
-              s,
-              r'    private fun speak\(text: String, closeAfter: Boolean = false, record: Boolean = true\) \{.*?\n    private fun isTimeQuestion\(raw: String\): Boolean \{',
-              speak_function + '\n    private fun isTimeQuestion(raw: String): Boolean {',
-              'coordenador de fala',
-              re.S,
-          )
-
-          finish = '''    private fun finishTts(id: String?) {
-              uiHandler.post {
-                  if (id != activeUtterance || !running) return@post
-                  activeUtterance = null
-                  activeSpeechText = null
-                  ttsRetryCount = 0
-                  speaking = false
-                  ttsSpeaking = false
-
-                  val nextText = queuedSpeechText
-                  val nextClose = queuedSpeechCloseAfter
-                  val nextRecord = queuedSpeechRecord
-                  queuedSpeechText = null
-                  queuedSpeechCloseAfter = false
-                  queuedSpeechRecord = true
-
-                  val now = SystemClock.elapsedRealtime()
-                  ignoreAudioUntil = now + 650L
-                  if (externalActionGuardAfterTts) {
-                      externalActionGuardAfterTts = false
-                      postExternalNoiseGuardUntil = now + 2400L
-                      postExternalNumericGuardUntil = now + 8000L
-                  }
-                  postAudio {
-                      recognizer?.reset()
-                      decoderActive = false
-                      voicedBlocks = 0
-                      preRoll = ByteArray(0)
-                      bargePreRoll = ByteArray(0)
-                      speechHoldUntil = 0L
-                  }
-
-                  if (!nextText.isNullOrBlank()) {
-                      speak(nextText, nextClose, nextRecord)
-                      return@post
-                  }
-
-                  setConversationVisual(GamaEnergyView.Mode.LISTENING)
-                  postAudio {
-                      if (armCommandWindowAfterTts) {
-                          beginCommandWindow()
-                          val queued = queuedWakeCommand
-                          queuedWakeCommand = null
-                          if (queued != null) authorizeCommand(queued.first, queued.second, fromVoice = true)
-                      } else if (conversation.active && transcription == null && !ownerEnrollmentMode) {
-                          touchConversation()
-                          beginCommandWindow()
-                          updateNotification("Conversa contínua • pode falar")
-                      } else if (closeUiAfterSpeech) {
-                          closeUiAfterSpeech = false
-                          hideWakeUi()
-                      }
-                  }
-              }
-          }
-          '''
-          s = sub_once(
-              s,
-              r'    private fun finishTts\(id: String\?\) \{.*?\n    private fun listenLoop\(\) \{',
-              finish + '\n    private fun listenLoop() {',
-              'finalização independente do microfone',
-              re.S,
-          )
-
-          helpers = '''    private fun drainAudioTasks() {
-              while (true) {
-                  val action = audioTasks.poll() ?: break
-                  try { action() } catch (e: Exception) { Log.w(TAG, "Falha em tarefa de áudio", e) }
-              }
-          }
-
-          private fun waitForMicRetry(delayMs: Long) {
-              val deadline = SystemClock.elapsedRealtime() + delayMs
-              while (running && SystemClock.elapsedRealtime() < deadline) {
-                  drainAudioTasks()
-                  try { Thread.sleep(200L) } catch (_: InterruptedException) { return }
-              }
-          }
-
-          '''
-          s = replace_once(s, '    private fun enableVoice() {\n', helpers + '    private fun enableVoice() {\n', 'dreno de tarefas')
-          s = s.replace(
-              '                        try { Thread.sleep(retryDelay) } catch (_: InterruptedException) { break }\n',
-              '                        waitForMicRetry(retryDelay)\n',
-              1,
-          )
-          s = s.replace(
-              '                while (true) { val action = audioTasks.poll() ?: break; action() }\n',
-              '                drainAudioTasks()\n',
-              1,
-          )
-          s = s.replace(
-              '                if (read == 0) { Thread.sleep(20L); continue }\n',
-              '                if (read == 0) { drainAudioTasks(); Thread.sleep(20L); continue }\n',
-              1,
-          )
-
-          s = replace_once(
-              s,
-              '        pendingCloseAfterSpeech = false\n        recognizer?.reset()\n',
-              '        pendingCloseAfterSpeech = false\n        queuedSpeechText = null\n        queuedSpeechCloseAfter = false\n        queuedSpeechRecord = true\n        activeSpeechText = null\n        ttsRetryCount = 0\n        recognizer?.reset()\n',
-              'limpeza de fala interrompida',
-          )
-
-          s = replace_once(
-              s,
-              '        brainBusy = true\n        updateNotification("Pensando...")\n',
-              '''        brainBusy = true
-              updateNotification("Pensando...")
-              uiHandler.postDelayed({
-                  if (running && brainBusy && generation == requestGeneration) {
-                      brainBusy = false
-                      requestGeneration++
-                      updateNotification("Resposta local interrompida por tempo limite.")
-                      speak("Não consegui concluir essa resposta. Pode tentar novamente.", true)
-                  }
-              }, 90000L)
-          ''',
-              'watchdog da IA local',
-          )
-          s = replace_once(
-              s,
-              '        liveBusy = true\n        updateNotification("Consultando dados autorizados...")\n',
-              '''        liveBusy = true
-              updateNotification("Consultando dados autorizados...")
-              uiHandler.postDelayed({
-                  if (running && liveBusy && generation == requestGeneration) {
-                      liveBusy = false
-                      requestGeneration++
-                      speak("A consulta demorou demais. Pode pedir novamente.", true)
-                  }
-              }, 30000L)
-          ''',
-              'watchdog de dados locais',
-          )
-          s = replace_once(
-              s,
-              '        researchBusy = true\n        updateNotification("Pesquisando: $query")\n',
-              '''        researchBusy = true
-              updateNotification("Pesquisando: $query")
-              uiHandler.postDelayed({
-                  if (running && researchBusy && generation == requestGeneration) {
-                      researchBusy = false
-                      requestGeneration++
-                      speak("A pesquisa demorou demais. Tente novamente em instantes.", true)
-                  }
-              }, 35000L)
-          ''',
-              'watchdog de pesquisa',
-          )
-
-          service_path.write_text(s, encoding='utf-8')
-
-          print('Gama 4.9 aplicado:')
-          print('  bolinha e tela bloqueada usam o mesmo GamaEnergyView')
-          print('  estados Ouvindo/Pensando/Falando são sincronizados')
-          print('  uma resposta não corta outra resposta em andamento')
-          print('  fim do TTS não depende do microfone estar saudável')
-          print('  tarefas continuam durante reconexão do AudioRecord')
-          print('  IA, pesquisa e dados locais têm watchdog de recuperação')
-          PY_49
-
-          test -f app/src/main/java/com/gama/assistant/GamaEnergyView.kt
-          grep -Fq 'versionName = "Gama 4.9"' app/build.gradle.kts
-          grep -Fq 'private var orb: GamaEnergyView? = null' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'GamaEnergyView(this)' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'GamaEnergyView(this)' app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          grep -Fq 'setConversationVisual(GamaEnergyView.Mode.THINKING)' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'queuedSpeechText' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'waitForMicRetry' app/src/main/java/com/gama/assistant/GamaService.kt
-          if grep -Fq 'private var orb: ImageView?' app/src/main/java/com/gama/assistant/GamaService.kt; then exit 1; fi
-          echo 'Gama 4.9 visual/state patch validado.'
+          cat > /tmp/gama49-step.sh.gz.b64 <<'GAMA49_PACKED'
+          H4sIADJMumoC/8U8XXPbOJLv+hUY19aKdGRa/so4zngzii0n2lFsryUnNXW+csEiJGFNkRyCtK3Juur+yt4+bNVW7eO93Gv+yf2S
+          6wZAEvyQIjs7d66KLYHoRqO/uwFGsJhssCQgIQ/ZmHKvEc7jaeDvkA3yww/N85+vd181G+MomJGQxlOP3xA+C4MoJufwtaE/R6zR
+          cNmY+Iy5Vswe4hYJPLdFPHrDPPugQeCHj3GM+EFMuE9wkhrHn4hywchgLmI26z7w2GqeB34ckF3nFfG//C0gzB/BQETd4IA0yQuN
+          WC0asdCjI3Yd+CNmLu6z+yIF9dTJRxGLk0hR5Wh8Vo5kS68kkhtzFWBIzCK/lVIwY36ssbbI2KMTcdjWSwcJPBkFiR+TQ5juACbf
+          qodXuOXcw60Uj/xtp3xUiL47JFvLWHjBJuzhqyw0dg9ENhoTmOExoBLlazVpGG7eJNxzHfXAuY1F025MYIIeiBh1r5FoC1dwuT85
+          bCbxeGMfp1U3HTXvWCR44J/SGbsS64fwb+0dnVGye+XsrzVbxJwAgPqh8wqfTTLO2I0aRlSZYOLSiPbL/HCQUrWZ+4jHTO0Glqpu
+          qDGjoLwmc0Q02sTBzT/TO7o5CmabE1hmkwrBRUz9ePMDPOyMYn7H4zlwrykJRwiHi+sx95ildUSOGQTI70u4mylqM90YMi/lVtOu
+          pZ/5LJrMUR7NZjOko1s6YcDGmYNUOxnVqWFT340C7jrU5zMaAyOdj9RLWEd+DaLyNOQoKLFzhH8fKliAyeGUj4SzXn6SxNxzOnEc
+          8ZskZgNWAb3j7N75CL9qH+Tk9bnPaNSD5aMw8Ewab4PYA4bCvKlz3qsbHQWiblhwv9EYecAbqUFdyUEkhfz4x7vZGWiYF1BXABd9
+          EUfJCNa0pEBHigsHRLOjJUfB6CNxQMzNvgF5+InnNWxyQBCzpUFbarZNPktQ5iczoij5ELiMfCb93mDYPe2dvmuR4fve6U/y0+C8
+          28FP5FFC3dGIzGD6gQI6lH+cDDLzIILF1h1KF5YjY87AWR8SOfAaPDZ84C6NQVs12jDid/Bdog+nVCDm9rjyKGIeg4eIa0w9wUoT
+          PAJ8Vu6G+7Elfzud02HvutPvdQbXJ/3OO9sBQ/PmQJWI51422RngN2cwvDj7qfsankXBLTuiYfYcPjsXZ5enxxWKPdif533Lqie9
+          fr8GrRvE4jdAS7W9weyC/TnB+ASUL7baY4hS4wx3JlM3iaRdAODW7l67n4cLFjIaH2nnXETaOz3pnfaG3WwyN8wJZldtzLKzudR1
+          L0NUlD54EvQ2sNNUPXisLZW5ckVCBZH01yqY+s19HiOzWNyncxYN5yGz+p2fuxfXw5/Pu9eDs5Php85FtyUNyH6dscoBPxbFEpmK
+          wGCnEQf9HycQ6fzjiIKVUVgVbPFI/rUNvokkZMBdc1q+RZSI4L/ijmbcPxtb99yNpy0yZXwyjW0nDpRQcgjw+JaE+AFtxNYBt4Bw
+          9ADoJCKySbbHr9UgemqF1hhFiSmWrpPzHvzadtoFXFSHG8Q4ZT6x0PzRqouWTzb+QJy9PcAqx1MHIoe/306HM28Cw1tjLZV0pTDx
+          pGQtZw9SCvi1DpzxrRj+4p5n0uEcFhHZZMdpE4aAW86uXccv9AkOiHwwhfB8LwVvKQauE6cNJNvgrFk0Yp24D94ltnbGEO7QCPDf
+          UeCB/KPJjbW9t9fa2tlu7by0c+Ro+gDuSV1WcylOtrZ3YQ/b+7CG3BYSBkpu2S0DTYZFKYXjgoIc8WgEYXz0AMnJvEU0nZaz9WqM
+          TGlvjzOULbl6UZXCAOwLvUauJaAgIkhgf7AAFxDl5x8YhAuInC7zBUp2HewZNen7l5qTO9v5BmFnVgRxv+e7kAFCwtImYOfcI3tK
+          x3HVG2WSGbHbktgcChm9A4zW06UbWUWf2lvf1ypUe/tlnUY57d1dpVRScWdhTpNaEml7+RJpU7q2LlXWxnHQxo0Sxd9nBGO1kiZq
+          OCaZwiUzHEexPDd4uTZKAER+HCQ3mJSBwWnJVKwMp98HNzee4qBvUSQHtdrgoA1fYklmcRzp3Nq3cQe43ReZ2EiG6nuA2JDAW5Ct
+          FnAqIECxs2sQg5osBfpC01WxKZyFHgbczAtITIRFDbtDZivXgi4DnM4LRUppSiN3Zhytum1LLjsz8K3DwHpozW2ljHIUbViPNpQz
+          l8MjLxBMkqWMXEbtT9LvGdrYbu/uoMytXVPEtpQxPNseZwjqDPnVNoBmThC42N4racp+ZtzakfR8a7fd2t5ua2vf3W3t7uEihp1L
+          XcJNtHDl3IgfC36+4PNSE1CqhtlBieDMS+3vt17tpsobRDc8zvnhgKm/1mbo8gR9Re4Nt7Yq3hC0ZlzSee0Adqs6r9RsD/03V6q+
+          aah6nZur0aB1SXGrXnfSh4r4lmRDqhMmB9VvjM86abTQxyBPv0uzSBwwMkpIt5kR8oHYEfMw5mtc5aDPYjqaMvckCmafuA+hxTIQ
+          WpA9ZHG/buZj47EBVVPjCcVfsWCQ5Z9Z4qlqrLZQ84LR7bXpxFZfsA+gUHJg6SuTv2L1iYgBZ4Z/aQFvTM7LzY8BH7ELmId7SmvO
+          fJcANqPRLUMlb175m+vrVz4oVsdnkB8zIvfMKXwUzMf4TtiMQL0eBiAI6jlNVR9LBLpZhMsvKvCPsBxiJmJgA5/QUpEP3yms4lFy
+          4wW/JLBl6hT3928HcpccPYSl1rf/HbQZttDMpWFKDwdrZSdYdAcseqb4BgpaSQtt3US3VFpyci6nhTV8mulD6QmbAwE+Afbs5s9s
+          FKcYVgSHvHbCYqc3oxOGKlIAK/TvwD00yyUkuI8DksGmxbLCUTu3qI9FgJiDooE63ATgxKe0SnoNxnS3ULXnnCuilWIvb0aqrFBl
+          fwVvyHyU3iBkbDQ9IIMY41OOdMH0IwyfnTGUXgowLauRiv+bdcoAYEwJc9WsoWx3fG0JEyJfZ7UVLtgoiFLXn28asmr0KIiBwhgI
+          446LhHrXU+aFyhM1C5zBgAAFhukmP0oIS7VKSo77g0p45WIJfw967UGcCAMRG0UjaMobR4V/2XAppAVcHDO0YnTOzLVss9o06zZZ
+          qxey7MI0/KmhrZiELw0CnaNh7+z0utr/WYbeTOVXwZ7OXwm5WQ+sgjydX0D+WPgGocUto7nklmKwXck7HhsysH/VG0mtmQb3n+gt
+          A3QgHGn9RV17sRJMU89WsNiCDWkEKRpGROlMAOQaNGqB6sLTs+jGStVDJknglGIwPIF5EDYuZGuSzoUVT7mwC10HnI/Iv1M2Wnh2
+          P8PmPhTfMsrqaGTpHqbzqXd6fPbpetC9+Ng76trYwlEJ0gfqg4dWRYKiuyhrRUWlQ6XtZalO580lL5xizro1zoYgd7tLW1xuaG29
+          rOsn6L70MROjiId6tjxYWDMyT9lbmYdMl+Jv5bHHx+7FAJTOGRz/dN07HZI/HJLtl6ZVFnbv9Ok8SOJzGtGZcGSHqnN+3u8ddaTm
+          ngG2fudntaaqlXJEPw6SMITCX1hrx93zi66CWbNXXun8/dlp19gPSEE9hg0thrXyZmFovXppt7K/yIvWKqtjX/P69Gx4fXJ2dDno
+          vO13Ye2CPa4CPDy7PHp//eHsuNPPVz3nD8w7CSKIus7wonM66F8edU+H8nlVmSYR1X2vd+qT8/ZsODz7AORkI93T42z+g1aads7k
+          uRra2bcNTs7AdsHcwKgmEyq7A3I4jszF72dvHOq6UteB9a2c/7bZY68JOUuVX9MBlVgMYdiC2NR9GDGpxKYa9oOJc28NO+9aZO0U
+          U99xwAkEKPHln3eQeM8gVEUQS7PEZw0yV7sYurI6yBxOjybSoUQ2d0+DmI/5SG7CWuuKURJD4g1umpL/+Y//JDSBHAkL1Gw5SL/l
+          CcmYT5KIfvn7l/9iAgpBafdrdu6GTSdX5Tr5nLrp7CjWzLGiRX7yyrqyydVnZ/1NMbuoW0XP1ZlF6oZ1nhEol1py13p1iGQy9YDp
+          15DOx0wscN7Yme5BBtFJs+rMjz9LP0psAxywH9V+h3DwL8Wt2/eAH8PZb4QaMj16+zzKsx5zGXvEsEtlhkz09nh4CDJCNX9zYMZA
+          eapYtAdp7NLIFS5p5zjPzo3zumicj42SET02nqq/FVVZpspueKVO8KBc8uMrW/7R2mkopaxpq7AGaAGyyQDODYRZNZU0/uuVD/5s
+          bpLTxB9RmIrnvegf9DlngLl7MsMnApNqqkhTVftIi56EX/77xgOn4xSLnadpSNaRUyz4jehSLMNiSkCtEMiSpFhnFumfcpelCeKV
+          n5MWT7Het3x9FQK7BRtAC6PRaLqG7vBfwYcnL7f1te3UBQmgSyRejOwATUJ90lECPzuOs2ZXxfpcPN/Ejm/Z5LkWuKZjOWdvIsr9
+          DeqLexbVCXOFBX5DuS+gbksZPLroa/AbacVaF+ZwjhUbLYEWGWXl/gF5GwTgX/207sdrUFjbmw+wyC+UOFHiY0yr1DL9IMDG7Wyu
+          PoCTh8pGD0Ipg3dw0idm0lQu5Q2aTVpT0myjyjQIeMzIsIQOXeQvfyFxLNJIZpPf/14dSLBLvPOFfeq89srpKfdSkAV4j6bueaFz
+          ktNaOzfrmqh9LN4E9j0v0Nf5gg0w9mCrIguX+ixSU4YbTvmSbwF17hz0MPApZsOynlH8PLsHVey5UIdhGh6DxsV4403VheXHqIq6
+          bjWrpYwbuLhBjsPFW4/6t1a1zFUkogC+q/ZgOmnn9QLPR2YMSba0Ohro7dWwjQwTlBeqBpS7VgUPNifeRgF1R3hY05OlqYVYBqOI
+          sYXtDhtPxM/VlS1LX93Ce22aQ1IFLnmxZ5frRS3JcrBAtVLSZ2ddmaGC8l+AS5mbqoEPYPyEco+5df0vjiq6NpbPN373WTUgjmRb
+          nnk0FMwFnB7K6ZT6gbDsx7UCjrKFgY66hQlj7nMxHcbC4q7RBSpX4tKTmW1TrAlzKdbNq+mX1tjkEvdheAvt+JQQasZyVklH/QRG
+          LWSQelBwPOUNS4lCEpzeGWpntICNQ0BGCmPxxlEu1IBuEfw9DBR250+X3cvu9Un/cvBeXdppkVQYysAUMuUc0Y/mIwU83YuLswu7
+          RqRFp34MDJmDrmecVyeKFU4gK0rYyGPeh5jRh7OxtbXXbrf7BdfgeMyfxFM8RN1v9xUF9jMSfeTa1bdHy8XFARdD0Ic/JZCayjIi
+          ovfpSlgppGjyyrcY4muLhiJOE6WBMctrRgEQzHzI0yKjV18oJBT/6/MJUzbZIcNXm/Ky9+5isC2LHFSrnE/8iMCNxe6k0AmpsZnC
+          83qDKRl1fiey6gTUs8JdIR8tQK1VzhUq86RLKk08qvqkdHqWI1QTh2X5SWHLy092lqcm0r0VqQqwOF/i3MwbdhM/iFgncXlwKW86
+          HErwF+SleesRlQHIZpFPvY7U63cJjVxJ5TAW5Zi0ZGplT1JbQXu6GuY04IJJkCI927ttg6AKVDJjER/VwO23Tbg8kCC03HaJdnQP
+          Ex9q2QgbFni31y48d+G5yyKZbLDa3dzhMb/7FhkvCuqrDJNdBPIK7dt5zDpRROdWu7jCDY0m7Pzr84TUg/eBl+24sNGC8L5LDQAS
+          vlPQvLMoS/s+l5FCFEpnt3KDaBnKbpc4VnUBxvLPbt0uk5IMRdHsKJjNwH2pLvkibZQ8ZRPuF2aXxJrajjKxzJqxt6DBKtMrM8pW
+          bRKr8Wa1C9TeU9nq1bB6gjPmkQC2628C2O27LYLvEcnbI2ltVzzCU3kYLlOTk2KuGoMjNo5wdI6ASWyA1UPXj0DXsKj4sODoNA4S
+          8EwG8hr2rcTjBZ0J1RDC7tGXf/qJaoaHgQ520dri/VaS9zrqa1P8quGWG0oLzknzw88n5ipZIL4yIvHVm8Wphyd70ViAF5vrOtrX
+          phY5jGW0RgCCevxXPED4W0Dwrg7m3yBwhocJMz6KgnHgs3Jaoc5aF7TjXWx0SOMcUnErsgbx/RTqEKhYjB5E5aCeZmCQd3h49ezN
+          AbmB0vY2j+myb6wgLHvhQU7hAOeEelMq70XRiI3lzYYvf8Wl5KmNeWxtbuSe8vgkiD7wkcw7LBdT3w/iAFBjipO3vV2ozPRrF0uj
+          K0hG4zAZonMmNLvl0D9kC5n8q7C7xKmh7EU5wmMstLYh6BX76/K1gygJY+YW2KffYXvOiT6kpDcek34pO55PNebFatObbsR82S1W
+          EhPN5b3Dil+qbj1CGcrqZTUGSK0jj9UmavmnrCbGQqs3PzNkBSNZ1TheG/awmOCKpjydPFVRUldfV65oV99+Lb019xO2jJQKngpt
+          r1dEvfWEA5OV7mItSPaqe1kZ24Isv37CogtcS/P8fMqCIspoTZerqBV37fFZyH7NLoWpd5gg/Qi5q2+IrSYD2QZ/m4h5hfQV2vMp
+          Mc2F6BorYVrS1yhWuoZvzleCLxO8HEvTrCliv2DJ/i4bLCcbJpXV/KIC/uJF42u50UV6gAaxAttXhjQgQYr0BWAQGo+Zs2bX5PLq
+          VgO+ZMkmCccPIy/hEWFC5OdzDjnHbAs7qhSvD99RzAYBY6uUb+o40SKv2lhY2RgttLDu0dW6wQTPO3sdRXB2gPd1hfFAn1fWl6cc
+          ijUXLdF4PvbnKFa2+tP1yiD86Wql1aAjdQC3BbY9C6Igwb+UCy37kLl8NdHvLBE90wxD6XPxBPGnx6VPcBnil4RLWz8gvwMWRPN6
+          qddgbjwJ6XOEXVj06QIv0fwNQg/1jipCH8rsP5M3Zs3cl2c6TCwT/t4y4aer6UhhXsA3XgAQtbf/IVf04+yl/FeEhng5AAQBD/Uz
+          kl2LYqWXEkgi6IxAKcPELCCVFysy+PROxllyhyXqZhouNqF0kPYu0FsK7kNF5CuDN8ELdxp85Vgj+BgkUGLnT4CXgEwyNjDBx3yG
+          9dZwOFDAugwr1GCSxIgIyAK//PWOeSa8TpLT/Ah2jC8qo/QwpvvsQSINiEywVOZggvc6rVwfipZK4i//mBFTlIARX+pRJSNgkf+l
+          SaMB2hGTjTF53ms8jQl4ArJx8suS/62C1P3fGQbgiq8tNMkz3hwxlqm7hfv/jHPJC0rGIs+40/Ct+ypnvt+Kr1RqPQ8deOQlSpO/
+          F/Ms7K9JjO8asAcek63XYNgN2HqQ/zci+n76prw6hm9wQsGg3tTH/zel8b/xQ7pnP0gAAA==
+          GAMA49_PACKED
+          base64 -d /tmp/gama49-step.sh.gz.b64 | gzip -d > /tmp/gama49-step.sh
+          bash /tmp/gama49-step.sh
 
       - name: Apply Gama 5.0 command intent fixes
         working-directory: _gama_build
@@ -1846,6 +1450,202 @@ jobs:
           grep -Fq 'tenho algo importante por esses dias' app/src/test/java/com/gama/assistant/SmartFeaturesTest.kt
           echo 'Gama 5.2 validado.'
 
+
+      - name: Apply Gama 5.3 fast context and WhatsApp messaging
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama53.patch.gz.b64 <<'GAMA53_PATCH'
+          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
+          GAMA53_PATCH
+          base64 -d /tmp/gama53.patch.gz.b64 | gzip -d > /tmp/gama53.patch
+          patch -p1 < /tmp/gama53.patch
+          grep -Fq 'versionName = "Gama 5.3"' app/build.gradle.kts
+          grep -Fq 'android.permission.READ_CONTACTS' app/src/main/AndroidManifest.xml
+          grep -Fq 'setMaxTokens(384)' app/src/main/java/com/gama/assistant/LocalBrain.kt
+          grep -Fq 'ConversationSession.needsHistory(question)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'WhatsAppCommandParser.parse(command)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'Mensagem enviada para' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'GamaReplyStatus.SENT' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'REQUEST_CONTACTS' app/src/main/java/com/gama/assistant/MainActivity.kt
+          if grep -Fq 'brain().answer(c)' app/src/main/java/com/gama/assistant/GamaService.kt; then
+            echo 'Erro: chamada síncrona do LLM ainda existe no executor rápido.' >&2
+            exit 1
+          fi
+          echo 'Gama 5.3 validado: contexto curto, LLM rápido e WhatsApp por contato.'
+
+      - name: Apply Gama 5.4 smart deterministic intent router
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama54.patch.gz.b64 <<'GAMA54_PATCH'
+          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
+          GAMA54_PATCH
+          base64 -d /tmp/gama54.patch.gz.b64 | gzip -d > /tmp/gama54.patch
+          patch -p1 < /tmp/gama54.patch
+          grep -Fq 'versionName = "Gama 5.4"' app/build.gradle.kts
+          test -f app/src/main/java/com/gama/assistant/CommandRouter.kt
+          grep -Fq 'CommandRouter.appToOpen(command)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'confidence < 0.50' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'whatsup' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'abre o zap pra mim' app/src/test/java/com/gama/assistant/CommandRouterTest.kt
+          echo 'Gama 5.4 validado: comandos locais antes da IA e proteção contra transcrição ruim.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -1912,7 +1712,7 @@ jobs:
           import re
 
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 5.2: diagnóstico\n\n')
+              out.write('## Gama 5.3: diagnóstico\n\n')
               for name in ('gama-build.log', 'gama-tests.log'):
                   log = Path(name)
                   if not log.is_file():
@@ -1980,7 +1780,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-5.2-APK
+          name: Gama-5.4-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -2003,7 +1803,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama-release.md <<'NOTES'
-          Gama 5.2 preserva as correções da 5.1 e separa memória, agenda e fatos atuais. Perguntas pessoais sobre os próximos dias consultam o calendário local autorizado. Perguntas sobre ocupantes atuais de cargos públicos são pesquisadas online e não são respondidas pelo modelo local sem fonte atual. A fala também remove ecos como “Gama, Gama” antes do TTS.
+          Gama 5.3 preserva as correções da 5.2 e melhora a velocidade e a continuidade da conversa. O modelo local gera respostas curtas, usa histórico somente em perguntas que realmente dependem do turno anterior e não bloqueia mais o executor rápido. O Gama também entende pedidos de mensagem pelo WhatsApp: pode responder diretamente por uma notificação com resposta rápida quando disponível; caso contrário, localiza o contato autorizado e abre a conversa com a mensagem pronta.
           NOTES
 
           if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
@@ -2016,6 +1816,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 5.2 (${GAMA_TAG})" \
+              --title "Gama 5.4 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
