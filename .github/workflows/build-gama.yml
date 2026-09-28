@@ -1,4 +1,4 @@
-name: Build Gama 5.5 APK (continuous private conversation and WhatsApp recovery)
+name: Build Gama 5.6 APK (clock crash shield and TTS recovery)
 
 on:
   workflow_dispatch:
@@ -1718,6 +1718,49 @@ jobs:
           grep -Fq 'abre apesar' app/src/test/java/com/gama/assistant/CommandRouterTest.kt
           echo 'Gama 5.5 validado: conversa continua após dados privados e WhatsApp tolera a transcrição apesar.'
 
+      - name: Apply Gama 5.6 crash shield for clock and TTS
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama56.py.gz.b64 <<'GAMA56_PATCH'
+          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
+          GAMA56_PATCH
+          base64 -d /tmp/gama56.py.gz.b64 | gzip -dc > /tmp/gama56.py
+          python3 /tmp/gama56.py
+          grep -Fq 'versionName = "Gama 5.6"' app/build.gradle.kts
+          grep -Fq 'private fun safeTtsSpeak' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'Falha em comando local' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'timeQuestionIsNotAnAppRequest' app/src/test/java/com/gama/assistant/CommandRouterTest.kt
+          echo 'Gama 5.6 validado: relógio, TTS e visual protegidos contra falhas de runtime.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -1784,7 +1827,7 @@ jobs:
           import re
 
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 5.5: diagnóstico\n\n')
+              out.write('## Gama 5.6: diagnóstico\n\n')
               for name in ('gama-build.log', 'gama-tests.log'):
                   log = Path(name)
                   if not log.is_file():
@@ -1852,7 +1895,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-5.5-APK
+          name: Gama-5.6-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1875,7 +1918,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama-release.md <<'NOTES'
-          Gama 5.5 preserva o roteador inteligente da 5.4 e corrige a conversa contínua após consultar mensagens, notificações e calendário. Pedidos privados continuam na sessão de voz sem serem enviados ao histórico da IA. O roteador também recupera o erro observado em que o Vosk transcreve WhatsApp como “apesar”, evita buscas pesadas repetidas na lista de apps e protege a abertura de aplicativos contra exceções.
+          Gama 5.6 preserva as correções da 5.5 e adiciona proteção de runtime para comandos locais simples como hora e bateria. Falhas do mecanismo TTS são isoladas e o TTS é reiniciado sem derrubar o serviço; a animação também não pode encerrar o Gama se a sobreposição falhar. O comando de hora ganhou resposta defensiva e o executor local agora captura exceções e mantém a conversa ativa.
           NOTES
 
           if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
@@ -1888,6 +1931,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 5.5 (${GAMA_TAG})" \
+              --title "Gama 5.6 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
