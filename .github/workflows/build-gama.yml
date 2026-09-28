@@ -1,4 +1,4 @@
-name: Build Gama 5.6 APK (clock crash shield and TTS recovery)
+name: Build Gama 5.6 FIX57 APK (clock crash shield and TTS recovery)
 
 on:
   workflow_dispatch:
@@ -1723,35 +1723,36 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama56.py.gz.b64 <<'GAMA56_PATCH'
-          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
+          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
+          AA
           GAMA56_PATCH
           base64 -d /tmp/gama56.py.gz.b64 | gzip -dc > /tmp/gama56.py
           python3 /tmp/gama56.py
