@@ -1,4 +1,4 @@
-name: Build Gama 5.6 FIX57 APK (clock crash shield and TTS recovery)
+name: Build Gama 5.7 APK (notification crash shield and stable private replies)
 
 on:
   workflow_dispatch:
@@ -85,528 +85,72 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
-          cat > app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt <<'KOT'
-          package com.gama.assistant
-
-          import android.animation.ValueAnimator
-          import android.app.Activity
-          import android.app.KeyguardManager
-          import android.content.BroadcastReceiver
-          import android.content.Context
-          import android.content.Intent
-          import android.content.IntentFilter
-          import android.graphics.Canvas
-          import android.graphics.Color
-          import android.graphics.Paint
-          import android.graphics.Path
-          import android.os.Build
-          import android.os.Bundle
-          import android.view.Gravity
-          import android.view.View
-          import android.view.WindowManager
-          import android.view.animation.LinearInterpolator
-          import android.widget.FrameLayout
-          import android.widget.LinearLayout
-          import android.widget.TextView
-          import kotlin.math.PI
-          import kotlin.math.cos
-          import kotlin.math.sin
-
-          /**
-           * Visual de conversa que aparece somente sobre a tela de bloqueio.
-           * Ele não desbloqueia o Android e não mostra conteúdo privado.
-           */
-          class GamaLockConversationActivity : Activity() {
-              companion object {
-                  const val ACTION_LISTENING = "com.gama.assistant.LOCK_LISTENING"
-                  const val ACTION_THINKING = "com.gama.assistant.LOCK_THINKING"
-                  const val ACTION_SPEAKING = "com.gama.assistant.LOCK_SPEAKING"
-                  const val ACTION_CLOSE = "com.gama.assistant.LOCK_CLOSE"
-              }
-
-              private lateinit var ring: VoiceRingView
-              private lateinit var status: TextView
-
-              private val receiver = object : BroadcastReceiver() {
-                  override fun onReceive(context: Context?, intent: Intent?) {
-                      when (intent?.action) {
-                          ACTION_LISTENING -> setState(VoiceRingView.Mode.LISTENING, "Estou ouvindo")
-                          ACTION_THINKING -> setState(VoiceRingView.Mode.THINKING, "Pensando")
-                          ACTION_SPEAKING -> setState(VoiceRingView.Mode.SPEAKING, "Falando")
-                          ACTION_CLOSE, Intent.ACTION_USER_PRESENT -> finishAndRemoveTask()
-                      }
-                  }
-              }
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-
-                  if (!isLocked()) {
-                      finish()
-                      return
-                  }
-
-                  if (Build.VERSION.SDK_INT >= 27) {
-                      setShowWhenLocked(true)
-                      setTurnScreenOn(true)
-                  } else {
-                      @Suppress("DEPRECATION")
-                      window.addFlags(
-                          WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                              WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-                      )
-                  }
-
-                  window.addFlags(
-                      WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                          WindowManager.LayoutParams.FLAG_SECURE or
-                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                  )
-                  window.statusBarColor = Color.TRANSPARENT
-                  window.navigationBarColor = Color.TRANSPARENT
-
-                  val root = FrameLayout(this).apply {
-                      setBackgroundColor(Color.rgb(4, 12, 24))
-                  }
-
-                  val center = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      gravity = Gravity.CENTER
-                  }
-
-                  val name = TextView(this).apply {
-                      text = "GAMA"
-                      textSize = 16f
-                      letterSpacing = 0.22f
-                      setTextColor(Color.rgb(116, 230, 247))
-                      gravity = Gravity.CENTER
-                  }
-                  center.addView(name, LinearLayout.LayoutParams(-1, dp(42)))
-
-                  ring = VoiceRingView(this)
-                  center.addView(ring, LinearLayout.LayoutParams(dp(280), dp(280)))
-
-                  status = TextView(this).apply {
-                      text = "Estou ouvindo"
-                      textSize = 19f
-                      setTextColor(Color.WHITE)
-                      gravity = Gravity.CENTER
-                      setPadding(dp(12), dp(12), dp(12), 0)
-                  }
-                  center.addView(status, LinearLayout.LayoutParams(-1, dp(58)))
-
-                  val hint = TextView(this).apply {
-                      text = "Conversa contínua • diga ‘pode descansar’ para encerrar"
-                      textSize = 12f
-                      setTextColor(Color.rgb(135, 161, 183))
-                      gravity = Gravity.CENTER
-                      setPadding(dp(28), 0, dp(28), 0)
-                  }
-                  center.addView(hint, LinearLayout.LayoutParams(-1, dp(48)))
-
-                  root.addView(
-                      center,
-                      FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
-                  )
-                  setContentView(root)
-
-                  val filter = IntentFilter().apply {
-                      addAction(ACTION_LISTENING)
-                      addAction(ACTION_THINKING)
-                      addAction(ACTION_SPEAKING)
-                      addAction(ACTION_CLOSE)
-                      addAction(Intent.ACTION_USER_PRESENT)
-                  }
-                  if (Build.VERSION.SDK_INT >= 33) {
-                      registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-                  } else {
-                      @Suppress("DEPRECATION")
-                      registerReceiver(receiver, filter)
-                  }
-
-                  setState(VoiceRingView.Mode.LISTENING, "Estou ouvindo")
-              }
-
-              override fun onResume() {
-                  super.onResume()
-                  if (!isLocked()) finishAndRemoveTask()
-              }
-
-              override fun onDestroy() {
-                  try { unregisterReceiver(receiver) } catch (_: Exception) {}
-                  if (::ring.isInitialized) ring.release()
-                  super.onDestroy()
-              }
-
-              private fun setState(mode: VoiceRingView.Mode, label: String) {
-                  if (!::ring.isInitialized) return
-                  ring.mode = mode
-                  if (::status.isInitialized) status.text = label
-              }
-
-              private fun isLocked(): Boolean =
-                  getSystemService(KeyguardManager::class.java).isDeviceLocked
-
-              private fun dp(value: Int): Int =
-                  (value * resources.displayMetrics.density).toInt()
-          }
-
-          /**
-           * Anel de energia desenhado em tempo real.
-           * Escuta: pulsação suave. Pensando: pontos em órbita. Falando: ondas fortes.
-           */
-          private class VoiceRingView(context: Context) : View(context) {
-              enum class Mode { LISTENING, THINKING, SPEAKING }
-
-              var mode: Mode = Mode.LISTENING
-                  set(value) {
-                      field = value
-                      invalidate()
-                  }
-
-              private var phase = 0f
-              private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                  style = Paint.Style.STROKE
-                  strokeCap = Paint.Cap.ROUND
-                  setShadowLayer(16f, 0f, 0f, Color.rgb(60, 220, 255))
-              }
-              private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                  style = Paint.Style.FILL
-              }
-              private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                  style = Paint.Style.FILL
-              }
-              private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                  duration = 1450L
-                  repeatCount = ValueAnimator.INFINITE
-                  interpolator = LinearInterpolator()
-                  addUpdateListener {
-                      phase = it.animatedValue as Float
-                      invalidate()
-                  }
-                  start()
-              }
-
-              init {
-                  setLayerType(LAYER_TYPE_SOFTWARE, null)
-              }
-
-              override fun onDraw(canvas: Canvas) {
-                  super.onDraw(canvas)
-
-                  val cx = width / 2f
-                  val cy = height / 2f
-                  val minSide = minOf(width, height).toFloat()
-                  val t = phase * (PI * 2.0)
-
-                  val activity = when (mode) {
-                      Mode.LISTENING -> 0.55f
-                      Mode.THINKING -> 0.72f
-                      Mode.SPEAKING -> 1.0f
-                  }
-                  val pulse =
-                      (0.5 + 0.5 * sin(t * if (mode == Mode.SPEAKING) 3.0 else 1.4)).toFloat()
-
-                  corePaint.color =
-                      Color.argb((24 + 28 * pulse).toInt(), 75, 221, 255)
-                  canvas.drawCircle(
-                      cx,
-                      cy,
-                      minSide * (0.19f + 0.02f * pulse),
-                      corePaint
-                  )
-
-                  for (ringIndex in 0 until 5) {
-                      val base = minSide * (0.29f + ringIndex * 0.035f)
-                      val ampBase = when (mode) {
-                          Mode.LISTENING -> 4.5f
-                          Mode.THINKING -> 7.0f
-                          Mode.SPEAKING -> 12.0f
-                      } * resources.displayMetrics.density
-                      val amp =
-                          ampBase *
-                              (0.66f + pulse * 0.55f) *
-                              (1f - ringIndex * 0.07f)
-
-                      val wave = Path()
-                      val points = 132
-                      for (i in 0..points) {
-                          val a =
-                              (i.toDouble() / points.toDouble()) *
-                                  PI *
-                                  2.0
-                          val wobble =
-                              sin(
-                                  a * (3.0 + ringIndex) +
-                                      t * (1.0 + ringIndex * 0.18)
-                              ) * amp +
-                                  sin(
-                                      a * 7.0 -
-                                          t * 1.8 +
-                                          ringIndex
-                                  ) * amp * 0.34
-                          val r = base + wobble.toFloat()
-                          val x = cx + cos(a).toFloat() * r
-                          val y = cy + sin(a).toFloat() * r
-
-                          if (i == 0) wave.moveTo(x, y) else wave.lineTo(x, y)
-                      }
-                      wave.close()
-
-                      linePaint.strokeWidth =
-                          resources.displayMetrics.density *
-                              (1.2f + (4 - ringIndex) * 0.12f)
-                      linePaint.color =
-                          Color.argb(
-                              (92 + activity * 105 - ringIndex * 8)
-                                  .toInt()
-                                  .coerceIn(40, 220),
-                              78,
-                              222,
-                              255
-                          )
-                      canvas.drawPath(wave, linePaint)
-                  }
-
-                  if (mode == Mode.THINKING) {
-                      dotPaint.color = Color.rgb(131, 238, 255)
-                      val orbit = minSide * 0.40f
-                      for (i in 0 until 4) {
-                          val a = t * 1.55 + i * PI / 2.0
-                          canvas.drawCircle(
-                              cx + cos(a).toFloat() * orbit,
-                              cy + sin(a).toFloat() * orbit,
-                              resources.displayMetrics.density * 3.1f,
-                              dotPaint
-                          )
-                      }
-                  }
-              }
-
-              fun release() {
-                  animator.cancel()
-              }
-          }
-          KOT
-
-          python3 - <<'PY_PATCH'
-          from pathlib import Path
-          import re
-
-          def must_replace(text, old, new, label):
-              if old not in text:
-                  raise SystemExit('Ponto do patch não encontrado: ' + label)
-              return text.replace(old, new, 1)
-
-          manifest = Path('app/src/main/AndroidManifest.xml')
-          m = manifest.read_text(encoding='utf-8')
-          if '.GamaLockConversationActivity' not in m:
-              marker = '        <activity\n            android:name=".LockScreenActivity"'
-              block = (
-                  '        <activity\n'
-                  '            android:name=".GamaLockConversationActivity"\n'
-                  '            android:exported="false"\n'
-                  '            android:excludeFromRecents="true"\n'
-                  '            android:launchMode="singleTop"\n'
-                  '            android:showWhenLocked="true"\n'
-                  '            android:turnScreenOn="true"\n'
-                  '            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>\n\n'
-              )
-              if marker not in m:
-                  raise SystemExit('Marcador LockScreenActivity não encontrado no Manifest.')
-              m = m.replace(marker, block + marker, 1)
-              manifest.write_text(m, encoding='utf-8')
-
-          gradle = Path('app/build.gradle.kts')
-          g = gradle.read_text(encoding='utf-8')
-          g, count = re.subn(
-              r'versionName\s*=\s*"[^"]+"',
-              'versionName = "Gama 4.4"',
-              g,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit('versionName não encontrado.')
-          gradle.write_text(g, encoding='utf-8')
-
-          main = Path('app/src/main/java/com/gama/assistant/MainActivity.kt')
-          if main.is_file():
-              ms = main.read_text(encoding='utf-8')
-              ms = re.sub(r'Gama 4\.[0-9.]+', 'Gama 4.4', ms)
-              main.write_text(ms, encoding='utf-8')
-
-          service = Path('app/src/main/java/com/gama/assistant/GamaService.kt')
-          s = service.read_text(encoding='utf-8')
-
-          
-          s, count = re.subn(
-              r'private const val CONVERSATION_IDLE_TIMEOUT_MS\s*=\s*[^\n]+',
-              'private const val CONVERSATION_IDLE_TIMEOUT_MS = 60L * 60L * 1000L',
-              s,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit('CONVERSATION_IDLE_TIMEOUT_MS não encontrado.')
-
-          show_marker = '    private fun showWakeUi() {\n'
-          if 'private fun showLockConversationUi()' not in s:
-              helper = '''    private fun sendLockConversationUi(action: String) {
-              try {
-                  sendBroadcast(Intent(action).setPackage(packageName))
-              } catch (_: Exception) {}
-          }
-
-          private fun showLockConversationUi() {
-              if (!isDeviceLocked()) return
-
-              val intent =
-                  Intent(this, GamaLockConversationActivity::class.java).apply {
-                      addFlags(
-                          Intent.FLAG_ACTIVITY_NEW_TASK or
-                              Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                              Intent.FLAG_ACTIVITY_CLEAR_TOP
-                      )
-                  }
-
-              uiHandler.post {
-                  if (!running || !isDeviceLocked()) return@post
-
-                  try {
-                      when (
-                          BackgroundLaunchPolicy.route(
-                              GamaApplication.foreground,
-                              Settings.canDrawOverlays(this),
-                              SystemAssistant.current != null
-                          )
-                      ) {
-                          BackgroundLaunchPolicy.Route.ACTIVITY ->
-                              super.startActivity(intent)
-
-                          BackgroundLaunchPolicy.Route.ASSISTANT ->
-                              SystemAssistant.current?.present(intent)
-
-                          BackgroundLaunchPolicy.Route.NOTIFICATION -> {
-                              pendingActivity = intent
-                              updateNotification(
-                                  "Gama está ouvindo • toque em Continuar pedido se o visual não abrir"
-                              )
-                          }
-                      }
-                  } catch (e: Exception) {
-                      Log.w(
-                          TAG,
-                          "Não foi possível abrir o visual da tela bloqueada",
-                          e
-                      )
-                      pendingActivity = intent
-                      updateNotification(
-                          "Gama está ouvindo • toque em Continuar pedido se o visual não abrir"
-                      )
-                  }
-
-                  uiHandler.postDelayed({
-                      if (
-                          running &&
-                          isDeviceLocked() &&
-                          conversation.active
-                      ) {
-                          sendLockConversationUi(
-                              GamaLockConversationActivity.ACTION_LISTENING
-                          )
-                      }
-                  }, 220L)
-              }
-          }
-
-          '''
-              if show_marker not in s:
-                  raise SystemExit('showWakeUi não encontrado.')
-              s = s.replace(show_marker, helper + show_marker, 1)
-
-          locked_branch = '''        if (isDeviceLocked()) {
-              showLockConversationUi()
-              return
-          }
-          '''
-          if locked_branch not in s:
-              s = must_replace(
-                  s,
-                  show_marker,
-                  show_marker + locked_branch,
-                  'showWakeUi/tela bloqueada',
-              )
-
-          hide_marker = '    private fun hideWakeUi() {\n'
-          close_line = '''        sendLockConversationUi(
-              GamaLockConversationActivity.ACTION_CLOSE
-          )
-          '''
-          if close_line not in s:
-              s = must_replace(
-                  s,
-                  hide_marker,
-                  hide_marker + close_line,
-                  'hideWakeUi',
-              )
-
-          begin_marker = '    private fun beginCommandWindow() {\n'
-          listen_line = '''        if (conversation.active && isDeviceLocked()) {
-              sendLockConversationUi(
-                  GamaLockConversationActivity.ACTION_LISTENING
-              )
-          }
-          '''
-          if listen_line not in s:
-              s = must_replace(
-                  s,
-                  begin_marker,
-                  begin_marker + listen_line,
-                  'beginCommandWindow',
-              )
-
-          thinking = '''        if (conversation.active && isDeviceLocked()) {
-              sendLockConversationUi(
-                  GamaLockConversationActivity.ACTION_THINKING
-              )
-          }
-          '''
-          assistant_add = '        AssistantRuntime.add(true, command)\n'
-          if thinking not in s:
-              s = must_replace(
-                  s,
-                  assistant_add,
-                  thinking + assistant_add,
-                  'executeAndReply/pensando',
-              )
-
-          speak_marker = '        if (!ttsReady) {\n'
-          speaking = '''        if (isDeviceLocked()) {
-              sendLockConversationUi(
-                  GamaLockConversationActivity.ACTION_SPEAKING
-              )
-          }
-          '''
-          if speaking not in s:
-              s = must_replace(
-                  s,
-                  speak_marker,
-                  speaking + speak_marker,
-                  'speak/falando',
-              )
-
-          service.write_text(s, encoding='utf-8')
-
-          print('Gama 4.4 patch aplicado:')
-          print('  visual animado exclusivo da tela bloqueada')
-          print('  estados ouvindo / pensando / falando')
-          print('  sessão de conversa contínua por voz por até 60 minutos de silêncio')
-          PY_PATCH
-
-          test -f app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
-          grep -q 'Gama 4.4' app/build.gradle.kts
-          grep -q 'showLockConversationUi' app/src/main/java/com/gama/assistant/GamaService.kt
-
+          cat > /tmp/gama44.run.gz.b64 <<'GAMA44_RUN'
+          H4sIAOOCumoC/8U723Iiy5HvfEVZD4aWUAmQNKOjGM05DEIzhBAogJnZE2dsotRdQFlNN+6LLj6eCH/G7qO9Dxu7EX7at33Vn/hL
+          NrOqu6m+gTQ+tomQgK6srMysvFfh84Ds89AlK7HiMybsSsVkAXlL2Gp14HvmwZIJ5+B37I4dmO7yYM6W7ID5vvAD5gQH7+Fr3zVv
+          O65zxz2fBcJ12mYg7kTwSG8D8uZN9XI4qVZWzLxlc04ABUUUNEFRqYjlyvUCwhzLc4VFmSOWEg/9xOyQt+VX18uBrVY0Xqlo7JI/
+          zkPmWVfMgYVz003XCbgT0HeeyyyT+cGIm1zclQN28P0hKBvuybfNoxfCDvILzD22WgjTpx3m3DG/fNi13fLJ17BLwYbRYJEddH36
+          LhS2VfjcsWyeHbgT/J6+91iRxOXYJ/hXOPBZOJZ7X7ITEmK96X3hcOahwLyVaxft/L2w5jygFx5b8j57dMOgBEKh2ggygS3Vyb51
+          A1s4FGhZ0Ote0VPT9Yse+8KpVA52dytkl3wSfshsYqG6K7Mgvw85GBTzQMmI7y5BGfD9xoOnJOA2Q+Ab2wUw4VLE0bU5cZ7+04UB
+          PxpgxCVtRT6JBpeuH3iMSDV7+j8LjNgTd8ySKA4qpg1WRjaZKDkl8ceaQX6uEHiBia5gO1yHuDe/42YQPVZDjh+QO+Ct3Zn0hoNp
+          vzeedAe9wXtyRnbytk37w87lGminHNHkQ29wuQVPDLMBzfi6296GJobZgKbTH467m3BIAIXga0W+ScHDpoLGcuEIROcRTzjzU/LJ
+          FSYfwUepaKXAgD4I/VOSqGQKFKnzIhcFlEVbc0py/ivZR3y58MAToFuzELbTiWBqpvJlpyRyat/XiZAe6pQoT/W9jgRf9wvukJoC
+          +p4yE5UoC4OvnF7svyU+D8bAG6+lBEGvXIvTBLBOdrp+4IbEDe/QW+wYZbgTVdmCOoYDzNfc8dlGpInibEEawwHSC2ZvximVpB5J
+          lEYPP467o+n1qDvuDia42Az231+AWY/4EnZrwvzbWhrj10r6U6Rwma3teBxJ9tkdt3oOqqrJJRegItKbp7bUD1fcoxtmGZUEVsxI
+          7VfCRxfCrZqR3XXFQIZmjweh52iEp7DJsEM/dUdjkAgdn19OeyCMt2ek9TqLHfdi4d5/BvWLCAi8kBtZmAmsNjY9zp2hk4H4Srjt
+          8wzaH8bhauVx36/tnHdhNzpt3JzMVt7LqEWZZV3YbO7XcvucCmtUxZlrBmHJpxf99vvp+MPw8/Tzhy7YAziN7jmBWEYKXtvwTD6O
+          QEM7oy5gGg5SKIwiGW8kfNtil93u9XqxIpK3st3tfBx1v2Vmv/3j8OMEtCEioJJnM+JNOct3zJNZEThE+U4no/ZgfN0egXFlZziQ
+          t8xl8Ns4K5kmHa7rBgClZRq1YCF8AxNM+zGvqu8gy517LtibRFxT6L35Te2oTpqtOmkdGYU7houZmBQgUXrasmE91xMwQ3KUmYSm
+          Nel12v0U/FxlbgAb5XC0Awx3R2X0OMA0AMfhaAMlGEIwWr5vX7V3ciNj8QfE03w1Sw3ZPAB2x1AYgIOF8QZttWY5u4b5WVE2m69A
+          kIcNlOZrw3gpj0nQl+JGI5HcIbf1tBR1/aztN+vEWtWOWoah+UZP0Z4KFEpQZevgjE3rwBqtk4YhF8MP+mpK6V+2J+mgWro5320V
+          /ecPvUn3hdKOUF0D88A28tZsKdZS7w1j+/4o3p+xQ8cnKZmhJi8gb3mZ1OJcWWbWT391Qkb+9qe/EAs8CHz49xWkApiYmwzyCu9v
+          f/oPAqk9Ixyip+cxr1zMz9Tww2NwF6+An+bJofF3y7x1gjKONOqZ4kaRPccc0sJGf5mgSFGk0NdTzzS3mke+D94yzaFREA2A0Y4q
+          sZVxwfqZvZ/JmhvEpZfgteLdB8rbMrOtZdNYYzNcnGpuAYuTxy1gMm8sgynPJot2dWO2dXiYzbY8Pocqh3tJLRFXHPVIjvW4YqCQ
+          M3V7gHQ6GE6m3X+7Ho4m3fNfIuvaSkNhAP17aozihHrE/XDJa0VZczxUniKXZ/XFi51zqOPdx9RqgQf6SUKnVCAGSNlkgbkgtekp
+          6T6YfBWVZWkFOD3FoEOF34NSUzAbfJFlyNBFPW5z5uusxDwmFBUVuUh0IvElyDhT5Eq516G8veH2KRkHuJbOmpRXCVnpykGC4Apg
+          wfiWYUxFhSyO6GnkzCUVZVysNw3qJNcFaUAylSwyBx4fQfbLMffugL9apql4eipbLBS7owZQcc4RSmHMrwX+8g47mrLINuR/bS01
+          RnZBAr4beib3qSX8lc0erzgI0ISvUMWCOzRo4MJU2JmvScep7XDZb+IO9+YCu0k+dxbMcglfQgBarlxAy2zVWfLNMGCnZBXaPnv6
+          L2wj+SEUgJTEZTKMgZW7Pk5++l/vRgSMkqjcPQVttZhPZq4XAImyzxQzqfpN6WQo22owCOiKNhCrBXfCZYQAlQc0XzPbdSmf1OnR
+          XmLjRCnglVKStMXr/kEJOF++ctuCeXIwNSIceCYsVPGcy1l3ZTyyWoAFYQI7yzVsbIifsjELw/K9Jv/T9mDSm7b7vfZ4inVPPhr5
+          waPN40l0jN/oeDIaXnY1EM+95R22SsDgMx0NPw7OU14RteAewis4DkjBIfpHf+t04xWm0i38d3xsxPaeZcV0vV+OlYtev1+yjuUG
+          /4xlWHSqgMm7fspA3dmF7bKghiJqzvLrWKEXl1zNo+PGusTy+IozyEZCSXsaaW9w0RtA+rz2Xlp7Oyne9J63pnIQ+z+uUA37GAbA
+          wDMaHOufCKIuOrfk6gSsVPLyHK3WSgwvSDt92aD8WdcpqU2TxxWvQcEOKcDkx+vudDy8mHyGGrpOnNC2NwY7j4H5y8MOcAvyvSjK
+          amCZnM58AHbvhRUsyAHRUmo5hqnxgov5IsgPLoUzFiqWCGc4q0kc9Qgc/araeyM1CbdTyXiX1K578L9FGxmKWNxPP4s6peiTsq4m
+          7Zqw+degx8ezPIze4WzQ160CEL1f2aSNWcFWIl3o47kWZGSggVXJHq4NrPjCqQXwjuFUhdmz9AIGOaQNlcw16ZGhC0nrn0e+gZqq
+          r5JaTzkahp6m1jqClVsnsKCkLAlldfL6GJ1QUzmhNWa5/dQCVegIz7R5pqp4SFcU5mP6e7zfu8g01LiS7UZrlqyfmR7zoVUayUcI
+          eERW7z3H4g9gFaQByVkgbHKc3WiU/I0yyhQFLUnBGscuUnN4PDNys9ly9U4hKFenYpU6ohmNKtSq17rKlCtWKwv29Rn5SREzGZWQ
+          bi1icbewJQrSevUKpaU0eFeZilEG3ZyR/axgX8+03YtpuYdER0aJINuylubiwuZjg6V52EpnCbj5Qm46pQqqaDsktwW8ShoFKPu5
+          G97YWFQcRGtpz8qYwxe6ndJB2KVCSu7dmxubl5CDhl+KkaG+ot1r2mqQvVJ4Wa7gnGZ6jtyI5olROBH4lapRjnYjjTGdoMpkfyNU
+          TF2TnmzhIa44JPGlkDHhyNzhUaHoMahLD7AX7UJBbNHhMaBBVNsDF+TXmOZk0d4KZ2CogVi3J4WUm5Gbgv5doHNvGNIGqCxL3dpD
+          nTwayr3Lx5ixxo9LTqFkTx1hTduVpWO6rRunvFQlqJ9lmM7r4DYvUmrptIVuoXakG7yhFK2V8aRrWoriUiY2FS/3XQsWS6I76FDj
+          OONpSrQbX0mhVgpguhxk0HNqRyoHzwSk+PX6pPh5q9UqGTg+zj1Pk6FFVukMcUfra4kZZWd3qSQh6XtlfGGcxMdyJ3pvE2P84Ukm
+          0Mdq7WK1mYqbDXqUCUKaM44i8NEGZxyZ/jHmPAI+gis9KHSZW3KNdc5RbKaS8uLdKLPTDVO2mwfkZc1Z8eRY/FtUoORgGZP0pC+k
+          yTUumaiJp8R2UiR8rVwOJ5XK6jFYuM4hWMebN9XrH6fX7UnnQ7Uy89wlWYGG2eKGRPdm9NtIHq9ULD4jy9APplBD2czkNWwM1Ilr
+          W1BM8PuokWScViIlhAHiuAFqgOwtrGswJsCRqZZN90EEteo1NjIIXoyRjTJ5aYY72HvwGDYzqrAzCntlfW4tsdKYmDUZTfB1SxDD
+          jPtBnERUU9fkous5VxEQfVjaVaOyRIWOH3mcWVNcoIZ0YI/+rBoGs/0TAATeqnTTfZ1qzPdSMb1k3q3sbldjEbyJndUXJxUpFWGn
+          eMx1tkMRvzovjzHvVCXCGxtGAN9a94swV/OjBYtsYmRnKxL+gPrBrbOdGYPw9JwJph1a/AIUDlulkFyd7eBVgO0zbRY65gI92tkO
+          mOnchhC42j7NT11MeO5igXZV4dlzFhwl+kOyMrY3Dib4lF5BKe8JZtOBq44I3jGPXkAJ7stFdg7efnHiBYzYgiK9SStTsQVdMc8E
+          U/FIXmey5gT4SKL6VbWY1P3EltS69UjN9kj8vRkBx5PvPRFwZSXLOskbSmUO69k8ZYQ38pxDDdDbwAcwPJuNHmwyu3kdHLrq23ic
+          +uFNlHZ6VdRbEOkAFPqLv3sGfzs//XbnN3s7VeV5dQB5Ag4qDyXYUTw+r0dX6gD7WbNekSau1voVVBlK7nmZ61gzMka5RixpQpoX
+          CgldUrGfKrvOewWD2vVd5ZJwBhX+dCawTIkcjy99GgxsEmwCqcRa86pKQF/oT4397+hv9qp1Uo1lBp+XfqwHgFjXAb+QP1915V/G
+          Ii4XtfMVh0hfhGkjM7BeqZ4kHfDkJmFnOMAjN3nCNe2d97vTSe+qi7dbrsaRKv302y8OikBp0stQAAmvGn3IAtT/ZqPR6EeY/G/T
+          uY2rFShhBd3fNB2AUudD6B3ZLf8oMItAD4TRLQuRjQ8InQQ5X9G64PZKrVHNr8IdqwCHuqCYPXqSJ2paI9OxktuT0blqNNGg8gRd
+          XlmvRVfX0Rjj7njpsRukUM/hMKIiOjbUT42wDRAdgVXiJFbdutSql4hWvMZQ33i9N30+VXLkXXK5LTpolvey8LT5U2/y43TQ/Tyd
+          tMeXZTfZCieNoUJAdRpev2hap99tj3DW5gtvofjA8H6jR1euH2QPGb3QcfCOzh//SEol/QNOrKTPXQsuv+YoX9/26ssE4tq1hflI
+          4UlQUjvgXrVhF4Sp7rpDJcMVhuJEfsyDAKj3MeXGdvgQdhhqAV/dYCmZI226ndxXNkPP48r2sTG/pSYoKqRK+BwhnzTeLrL/trjP
+          JLv58lghuWmuFNqovHCl8bg3nrTltdmXcP49xTsHaDDftu5gOOld9NRdBeyK/ly4+Aq8CWxVe30QoFYrBA7lec7ADcQsUoXyPpfK
+          KSApevpzfG9B3kUK8DcBeEKLB6vCCfEkklsCRsGxu+RO/QZBOm5244nMpaTi3c83erQaMXZ6PO30UuB9d07v87xM2u/zyrozQNpm
+          riBgf/7TX++4rShdU29FP45QP4BgFtvJo+GVcn6etSnP2Yx/zCYUNlnS/uwc2H8EZ5UWM7q2fEctcnW//nW++5fxfEUwphY/5AX/
+          O77VM5RE31LfV/pLsex9q+d3LmTbrL/uRVQgSYiDq56hpFOK4hRonbIUJTySYcwVk2pGw1+Ps5Q9knqKLQNbSn164zFwLes0JmnL
+          5sKSEnRZ8qA1KoBfZBewpNdIMytTdb29sk6B1uakU130EPsk+hprIE1sB2lrjRJSEMFCWHxDrojD6VxR9pan2I5MC2yTxj1Hw+Td
+          OkiJI7Fpy3yDzDSuCh9iozBZQBPYmt21hG74XDgbRCTHO+4SSmRLXaOPRWXLawEFskLlKrBqMH5SqnNbDPrlRmxoOqoR+g3S1iVU
+          /BR1dL2GJvC88NaCh1TKuVXXuP/1sosb6inRJbXrFLJ1vdeXpDojbIMvOV69lb9+wTpVMmtEdVfC5DfIPbX8+nGCcq8MosofuAkZ
+          lLwGCaXHwSq6X7YWvr/i7Haa72LK3D0I/BG4kcdIzyVs4Ub9I3ckPg/PKnNCzbf4Wo3rzFMl0GKAqnx8MFMX8TQhRs0LrWFS3C8B
+          fwJZcNJwiXriTNYjlnsKIBEEiTMX2fPHW4TYW/XFnZtPyfRZkCABtJ+kSAck3nL4GNOtwfscEj/5G9f1L2XXN+5Xrkfu3D/IdxY8
+          /Td51cBzoRBvJsIMX9hP/+OYAjHG5w1gztib35/9Ir9er8xhF8n+77UeFSnqNK7himN2lXxDZ6ry/1vGiLeZPwAA
+          GAMA44_RUN
+          base64 --decode /tmp/gama44.run.gz.b64 | gzip -dc > /tmp/gama44.run.sh
+          bash /tmp/gama44.run.sh
 
       - name: Verify restored and patched source integrity
         working-directory: _gama_build
@@ -1762,6 +1306,80 @@ jobs:
           grep -Fq 'timeQuestionIsNotAnAppRequest' app/src/test/java/com/gama/assistant/CommandRouterTest.kt
           echo 'Gama 5.6 validado: relógio, TTS e visual protegidos contra falhas de runtime.'
 
+      - name: Apply Gama 5.7 notification crash shield
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama57.patch.gz.b64 <<'GAMA57_PATCH'
+          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
+          2+QMtbvB+wAh9qN5hHfT9v4PJHSJC6o6AAA=
+          GAMA57_PATCH
+          base64 --decode /tmp/gama57.patch.gz.b64 | gzip -dc > /tmp/gama57.patch
+          patch -p1 < /tmp/gama57.patch
+          grep -Fq 'versionName = "Gama 5.7"' app/build.gradle.kts
+          grep -Fq 'snapshotReady' app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          grep -Fq 'Nunca atravessa o binder do NotificationListener' app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          grep -Fq 'Falha isolada ao consultar notificações' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'Falha isolada ao atualizar notificação do Gama' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'crashDiagnosticReply' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'gama_crash_log' app/src/main/java/com/gama/assistant/AssistantRuntime.kt
+          echo 'Gama 5.7 validado: leitura de notificações por snapshot, isolamento de TTS/notificação e diagnóstico local de crash.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -1828,7 +1446,7 @@ jobs:
           import re
 
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 5.6: diagnóstico\n\n')
+              out.write('## Gama 5.7: diagnóstico\n\n')
               for name in ('gama-build.log', 'gama-tests.log'):
                   log = Path(name)
                   if not log.is_file():
@@ -1896,7 +1514,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-5.6-APK
+          name: Gama-5.7-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1919,7 +1537,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama-release.md <<'NOTES'
-          Gama 5.6 preserva as correções da 5.5 e adiciona proteção de runtime para comandos locais simples como hora e bateria. Falhas do mecanismo TTS são isoladas e o TTS é reiniciado sem derrubar o serviço; a animação também não pode encerrar o Gama se a sobreposição falhar. O comando de hora ganhou resposta defensiva e o executor local agora captura exceções e mantém a conversa ativa.
+          Gama 5.7 preserva as correções da 5.6 e endurece o caminho de notificações: a consulta por voz usa um snapshot seguro do NotificationListener em vez de atravessar o binder durante o comando, limita e sanitiza os textos lidos e isola falhas de notificação/TTS. Também registra localmente a última exceção fatal e permite consultar o diagnóstico por voz.
           NOTES
 
           if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
@@ -1932,6 +1550,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 5.6 (${GAMA_TAG})" \
+              --title "Gama 5.7 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
