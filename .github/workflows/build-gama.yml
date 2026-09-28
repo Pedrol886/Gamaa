@@ -1,4 +1,4 @@
-name: Build Gama 5.1 APK (lock permission UX and command stability)
+name: Build Gama 5.2 APK (fresh calendar and current-facts guard)
 
 on:
   workflow_dispatch:
@@ -1800,6 +1800,52 @@ jobs:
           grep -Fq 'pode descansar agora senhor' app/src/test/java/com/gama/assistant/ConversationSessionTest.kt
           echo 'Gama 5.1 validado.'
 
+      - name: Apply Gama 5.2 fresh calendar and current-facts guard
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama52-patch.py.gz.b64 <<'GAMA52_PATCH'
+          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
+          GAMA52_PATCH
+          base64 -d /tmp/gama52-patch.py.gz.b64 | gzip -d > /tmp/gama52-patch.py
+          python3 /tmp/gama52-patch.py
+          grep -Fq 'versionName = "Gama 5.2"' app/build.gradle.kts
+          grep -Fq 'importantUpcoming' app/src/main/java/com/gama/assistant/SmartFeatures.kt
+          grep -Fq 'object FreshnessPolicy' app/src/main/java/com/gama/assistant/GamaPersona.kt
+          grep -Fq 'FreshnessPolicy.requiresFreshSource' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'tenho algo importante por esses dias' app/src/test/java/com/gama/assistant/SmartFeaturesTest.kt
+          echo 'Gama 5.2 validado.'
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -1866,7 +1912,7 @@ jobs:
           import re
 
           with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 5.1: diagnóstico\n\n')
+              out.write('## Gama 5.2: diagnóstico\n\n')
               for name in ('gama-build.log', 'gama-tests.log'):
                   log = Path(name)
                   if not log.is_file():
@@ -1934,7 +1980,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-5.1-APK
+          name: Gama-5.2-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1957,7 +2003,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama-release.md <<'NOTES'
-          Gama 5.1 mantém as correções de estabilidade, descanso e execução de sugestões da 5.0 e melhora a autorização de bloqueio de tela. O aplicativo agora mostra botão e status próprios, abre a tela oficial do Android para ativação e oferece o atalho Ativar bloqueio na notificação enquanto a permissão não estiver ativa.
+          Gama 5.2 preserva as correções da 5.1 e separa memória, agenda e fatos atuais. Perguntas pessoais sobre os próximos dias consultam o calendário local autorizado. Perguntas sobre ocupantes atuais de cargos públicos são pesquisadas online e não são respondidas pelo modelo local sem fonte atual. A fala também remove ecos como “Gama, Gama” antes do TTS.
           NOTES
 
           if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
@@ -1970,6 +2016,6 @@ jobs:
               _gama_build/dist/Gama.apk \
               _gama_build/dist/Gama.apk.sha256 \
               --target "$GAMA_COMMIT" \
-              --title "Gama 5.1 (${GAMA_TAG})" \
+              --title "Gama 5.2 (${GAMA_TAG})" \
               --notes-file /tmp/gama-release.md
           fi
