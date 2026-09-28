@@ -1,4 +1,4 @@
-name: Build Gama 5.8.1 APK (robust signing and install recovery)
+name: Build Gama 5.8.1 FIX61 APK (robust signing and checksum verification)
 
 on:
   workflow_dispatch:
@@ -2270,9 +2270,31 @@ jobs:
           grep -q "name='com.gama.assistant'" dist/apk-info.txt
           grep -q "versionCode='2028" dist/apk-info.txt
           grep -q "versionName='Gama 5.8.1'" dist/apk-info.txt
-          sha256sum -c dist/Gama.apk.sha256
+          (cd dist && sha256sum -c Gama.apk.sha256)
           echo "Install mode: $(cat dist/install-mode.txt)" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify distribution bundle consistency
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          test -d dist
+          test -s dist/Gama.apk
+          test -s dist/Gama.apk.sha256
+          test -s dist/apk-info.txt
+          test -s dist/install-mode.txt
+          test -s dist/signing-cert-sha256.txt
+          apk_bytes="$(wc -c < dist/Gama.apk)"
+          test "$apk_bytes" -gt 1000000
+          expected_hash="$(awk '{print $1}' dist/Gama.apk.sha256)"
+          actual_hash="$(sha256sum dist/Gama.apk | awk '{print $1}')"
+          test -n "$expected_hash"
+          test "$expected_hash" = "$actual_hash"
+          install_mode="$(cat dist/install-mode.txt)"
+          test -n "$install_mode"
+          echo "APK bytes: $apk_bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "APK SHA-256: $actual_hash" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bundle mode: $install_mode" >> "$GITHUB_STEP_SUMMARY"
+          echo "Distribuição final validada antes do upload."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
