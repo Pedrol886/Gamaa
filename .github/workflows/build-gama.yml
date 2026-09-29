@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX74 APK (runtime stability, compiler-safe fail-soft brain and voice controls)
+name: Build Gama 6.0 FIX75 APK (visual crash diagnostics, runtime stability and fail-soft recovery)
 
 on:
   workflow_dispatch:
@@ -3493,6 +3493,306 @@ jobs:
           print('GamaVoice.apply parameters:', context_name, tts_name, '(nullable-safe)')
           PY_FIX72_COMPILER
 
+      - name: Add visual on-device crash diagnostics
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt <<'KOTLIN_DIAGNOSTIC'
+          package com.gama.assistant
+
+          import android.app.Activity
+          import android.content.ClipData
+          import android.content.ClipboardManager
+          import android.content.Context
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+          import java.text.DateFormat
+          import java.util.Date
+
+          /**
+           * Private, human-readable view of the privacy-safe CrashRecorder entry.
+           * No audio, commands, message bodies, contacts, notification contents,
+           * calendar text or conversation content are stored here.
+           */
+          class GamaDiagnosticActivity : Activity() {
+              private lateinit var detailsView: TextView
+              private lateinit var statusView: TextView
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.statusBarColor = Color.rgb(8, 8, 10)
+                  window.navigationBarColor = Color.rgb(8, 8, 10)
+
+                  val page = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(22), dp(24), dp(22), dp(28))
+                      setBackgroundColor(Color.rgb(8, 8, 10))
+                  }
+
+                  page.addView(TextView(this).apply {
+                      text = "Diagnóstico do Gama"
+                      setTextColor(Color.WHITE)
+                      textSize = 25f
+                      setTypeface(typeface, Typeface.BOLD)
+                  })
+
+                  page.addView(TextView(this).apply {
+                      text = "Último erro registrado no aparelho. O relatório abaixo não inclui áudio, comandos, mensagens, contatos, notificações privadas, agenda nem conversa."
+                      setTextColor(Color.rgb(180, 180, 188))
+                      textSize = 14f
+                      setPadding(0, dp(8), 0, dp(18))
+                  })
+
+                  statusView = TextView(this).apply {
+                      setTextColor(Color.rgb(255, 176, 66))
+                      textSize = 14f
+                      setTypeface(typeface, Typeface.BOLD)
+                      setPadding(0, 0, 0, dp(10))
+                  }
+                  page.addView(statusView)
+
+                  val card = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(dp(16), dp(16), dp(16), dp(16))
+                      setBackgroundColor(Color.rgb(24, 24, 29))
+                  }
+
+                  detailsView = TextView(this).apply {
+                      setTextColor(Color.rgb(238, 238, 242))
+                      textSize = 13f
+                      typeface = Typeface.MONOSPACE
+                      setTextIsSelectable(true)
+                  }
+                  card.addView(detailsView)
+                  page.addView(
+                      card,
+                      LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT,
+                      ),
+                  )
+
+                  page.addView(actionButton("Copiar diagnóstico") {
+                      val text = detailsView.text?.toString().orEmpty()
+                      val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      clipboard.setPrimaryClip(ClipData.newPlainText("Diagnóstico do Gama", text))
+                      Toast.makeText(this, "Diagnóstico copiado.", Toast.LENGTH_SHORT).show()
+                  })
+
+                  page.addView(actionButton("Limpar registro") {
+                      getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+                      reload()
+                      Toast.makeText(this, "Registro limpo.", Toast.LENGTH_SHORT).show()
+                  })
+
+                  page.addView(actionButton("Fechar") { finish() })
+
+                  val scroll = ScrollView(this).apply {
+                      isFillViewport = true
+                      addView(page)
+                  }
+                  setContentView(scroll)
+                  reload()
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  reload()
+              }
+
+              private fun reload() {
+                  val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                  val last = prefs.getString(KEY_LAST, null).orEmpty().trim()
+                  val at = prefs.getLong(KEY_AT, 0L)
+                  val component = prefs.getString(KEY_COMPONENT, "desconhecido").orEmpty()
+                  val process = prefs.getString(KEY_PROCESS, packageName).orEmpty()
+                  val thread = prefs.getString(KEY_THREAD, "desconhecida").orEmpty()
+
+                  if (last.isBlank()) {
+                      statusView.text = "Nenhum erro registrado"
+                      detailsView.text = "O Gama ainda não tem um crash salvo neste registro."
+                      return
+                  }
+
+                  statusView.text = "Último erro registrado"
+                  val whenText = if (at > 0L) {
+                      DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.MEDIUM).format(Date(at))
+                  } else {
+                      "horário indisponível"
+                  }
+
+                  detailsView.text = buildString {
+                      append("Data: ").append(whenText).append('\n')
+                      append("Componente: ").append(component).append('\n')
+                      append("Processo: ").append(process).append('\n')
+                      append("Thread: ").append(thread).append("\n\n")
+                      append("Detalhes técnicos:\n").append(last)
+                  }
+              }
+
+              private fun actionButton(label: String, action: (View) -> Unit): Button {
+                  return Button(this).apply {
+                      text = label
+                      isAllCaps = false
+                      textSize = 15f
+                      gravity = Gravity.CENTER
+                      setOnClickListener(action)
+                      val params = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          dp(50),
+                      )
+                      params.topMargin = dp(12)
+                      layoutParams = params
+                  }
+              }
+
+              private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+              companion object {
+                  private const val PREFS = "gama_crash_log"
+                  private const val KEY_LAST = "last"
+                  private const val KEY_AT = "at"
+                  private const val KEY_COMPONENT = "component"
+                  private const val KEY_PROCESS = "process"
+                  private const val KEY_THREAD = "thread"
+              }
+          }
+          KOTLIN_DIAGNOSTIC
+
+          python3 - <<'PY_FIX75_DIAGNOSTIC_UI'
+          from pathlib import Path
+          import re
+
+          service = Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          manifest = Path('app/src/main/AndroidManifest.xml')
+          activity = Path('app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt')
+
+          if not service.is_file() or not manifest.is_file() or not activity.is_file():
+              raise SystemExit('FIX75 diagnostic inputs are missing')
+
+          manifest_source = manifest.read_text(encoding='utf-8')
+          if 'android:name=".GamaDiagnosticActivity"' not in manifest_source:
+              tag = '''
+                  <activity
+                      android:name=".GamaDiagnosticActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTop" />
+              '''
+              if '</application>' not in manifest_source:
+                  raise SystemExit('AndroidManifest application closing tag not found')
+              manifest_source = manifest_source.replace('</application>', tag + '\n    </application>', 1)
+              manifest.write_text(manifest_source, encoding='utf-8')
+
+          service_source = service.read_text(encoding='utf-8')
+          signature = re.search(
+              r'(^[ \t]*(?:private\s+|protected\s+|public\s+|internal\s+)?fun\s+crashDiagnosticReply\s*\([^)]*\)\s*(?::\s*[^\{=\n]+)?\s*\{)',
+              service_source,
+              re.M,
+          )
+          if signature is None:
+              raise SystemExit('crashDiagnosticReply() was not found in GamaService')
+
+          open_brace = service_source.find('{', signature.start())
+          depth = 1
+          i = open_brace + 1
+          in_string = False
+          in_char = False
+          escape = False
+          line_comment = False
+          block_comment = False
+          while i < len(service_source):
+              ch = service_source[i]
+              nxt = service_source[i + 1] if i + 1 < len(service_source) else ''
+              if line_comment:
+                  if ch == '\n':
+                      line_comment = False
+              elif block_comment:
+                  if ch == '*' and nxt == '/':
+                      block_comment = False
+                      i += 1
+              elif in_string:
+                  if escape:
+                      escape = False
+                  elif ch == '\\':
+                      escape = True
+                  elif ch == '"':
+                      in_string = False
+              elif in_char:
+                  if escape:
+                      escape = False
+                  elif ch == '\\':
+                      escape = True
+                  elif ch == "'":
+                      in_char = False
+              else:
+                  if ch == '/' and nxt == '/':
+                      line_comment = True
+                      i += 1
+                  elif ch == '/' and nxt == '*':
+                      block_comment = True
+                      i += 1
+                  elif ch == '"':
+                      in_string = True
+                  elif ch == "'":
+                      in_char = True
+                  elif ch == '{':
+                      depth += 1
+                  elif ch == '}':
+                      depth -= 1
+                      if depth == 0:
+                          close_brace = i
+                          break
+              i += 1
+          else:
+              raise SystemExit('crashDiagnosticReply() has unbalanced braces')
+
+          new_body = r'''
+              val diagnosticIntent = android.content.Intent(this, GamaDiagnosticActivity::class.java)
+                  .addFlags(
+                      android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                          android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                          android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                  )
+              return if (runCatching { startActivity(diagnosticIntent) }.isSuccess) {
+                  "Abri o último diagnóstico na tela."
+              } else {
+                  "Não consegui abrir o diagnóstico agora."
+              }
+          '''
+          service_source = service_source[:open_brace + 1] + new_body + service_source[close_brace:]
+          service.write_text(service_source, encoding='utf-8')
+
+          activity_check = activity.read_text(encoding='utf-8')
+          service_check = service.read_text(encoding='utf-8')
+          manifest_check = manifest.read_text(encoding='utf-8')
+          for required in (
+              'class GamaDiagnosticActivity : Activity()',
+              'Copiar diagnóstico',
+              'Limpar registro',
+              'setTextIsSelectable(true)',
+              'gama_crash_log',
+          ):
+              if required not in activity_check:
+                  raise SystemExit('Diagnostic activity invariant missing: ' + required)
+          if 'GamaDiagnosticActivity::class.java' not in service_check:
+              raise SystemExit('GamaService does not open the diagnostic activity')
+          if 'Último erro registrado: ' in service_check:
+              raise SystemExit('Old long spoken crash diagnostic is still present in GamaService')
+          if 'android:name=".GamaDiagnosticActivity"' not in manifest_check:
+              raise SystemExit('GamaDiagnosticActivity manifest entry is missing')
+
+          print('FIX75 visual crash diagnostics installed.')
+          PY_FIX75_DIAGNOSTIC_UI
+
       - name: Verify fail-soft architecture and privacy-safe diagnostics
         working-directory: _gama_build
         run: |
@@ -3507,7 +3807,11 @@ jobs:
           test -f app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt
           test -f app/src/main/java/com/gama/assistant/GamaVoiceCatalog.kt
           test -f app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt
+          test -f app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt
           test -f app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
+          grep -Fq 'android:name=".GamaDiagnosticActivity"' app/src/main/AndroidManifest.xml
+          grep -Fq 'GamaDiagnosticActivity::class.java' "$SERVICE"
+          grep -Fq 'Copiar diagnóstico' app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt
 
           grep -Fq 'CrashRecorder.install(this)' "$APP"
           test ! -f app/src/main/java/com/gama/assistant/GamaApplication.kt
@@ -3657,7 +3961,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX74-build-logs
+          name: Gama-6.0-FIX75-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -3756,7 +4060,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX74-tests
+          name: Gama-6.0-FIX75-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
@@ -3779,6 +4083,7 @@ jobs:
           - GamaService no longer deliberately stops itself when voice/background state changes;
           - adds a microphone worker watchdog with progressive restart backoff;
           - adds a tiny privacy-safe CrashRecorder for the existing "Gama, diagnóstico" flow;
+          - "Gama, diagnóstico" now opens a private on-device screen with selectable crash text plus copy, clear and close controls instead of reading technical details aloud;
           - removes technical model/process failure messages from normal conversation;
           - adds a hard local-command gate before Gemma, including messages, notifications, time, battery, calendar, WhatsApp, apps and automations;
           - preserves generation/request guards so late AI replies cannot overwrite newer local commands;
