@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX77 APK (morning briefing, real calendar, voice profile and brain IPC recovery)
+name: Build Gama 6.0 FIX78 APK (morning briefing, real calendar, voice profile and brain IPC recovery)
 
 on:
   workflow_dispatch:
@@ -3799,7 +3799,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > /tmp/gama76-overlay.py.xz.b64 <<'GAMA76_OVERLAY'
-          /Td6WFoAAATm1rRGAgAhARwAAAAQz1jM4IyDIS9dADMciiJvqp8dIpVimH2VAtrLUYFySxxtABXT
+          /Td6WFoAAATm1rRGAgAhARwAAAAQz1jM4I2IIZtdADMciiJvqp8dIpVimH2VAtrLUYFySxxtABXT
           +XwneALORvZHsc+vbfeVESSAXXS3DpQ+sTwK9xVYN8J7SDPx9fI616K0YX+MbHgvbGX8icvWJCQN
           ej4gzcztrJLsM33/R8e6yXoBZqB0c1XyfNqmfG7o22rpVXcETSP+VamcTPfgmdAiQLxISBlqmL1N
           61XURvzMuss7SAOg0rxHMEtQN9qqymKqViQxwP8VFEX8pm5TmO2GBRTFc2JiKXJx/3wjiwsriKSZ
@@ -3923,33 +3923,35 @@ jobs:
           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
-          2bXveMJ+3dlLCAGb3b/3iYrYoG4J45FeXDUqr7lJj3fL0GYySaNN9JnqVL6yK2lI9zwZb/WplDUe
-          gLYCusuDFqP1lEE2EAweao64E0lSkWhJdfrYArDo7QPwIkkDfZ7pWYryNMzpocIrocQ5HESQ2L5d
-          wFWAI/PijVn4tt4HS3qxI6HNAwLju9enZm4Rp0pMmVPempMgXo8Vaw8+lfwpnbLbxwSwBv5RX3MH
-          uBQdDhW9g8IkB3Nxynu0yO7wJp/ALtZiaAAhQqwrFzb/kbCSz6cu2v1h51u15yNzdWN8SGCDMu2G
-          jnx4v3VevujWf2Tz0A7cNMo91zAr7RpUoXUxgAXAXaSTeFw8bnplkfPvh6rURtP11GvMh2PfNG8R
-          aAOLumbjESoRS4e450aEsAgokyKEvJgIb14wGgt+fZvXhDkzjera3OTERLCJsIY2XK9jK9hHvCfz
-          zhp21VzEklPtwrUCNr0OdbzOEzmi1nc7O2pgRXSAARiyWu52YwmFr0AKHY1gauBD3pGJ+lIo8zFY
-          hQCZMahCuYWYWHBaNftnpobEzMqMY2k+7vgwZEcQMQI95CTZZ98BsmhzCe9DRZk47upGWo/XjHzN
-          XhNaSZwnVsuM8gB5z1rX23FErLbnQnFm0BNL48EHnPsUooTc3YvM3YbjWWNdB+bVyitH5vSIlshE
-          SjCXEzJA0BD25V+AxMJwRaEvLa5qr1mneX2VXqE1gw8usBzsM9cbIsKnUkTrHCShVLrZTWhIpfnN
-          ELZYkq7ps91wNTEb9mUIQQxCTH0ufodgUtxrAxjhgu5/SAUYWstfV/bzHVngO4jmV3jAeDOqb8oJ
-          CtErCVrs94MbdgKzFvYBZu4UNtdj5MVnidnwGApcwgVSK2riRERHammBkTINWk37knCoZMFLp/RU
-          Uh8C/sJhDBeq4SToTMH6nCSoxrp9ygxtJEeUXVELhoiA7cjSsiiQnP3ox5jIDExj/O+5R2ufrIT4
-          nt2TYLYkqaQOde7U0MOZt+D6bWURJnf4dsLUQGpgX9YroBncauKsxcdXRLrkCATRqyxzOGG7Y5Zl
-          Y+s1GkLd2Ivq4tcKN4d+bByioII9JPD6mkqzArIqh7hjbmgzhSwhuyaiOdv5v0Pwx5mzVEhFoQAO
-          bbxbW/2IpHcx5njk0ZpVIlToU1ZH4xTqESkVBgHKj8qX++R6P9wKTTN4TcpxS1bHRQCvIZ9SwKui
-          kfdHSlFMDHjqtDreq19O5LRn+6q18nlsVZxe43tbG1CiXDh03yuSQ8HZ+JOmaiBfhF/VgUzSN1xE
-          oUq7zk/XwJwMwuaU5qDJG4QwSFxfk0tot9OxwozcCxS6ZKIwRpO8IRiEZaustiZFWSmNx3J2y8X2
-          Ws2eSz4N7Tvf9dseqeGYp0inhsl0T81ggmngVC80Ihf5+xJEKoquXFRGCvGCpdl54csftek4pl41
-          Wj+XAN23hWaaRkGwwU+pcu0N9dGg5HUtR6Pn6pjzBqVD5/lY3o6futxIfZwlyoDWsbrCUKZwNW+f
-          k0vlk5yxRBD76xAWPfzFlBcZM7Agh4banDWkNUrXsyZCnE+CiFgKZMhPcYGArjsiRTnQDUZ2urjD
-          YM78kMSVfpMqehBATO2yDzAACzzieEQuiaGN9kxV9cvtzAmHPrm1pvh9o/J3v7Kv2rxiuxM9CSlu
-          kw9hn0+FnuO308TkDYlMfAamFznOs9QqVsNSnrFJORV/tzk92ZO7SJIRVinX4an6sBaqhzfhxtCM
-          qkUsZIgefUYLofPQDpLL4QflDvOIvJSRlJdun3U8rNHRWE//40eyV9UU14DPySPWRsVLGeP64AqR
-          1UX3ehMFNaH9kw0Hhx7Qs0dhm5Ek/ddPrcJ0fCdLxOiuVqml+piW41wDRhBOAuBkViW6pyVU31N+
-          eQ4OjAnrju1MUJ3VLuOPCnu/r6xgFOyYAJBmy0lCh4IrAADUDPtsc5bivAABy0KEmQIAEvGGOLHE
-          Z/sCAAAAAARZWg==
+          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
+          AARZWg==
           GAMA76_OVERLAY
           base64 --decode /tmp/gama76-overlay.py.xz.b64 | xz -dc > /tmp/gama76-overlay.py
           python3 -m py_compile /tmp/gama76-overlay.py
@@ -3958,6 +3960,9 @@ jobs:
           test -f app/src/main/java/com/gama/assistant/GamaMorningBriefing.kt
           test -f app/src/main/java/com/gama/assistant/GamaCalendarManager.kt
           test -f app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt
+          grep -Fq 'val draft = requireNotNull(result)' app/src/test/java/com/gama/assistant/GamaCalendarCommandParserTest.kt
+          test "$(grep -c 'android.permission.READ_CALENDAR' app/src/main/AndroidManifest.xml)" -eq 1
+          test "$(grep -c 'android.permission.WRITE_CALENDAR' app/src/main/AndroidManifest.xml)" -eq 1
           grep -Fq 'Notification.FLAG_ONGOING_EVENT' app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt
           if grep -Eq 'Notification\.FLAG_ONGOING([^_A-Z]|$)' app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt; then
             echo '::error::Constante Android inválida Notification.FLAG_ONGOING reapareceu.'
@@ -3965,7 +3970,7 @@ jobs:
           fi
           grep -Fq 'GAMA76_BRAIN_IPC_RECOVERY' app/src/main/java/com/gama/assistant/GamaService.kt
           grep -Fq 'android.permission.WRITE_CALENDAR' app/src/main/AndroidManifest.xml
-          echo 'Gama 6.0 FIX77 briefing/calendar/voice/brain overlay applied.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Gama 6.0 FIX78 briefing/calendar/voice/brain overlay applied.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify fail-soft architecture and privacy-safe diagnostics
         working-directory: _gama_build
@@ -4135,7 +4140,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX77-build-logs
+          name: Gama-6.0-FIX78-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -4234,7 +4239,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX77-tests
+          name: Gama-6.0-FIX78-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
