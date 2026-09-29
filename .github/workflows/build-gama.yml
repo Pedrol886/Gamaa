@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX71 APK (runtime stability, fail-soft brain and voice controls)
+name: Build Gama 6.0 FIX72 APK (runtime stability, compiler-safe fail-soft brain and voice controls)
 
 on:
   workflow_dispatch:
@@ -3241,12 +3241,246 @@ jobs:
           python3 -m py_compile /tmp/gama-runtime-hardening.py
           python3 /tmp/gama-runtime-hardening.py
 
+      - name: Repair reconstructed run 67 compiler compatibility
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_FIX72_COMPILER'
+          from pathlib import Path
+          import re
+
+          pkg = Path('app/src/main/java/com/gama/assistant')
+          assistant = pkg / 'AssistantRuntime.kt'
+          generated_app = pkg / 'GamaApplication.kt'
+          voice = pkg / 'GamaVoice.kt'
+
+          if not assistant.is_file():
+              raise SystemExit('AssistantRuntime.kt from run #67 is missing')
+          if not voice.is_file():
+              raise SystemExit('GamaVoice.kt from run #67 is missing')
+
+          def matching_brace(text: str, open_index: int) -> int:
+              depth = 1
+              i = open_index + 1
+              in_string = False
+              in_char = False
+              escape = False
+              line_comment = False
+              block_comment = False
+              while i < len(text):
+                  ch = text[i]
+                  nxt = text[i + 1] if i + 1 < len(text) else ''
+                  if line_comment:
+                      if ch == '\n':
+                          line_comment = False
+                  elif block_comment:
+                      if ch == '*' and nxt == '/':
+                          block_comment = False
+                          i += 1
+                  elif in_string:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == '"':
+                          in_string = False
+                  elif in_char:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == "'":
+                          in_char = False
+                  else:
+                      if ch == '/' and nxt == '/':
+                          line_comment = True
+                          i += 1
+                      elif ch == '/' and nxt == '*':
+                          block_comment = True
+                          i += 1
+                      elif ch == '"':
+                          in_string = True
+                      elif ch == "'":
+                          in_char = True
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              return i
+                  i += 1
+              raise SystemExit('Unbalanced Kotlin braces while repairing run #67 source')
+
+          def replace_call_expressions(source: str, markers: tuple[str, ...], replacement: str = 'Unit'):
+              total = 0
+              while True:
+                  hits = [(source.find(marker), marker) for marker in markers]
+                  hits = [(pos, marker) for pos, marker in hits if pos >= 0]
+                  if not hits:
+                      return source, total
+                  start, marker = min(hits, key=lambda item: item[0])
+                  open_paren = start + len(marker) - 1
+                  close_paren = matching_brace_for_paren(source, open_paren)
+                  source = source[:start] + replacement + source[close_paren + 1:]
+                  total += 1
+
+          def matching_brace_for_paren(text: str, open_index: int) -> int:
+              depth = 1
+              i = open_index + 1
+              in_string = False
+              in_char = False
+              escape = False
+              while i < len(text):
+                  ch = text[i]
+                  if in_string:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == '"':
+                          in_string = False
+                  elif in_char:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == "'":
+                          in_char = False
+                  else:
+                      if ch == '"':
+                          in_string = True
+                      elif ch == "'":
+                          in_char = True
+                      elif ch == '(':
+                          depth += 1
+                      elif ch == ')':
+                          depth -= 1
+                          if depth == 0:
+                              return i
+                  i += 1
+              raise SystemExit('Unbalanced Kotlin parentheses while repairing run #67 source')
+
+          # The successful #67 already has GamaApplication inside AssistantRuntime.kt.
+          # FIX68-71 accidentally created a second class in GamaApplication.kt. Remove only
+          # that generated duplicate and preserve the original application/lifecycle logic.
+          app_source = assistant.read_text(encoding='utf-8')
+          class_match = re.search(r'\bclass\s+GamaApplication\b[^\{]*\{', app_source)
+          if class_match is None:
+              raise SystemExit('Original GamaApplication class was not found in AssistantRuntime.kt')
+          class_open = app_source.find('{', class_match.start())
+          class_close = matching_brace(app_source, class_open)
+
+          # Remove explicit process termination from the original global crash handler.
+          before_class = app_source[:class_open + 1]
+          class_body = app_source[class_open + 1:class_close]
+          after_class = app_source[class_close:]
+          class_body, kill_count = replace_call_expressions(
+              class_body,
+              ('android.os.Process.killProcess(', 'Process.killProcess('),
+              'Unit'
+          )
+          class_body, system_exit_count = replace_call_expressions(
+              class_body,
+              ('java.lang.System.exit(', 'System.exit(', 'kotlin.system.exitProcess(', 'exitProcess('),
+              'Unit'
+          )
+          app_source = before_class + class_body + after_class
+
+          # Re-locate class/function after edits and install CrashRecorder LAST in onCreate,
+          # so it wraps the existing handler instead of being overwritten by it.
+          class_match = re.search(r'\bclass\s+GamaApplication\b[^\{]*\{', app_source)
+          class_open = app_source.find('{', class_match.start())
+          class_close = matching_brace(app_source, class_open)
+          class_segment = app_source[class_open + 1:class_close]
+          if 'CrashRecorder.install(this)' not in class_segment:
+              oncreate = re.search(r'\boverride\s+fun\s+onCreate\s*\([^)]*\)\s*\{', class_segment)
+              if oncreate is None:
+                  raise SystemExit('GamaApplication.onCreate was not found in AssistantRuntime.kt')
+              func_open_rel = class_segment.find('{', oncreate.start())
+              func_open_abs = class_open + 1 + func_open_rel
+              func_close_abs = matching_brace(app_source, func_open_abs)
+              insertion = '\n        // FIX72: outer privacy-safe fail-soft crash supervisor\n        CrashRecorder.install(this)\n'
+              app_source = app_source[:func_close_abs] + insertion + app_source[func_close_abs:]
+
+          assistant.write_text(app_source, encoding='utf-8')
+          if generated_app.exists():
+              generated_app.unlink()
+
+          # FIX68 assumed the TextToSpeech parameter was named `tts`. The #67 implementation
+          # uses a different identifier. Resolve both parameter names from the real signature.
+          voice_source = voice.read_text(encoding='utf-8')
+          apply_match = re.search(
+              r'\bfun\s+apply\s*\((.*?)\)\s*(?::\s*[^\{=\n]+)?\s*\{',
+              voice_source,
+              re.S,
+          )
+          if apply_match is None:
+              raise SystemExit('GamaVoice.apply signature was not found')
+          params = apply_match.group(1)
+          tts_match = re.search(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:android\.speech\.tts\.)?TextToSpeech\b', params)
+          context_match = re.search(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:android\.content\.)?Context\b', params)
+          if tts_match is None:
+              raise SystemExit('TextToSpeech parameter was not found in GamaVoice.apply')
+          if context_match is None:
+              raise SystemExit('Context parameter was not found in GamaVoice.apply')
+          tts_name = tts_match.group(1)
+          context_name = context_match.group(1)
+
+          gate_pattern = re.compile(
+              r'GamaVoiceCatalog\.applyPreferred\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*,\s*[A-Za-z_][A-Za-z0-9_]*\s*\)'
+          )
+          voice_source, gate_count = gate_pattern.subn(
+              f'GamaVoiceCatalog.applyPreferred({context_name}, {tts_name})',
+              voice_source,
+              count=1,
+          )
+          if gate_count != 1:
+              raise SystemExit('Preferred-voice gate was not found exactly once')
+          voice.write_text(voice_source, encoding='utf-8')
+
+          # Compiler-oriented invariants. These fail here, before Gradle, with a useful cause.
+          app_defs = 0
+          app_files = []
+          for kotlin in pkg.glob('*.kt'):
+              text = kotlin.read_text(encoding='utf-8')
+              count = len(re.findall(r'\bclass\s+GamaApplication\b', text))
+              if count:
+                  app_defs += count
+                  app_files.append(kotlin.name)
+          if app_defs != 1:
+              raise SystemExit(f'Expected exactly one GamaApplication, found {app_defs} in {app_files}')
+
+          app_check = assistant.read_text(encoding='utf-8')
+          app_class = re.search(r'\bclass\s+GamaApplication\b[^\{]*\{', app_check)
+          app_open = app_check.find('{', app_class.start())
+          app_close = matching_brace(app_check, app_open)
+          app_class_text = app_check[app_open:app_close + 1]
+          forbidden = re.search(
+              r'(?:android\.os\.)?Process\.killProcess\s*\(|(?:java\.lang\.)?System\.exit\s*\(|(?:kotlin\.system\.)?exitProcess\s*\(',
+              app_class_text,
+          )
+          if forbidden:
+              raise SystemExit('Explicit main-process termination remained in GamaApplication')
+          if 'CrashRecorder.install(this)' not in app_class_text:
+              raise SystemExit('CrashRecorder was not installed in the original GamaApplication')
+
+          voice_check = voice.read_text(encoding='utf-8')
+          expected_gate = f'GamaVoiceCatalog.applyPreferred({context_name}, {tts_name})'
+          if expected_gate not in voice_check:
+              raise SystemExit('GamaVoice preferred voice gate still references wrong identifiers')
+
+          print('FIX72 compiler compatibility repair passed.')
+          print('Original GamaApplication retained in:', assistant)
+          print('Removed explicit application termination calls:', kill_count + system_exit_count)
+          print('GamaVoice.apply parameters:', context_name, tts_name)
+          PY_FIX72_COMPILER
+
       - name: Verify fail-soft architecture and privacy-safe diagnostics
         working-directory: _gama_build
         run: |
           set -euo pipefail
           SERVICE=app/src/main/java/com/gama/assistant/GamaService.kt
-          APP=app/src/main/java/com/gama/assistant/GamaApplication.kt
+          APP=app/src/main/java/com/gama/assistant/AssistantRuntime.kt
           BRAIN=app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt
 
           test -f app/src/main/java/com/gama/assistant/CrashRecorder.kt
@@ -3258,6 +3492,8 @@ jobs:
           test -f app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
 
           grep -Fq 'CrashRecorder.install(this)' "$APP"
+          test ! -f app/src/main/java/com/gama/assistant/GamaApplication.kt
+          test "$(grep -RhsE '^class GamaApplication\b|^class GamaApplication[[:space:]]*:' app/src/main/java/com/gama/assistant/*.kt | wc -l)" -eq 1
           grep -Fq 'RuntimeRecoveryBus.isRecoverableWorker' app/src/main/java/com/gama/assistant/CrashRecorder.kt
           grep -Fq 'gamaLivenessBinder' "$BRAIN"
           grep -Fq 'linkToDeath' app/src/main/java/com/gama/assistant/BrainProcessSupervisor.kt
@@ -3403,7 +3639,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX71-build-logs
+          name: Gama-6.0-FIX72-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -3502,7 +3738,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX71-tests
+          name: Gama-6.0-FIX72-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
@@ -3531,6 +3767,7 @@ jobs:
           - adds persistent installed-voice selection and a native "Voz do Gama" picker with preview;
           - preserves the native particle introduction and slightly densifies the Canvas particle field;
           - preserves Gama 6.0, com.gama.assistant, increasing versionCode, existing automations and all run #67 tests.
+          - reuses the original run #67 GamaApplication instead of declaring a duplicate, and binds the persisted voice gate to the real GamaVoice.apply parameters.
 
           Android security boundaries remain intact. No PIN, biometric, permission, lockscreen, Device Admin or Notification Listener bypass is added.
           NOTES
