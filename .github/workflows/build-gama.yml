@@ -1,4 +1,4 @@
-name: Build Gama 6.0 APK (isolated brain, self-automation and polished assistant)
+name: Build Gama 6.0 FIX65 APK (isolated brain, self-automation and polished assistant)
 
 on:
   workflow_dispatch:
@@ -2838,7 +2838,12 @@ jobs:
           grep -Fq 'endIntroPresentation' app/src/main/java/com/gama/assistant/GamaService.kt
           grep -Fq 'android:name=".GamaIntroActivity"' app/src/main/AndroidManifest.xml
           grep -Fq '"Cinemática"' app/src/main/java/com/gama/assistant/GamaVoice.kt
-          grep -Fq '0.87f to 0.89f' app/src/main/java/com/gama/assistant/GamaVoice.kt
+          # A voz cinematográfica foi refinada no patch de automação.
+          # Verifique a configuração ATUAL, não os valores antigos da primeira 6.0.
+          grep -Fq 'else -> 0.79f to 0.90f' app/src/main/java/com/gama/assistant/GamaVoice.kt || {
+            echo '::error::A configuração cinematográfica atual da voz do Gama não foi encontrada.'
+            exit 1
+          }
           grep -Fq 'class GamaAutomationEngine' app/src/main/java/com/gama/assistant/GamaAutomationEngine.kt
           grep -Fq 'DAILY_TIME' app/src/main/java/com/gama/assistant/AutomationCommandRouter.kt
           grep -Fq 'BATTERY_BELOW' app/src/main/java/com/gama/assistant/AutomationCommandRouter.kt
@@ -2850,6 +2855,8 @@ jobs:
             exit 1
           fi
           echo 'Arquitetura OK: modelo local isolado em :gama_brain; automações determinísticas com confirmação; introdução inicial validada.'
+          echo 'Voz OK: perfil Cinemática validado com pitch e velocidade atuais.'
+
 
 
 
