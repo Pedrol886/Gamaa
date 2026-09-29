@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX75 APK (visual crash diagnostics, runtime stability and fail-soft recovery)
+name: Build Gama 6.0 FIX76 APK (morning briefing, real calendar, voice profile and brain IPC recovery)
 
 on:
   workflow_dispatch:
@@ -3793,6 +3793,175 @@ jobs:
           print('FIX75 visual crash diagnostics installed.')
           PY_FIX75_DIAGNOSTIC_UI
 
+
+      - name: Add morning briefing, real calendar, voice profile and brain IPC recovery
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/gama76-overlay.py.xz.b64 <<'GAMA76_OVERLAY'
+          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
+          AAAABFla
+          GAMA76_OVERLAY
+          base64 --decode /tmp/gama76-overlay.py.xz.b64 | xz -dc > /tmp/gama76-overlay.py
+          python3 -m py_compile /tmp/gama76-overlay.py
+          python3 /tmp/gama76-overlay.py
+
+          test -f app/src/main/java/com/gama/assistant/GamaMorningBriefing.kt
+          test -f app/src/main/java/com/gama/assistant/GamaCalendarManager.kt
+          test -f app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt
+          grep -Fq 'GAMA76_BRAIN_IPC_RECOVERY' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'android.permission.WRITE_CALENDAR' app/src/main/AndroidManifest.xml
+          echo 'Gama 6.0 FIX76 briefing/calendar/voice/brain overlay applied.' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify fail-soft architecture and privacy-safe diagnostics
         working-directory: _gama_build
         run: |
@@ -3961,7 +4130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX75-build-logs
+          name: Gama-6.0-FIX76-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -4060,7 +4229,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX75-tests
+          name: Gama-6.0-FIX76-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
@@ -4091,6 +4260,15 @@ jobs:
           - preserves the native particle introduction and slightly densifies the Canvas particle field;
           - preserves Gama 6.0, com.gama.assistant, increasing versionCode, existing automations and all run #67 tests.
           - reuses the original run #67 GamaApplication instead of declaring a duplicate, and binds the persisted voice gate to the real GamaVoice.apply parameters.
+
+          - adds a local morning briefing from overnight messages, important news notifications and today's calendar;
+          - saying "boa noite" or "vou dormir" starts a sleep window; "bom dia" delivers the briefing;
+          - without an explicit sleep window, the briefing uses the previous 8 hours of locally captured notifications;
+          - calendar commands now create real CalendarContract events after the normal Android calendar permission is granted;
+          - a pending event is committed automatically after the user grants calendar permission;
+          - the selected installed Portuguese TTS voice gets a lower, calmer delivery profile;
+          - isolated brain IPC death gets bounded automatic retries that are cancelled when a newer command arrives;
+          - briefing notification contents remain on-device and are never sent to Gemma.
 
           Android security boundaries remain intact. No PIN, biometric, permission, lockscreen, Device Admin or Notification Listener bypass is added.
           NOTES
