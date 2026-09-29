@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX72 APK (runtime stability, compiler-safe fail-soft brain and voice controls)
+name: Build Gama 6.0 FIX73 APK (runtime stability, compiler-safe fail-soft brain and voice controls)
 
 on:
   workflow_dispatch:
@@ -3429,8 +3429,11 @@ jobs:
           gate_pattern = re.compile(
               r'GamaVoiceCatalog\.applyPreferred\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*,\s*[A-Za-z_][A-Za-z0-9_]*\s*\)'
           )
+          # The #67 GamaVoice.apply TextToSpeech parameter is nullable. Preserve the
+          # boolean gate while safely handling the not-yet-initialized engine.
+          safe_gate = f'{tts_name}?.let {{ GamaVoiceCatalog.applyPreferred({context_name}, it) }} == true'
           voice_source, gate_count = gate_pattern.subn(
-              f'GamaVoiceCatalog.applyPreferred({context_name}, {tts_name})',
+              safe_gate,
               voice_source,
               count=1,
           )
@@ -3465,14 +3468,19 @@ jobs:
               raise SystemExit('CrashRecorder was not installed in the original GamaApplication')
 
           voice_check = voice.read_text(encoding='utf-8')
-          expected_gate = f'GamaVoiceCatalog.applyPreferred({context_name}, {tts_name})'
+          expected_gate = f'{tts_name}?.let {{ GamaVoiceCatalog.applyPreferred({context_name}, it) }} == true'
           if expected_gate not in voice_check:
-              raise SystemExit('GamaVoice preferred voice gate still references wrong identifiers')
+              raise SystemExit('GamaVoice preferred voice gate is not nullable-safe')
+          if re.search(
+              rf'GamaVoiceCatalog\.applyPreferred\s*\(\s*{re.escape(context_name)}\s*,\s*{re.escape(tts_name)}\s*\)',
+              voice_check,
+          ):
+              raise SystemExit('Unsafe nullable TextToSpeech call remained in GamaVoice')
 
-          print('FIX72 compiler compatibility repair passed.')
+          print('FIX73 compiler compatibility repair passed.')
           print('Original GamaApplication retained in:', assistant)
           print('Removed explicit application termination calls:', kill_count + system_exit_count)
-          print('GamaVoice.apply parameters:', context_name, tts_name)
+          print('GamaVoice.apply parameters:', context_name, tts_name, '(nullable-safe)')
           PY_FIX72_COMPILER
 
       - name: Verify fail-soft architecture and privacy-safe diagnostics
@@ -3639,7 +3647,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX72-build-logs
+          name: Gama-6.0-FIX73-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -3738,7 +3746,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX72-tests
+          name: Gama-6.0-FIX73-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
