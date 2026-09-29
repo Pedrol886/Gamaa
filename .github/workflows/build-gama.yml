@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX65 APK (isolated brain, self-automation and polished assistant)
+name: Build Gama 6.0 FIX66 APK (isolated brain, self-automation and polished assistant)
 
 on:
   workflow_dispatch:
@@ -2811,6 +2811,14 @@ jobs:
           grep -Fq 'todo dia às 7 abra o Spotify' app/src/test/java/com/gama/assistant/AutomationCommandRouterTest.kt
           grep -Fq 'blocksUnattendedMessaging' app/src/test/java/com/gama/assistant/AutomationCommandRouterTest.kt
           echo 'Gama 6.0 validado: cérebro isolado, comandos locais, voz refinada, introdução cinematográfica e automações aprovadas pelo usuário.'
+
+      - name: Apply Gama 6.0 FIX66 voice-hint boundary fix
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/com/gama/assistant/GamaVoice.kt"); s=p.read_text(encoding="utf-8"); old="        if (maleHints.any { q.contains(it) }) score += 240\n        if (femaleHints.any { q.contains(it) }) score -= 320"; new="        val tokens = q.split(Regex(\"[^a-z0-9_-]+\"))\n            .filter { it.isNotBlank() }\n            .toSet()\n        if (maleHints.any { it in tokens }) score += 240\n        if (femaleHints.any { it in tokens }) score -= 320"; assert old in s, "ranking antigo não encontrado"; p.write_text(s.replace(old,new,1),encoding="utf-8")'
+          grep -Fq 'if (maleHints.any { it in tokens }) score += 240' app/src/main/java/com/gama/assistant/GamaVoice.kt
+          grep -Fq 'if (femaleHints.any { it in tokens }) score -= 320' app/src/main/java/com/gama/assistant/GamaVoice.kt
 
       - name: Verify isolated brain architecture, automation safety and polished introduction
         working-directory: _gama_build
