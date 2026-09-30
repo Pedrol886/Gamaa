@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX91 APK (priority anti-noise, classroom speech filtering and stable assistant)
+name: Build Gama 6.0 FIX93 APK (strict screen routing, time-aware briefings and priority anti-noise)
 
 on:
   workflow_dispatch:
@@ -33,27 +33,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify complete FIX91 packed workflow was uploaded
+      - name: Verify complete FIX93 packed workflow was uploaded
         run: |
           set -euo pipefail
           WF=".github/workflows/build-gama.yml"
           bytes="$(wc -c < "$WF" | tr -d ' ')"
-          echo "FIX91 packed workflow bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "FIX93 packed workflow bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
           if [ "$bytes" -lt 60000 ]; then
             echo "::error::build-gama.yml parece incompleto: apenas $bytes bytes."
             exit 1
           fi
           for step in \
             'Apply FIX90 runtime plus FIX91 priority anti-noise bundle' \
+            'Add FIX93 strict screen routing, time-aware greetings and sleep window' \
             'Java 17' 'Compile Gama APK' 'Run all Gama unit tests' \
             'Sign and verify Gama.apk' 'Upload APK' 'Publish Gama release'; do
-            grep -Fq -- "- name: $step" "$WF" || {{ echo "::error::Etapa ausente: $step"; exit 1; }}
+            grep -Fq -- "- name: $step" "$WF" || { echo "::error::Etapa ausente: $step"; exit 1; }
           done
-          grep -Fq '# GAMA_FIX91_COMPLETE_END' "$WF" || {
+          grep -Fq '# GAMA_FIX93_COMPLETE_END' "$WF" || {
             echo '::error::Marcador final ausente. O arquivo foi truncado.'
             exit 1
           }
-          echo 'FIX91 packed workflow integrity passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'FIX93 packed workflow integrity passed.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify exact run 67 source of truth
         run: |
@@ -735,6 +736,75 @@ jobs:
             echo "Executando módulo: $script"
             bash "/tmp/g91-runtime/$script"
           done
+      - name: Add FIX93 strict screen routing, time-aware greetings and sleep window
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > /tmp/g93_overlay.sh.xz.b64 <<'G93_OVERLAY'
+          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
+          G93_OVERLAY
+          tr -d ' \n\r\t' < /tmp/g93_overlay.sh.xz.b64 | base64 --decode | xz -dc > /tmp/g93_overlay.sh
+          test "$(sha256sum /tmp/g93_overlay.sh | cut -d' ' -f1)" = "2def7891d96ebe47ab7e7aadf6b6e3449e45a68a7dcf40b17c178c24710268c2"
+          bash -n /tmp/g93_overlay.sh
+          bash /tmp/g93_overlay.sh
+
       - name: Java 17
         uses: actions/setup-java@v4
         with:
@@ -828,7 +898,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX91-build-logs
+          name: Gama-6.0-FIX93-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -894,7 +964,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX91-tests
+          name: Gama-6.0-FIX93-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
@@ -921,4 +991,4 @@ jobs:
           test "$(sha256sum /tmp/g85_97ac7b37cff1.sh | cut -d' ' -f1)" = "f558451d007aa19b5ce62b45dd1086b6762e951a68342b498fff253432dbde1d"
           bash /tmp/g85_97ac7b37cff1.sh
 
-# GAMA_FIX91_COMPLETE_END
+# GAMA_FIX93_COMPLETE_END
