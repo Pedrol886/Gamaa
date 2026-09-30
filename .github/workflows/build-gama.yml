@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX79 APK (internet morning briefing, local-first calendar, natural voice and brain IPC recovery)
+name: Build Gama 6.0 FIX82 APK (secure face gate, lock-screen identity and super-assistant core)
 
 on:
   workflow_dispatch:
@@ -4040,322 +4040,376 @@ jobs:
           grep -Fq 'candidates(tts).firstOrNull()?.voice' app/src/main/java/com/gama/assistant/GamaVoiceCatalog.kt
           echo 'Gama 6.0 FIX79 internet briefing/local calendar/natural voice overlay applied.' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify fail-soft architecture and privacy-safe diagnostics
+      - name: Add centralized Internet hub and online intent router
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          SERVICE=app/src/main/java/com/gama/assistant/GamaService.kt
-          APP=app/src/main/java/com/gama/assistant/AssistantRuntime.kt
-          BRAIN=app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt
 
-          test -f app/src/main/java/com/gama/assistant/CrashRecorder.kt
-          test -f app/src/main/java/com/gama/assistant/RuntimeRecoveryBus.kt
-          test -f app/src/main/java/com/gama/assistant/BrainProcessSupervisor.kt
-          test -f app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt
-          test -f app/src/main/java/com/gama/assistant/GamaVoiceCatalog.kt
-          test -f app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt
-          test -f app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt
-          test -f app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'android:name=".GamaDiagnosticActivity"' app/src/main/AndroidManifest.xml
-          grep -Fq 'GamaDiagnosticActivity::class.java' "$SERVICE"
-          grep -Fq 'Copiar diagnóstico' app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt
+          cat > app/src/main/java/com/gama/assistant/GamaInternetHub.kt <<'KOTLIN_GAMA_INTERNET'
+          package com.gama.assistant
 
-          grep -Fq 'CrashRecorder.install(this)' "$APP"
-          test ! -f app/src/main/java/com/gama/assistant/GamaApplication.kt
-          test "$(grep -RhsE '^class GamaApplication\b|^class GamaApplication[[:space:]]*:' app/src/main/java/com/gama/assistant/*.kt | wc -l)" -eq 1
-          grep -Fq 'RuntimeRecoveryBus.isRecoverableWorker' app/src/main/java/com/gama/assistant/CrashRecorder.kt
-          grep -Fq 'gamaLivenessBinder' "$BRAIN"
-          grep -Fq 'linkToDeath' app/src/main/java/com/gama/assistant/BrainProcessSupervisor.kt
-          grep -Fq 'handleBrainProcessDeath' "$SERVICE"
-          grep -Fq 'recoverMicrophoneOnly' "$SERVICE"
-          grep -Fq 'requestGeneration' "$SERVICE"
-          grep -Fq 'activeBrainGeneration' "$SERVICE"
-          grep -Fq 'MessageCommandRouter.isReadRequest' "$SERVICE"
-          grep -Fq 'handleCalendarVoiceAction' "$SERVICE"
-          grep -Fq 'handleAutomationVoiceCommand' "$SERVICE"
-          grep -Fq 'GamaVoiceCatalog.applyPreferred' app/src/main/java/com/gama/assistant/GamaVoice.kt
-          grep -Fq 'android:name=".GamaVoiceSettingsActivity"' app/src/main/AndroidManifest.xml
-          grep -Fq 'repeat(384)' app/src/main/java/com/gama/assistant/GamaIntroActivity.kt
+          import android.content.Context
+          import android.content.Intent
+          import android.net.Uri
+          import android.text.Html
+          import org.json.JSONObject
+          import org.xml.sax.InputSource
+          import java.io.StringReader
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.nio.charset.StandardCharsets
+          import java.text.Normalizer
+          import java.util.Locale
+          import javax.xml.parsers.DocumentBuilderFactory
 
-          if grep -Fq 'LocalBrain(this)' "$SERVICE"; then
-            echo '::error::LocalBrain não pode ser criado no processo principal.'
-            exit 1
-          fi
-          if grep -Eq '(android\.os\.)?Process\.killProcess[[:space:]]*\(' "$SERVICE" || \
-             grep -Eq '(android\.os\.)?Process\.killProcess[[:space:]]*\(' "$APP"; then
-            echo '::error::O processo principal não pode chamar Process.killProcess().'
-            exit 1
-          fi
-          if grep -Fq 'stopSelf(' "$SERVICE"; then
-            echo '::error::GamaService não pode deliberadamente encerrar a si próprio.'
-            exit 1
-          fi
-          if grep -Fq 'Meu modelo local' "$SERVICE"; then
-            echo '::error::Mensagem técnica do modelo ainda está exposta na conversa.'
-            exit 1
-          fi
+          /**
+           * Fail-soft Internet layer. Only explicit public queries enter here.
+           * Messages, contacts, notification bodies, calendar entries and
+           * automation data stay on-device and never enter this module.
+           */
+          object GamaInternetHub {
+              private const val CONNECT_TIMEOUT_MS = 5_000
+              private const val READ_TIMEOUT_MS = 6_000
+              private const val MAX_TEXT_CHARS = 220_000
 
-          grep -Fq 'tenho alguma mensagem?' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'tem mensagem pra mim?' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'que horas são?' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'como está minha bateria?' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'leia minha agenda hoje' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'abra o zap' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'todo dia às 7 abra o Spotify' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
-          grep -Fq 'pode descansar' app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
+              fun topNews(context: Context): List<String> =
+                  GamaInternetNews.fetch(context).headlines.take(5)
 
-          # Existing run #67 parser/safety tests are preserved, never replaced.
-          test -f app/src/test/java/com/gama/assistant/CalendarCommandRouterTest.kt
-          test -f app/src/test/java/com/gama/assistant/AutomationCommandRouterTest.kt
-          test -f app/src/test/java/com/gama/assistant/AutomationDuePolicyTest.kt
-          grep -Rqs 'WhatsAppCommandParser' app/src/test/java/com/gama/assistant || \
-            echo '::notice::WhatsApp parser is covered by runtime isolation regression plus existing parser integration.'
+              fun newsAbout(query: String): List<String> {
+                  val clean = query.trim().take(180)
+                  if (clean.isBlank()) return emptyList()
+                  val url = "https://news.google.com/rss/search?q=${enc(clean)}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+                  val xml = get(url, "application/rss+xml, application/xml, text/xml") ?: return emptyList()
+                  return parseRss(xml, 5)
+              }
 
-          echo 'Fail-soft verification passed.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Crash recorder stores only process/thread/component/exception class/app stack frames.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Local/private commands are hard-gated before the isolated brain.' >> "$GITHUB_STEP_SUMMARY"
+              fun weather(place: String): String {
+                  val city = place.trim().take(100)
+                  if (city.isBlank()) return "Diga a cidade para eu consultar a previsão do tempo."
+                  val geoText = get(
+                      "https://geocoding-api.open-meteo.com/v1/search?name=${enc(city)}&count=1&language=pt&format=json",
+                      "application/json",
+                  ) ?: return "Não consegui acessar a previsão do tempo agora."
+                  val geo = runCatching { JSONObject(geoText) }.getOrNull()
+                      ?: return "Não consegui interpretar a localização agora."
+                  val results = geo.optJSONArray("results")
+                  if (results == null || results.length() == 0) {
+                      return "Não encontrei essa cidade. Tente dizer a cidade e o estado."
+                  }
+                  val first = results.optJSONObject(0) ?: return "Não encontrei essa cidade."
+                  val lat = first.optDouble("latitude", Double.NaN)
+                  val lon = first.optDouble("longitude", Double.NaN)
+                  if (!lat.isFinite() || !lon.isFinite()) return "Não consegui localizar essa cidade."
+                  val name = first.optString("name", city)
+                  val admin = first.optString("admin1", "")
+                  val label = listOf(name, admin).filter { it.isNotBlank() }.distinct().joinToString(", ")
+                  val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+                      "&current=temperature_2m,apparent_temperature,precipitation,weather_code" +
+                      "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+                      "&timezone=auto&forecast_days=2"
+                  val forecastText = get(url, "application/json")
+                      ?: return "Localizei $label, mas não consegui baixar a previsão agora."
+                  val root = runCatching { JSONObject(forecastText) }.getOrNull()
+                      ?: return "Não consegui interpretar a previsão agora."
+                  val current = root.optJSONObject("current")
+                  val daily = root.optJSONObject("daily")
+                  val temp = current?.optDouble("temperature_2m", Double.NaN) ?: Double.NaN
+                  val apparent = current?.optDouble("apparent_temperature", Double.NaN) ?: Double.NaN
+                  val code = current?.optInt("weather_code", -1) ?: -1
+                  val max = daily?.optJSONArray("temperature_2m_max")?.optDouble(0, Double.NaN) ?: Double.NaN
+                  val min = daily?.optJSONArray("temperature_2m_min")?.optDouble(0, Double.NaN) ?: Double.NaN
+                  val rain = daily?.optJSONArray("precipitation_probability_max")?.optInt(0, -1) ?: -1
+                  val parts = mutableListOf<String>()
+                  parts += "Em $label, ${weatherDescription(code)}"
+                  if (temp.isFinite()) parts += "Agora faz ${one(temp)} graus"
+                  if (apparent.isFinite() && temp.isFinite() && kotlin.math.abs(apparent - temp) >= 1.0) {
+                      parts += "A sensação é de ${one(apparent)} graus"
+                  }
+                  if (min.isFinite() && max.isFinite()) parts += "Hoje a mínima fica perto de ${one(min)} e a máxima de ${one(max)} graus"
+                  if (rain >= 0) parts += "A chance máxima de chuva hoje é de $rain por cento"
+                  return parts.joinToString(". ") + "."
+              }
 
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+              fun currency(raw: String): String {
+                  val n = normalize(raw)
+                  val aliases = listOf(
+                      Triple("dolar", "USD", "dólares"), Triple("usd", "USD", "dólares"),
+                      Triple("real", "BRL", "reais"), Triple("reais", "BRL", "reais"), Triple("brl", "BRL", "reais"),
+                      Triple("euro", "EUR", "euros"), Triple("eur", "EUR", "euros"),
+                      Triple("libra", "GBP", "libras"), Triple("gbp", "GBP", "libras"),
+                      Triple("iene", "JPY", "ienes"), Triple("jpy", "JPY", "ienes"),
+                  )
+                  val mentions = mutableListOf<Pair<Int, Triple<String, String, String>>>()
+                  for (item in aliases) {
+                      Regex("\\b${Regex.escape(item.first)}\\b").findAll(n).forEach { mentions += it.range.first to item }
+                  }
+                  val sorted = mentions.sortedBy { it.first }
+                  val amount = Regex("""\b(\d+(?:[.,]\d+)?)\b""").find(n)
+                      ?.groupValues?.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull() ?: 1.0
+                  val from = when {
+                      sorted.size >= 2 -> sorted[0].second.second
+                      sorted.size == 1 && sorted[0].second.second != "BRL" -> sorted[0].second.second
+                      sorted.size == 1 -> "BRL"
+                      else -> "USD"
+                  }
+                  val to = when {
+                      sorted.size >= 2 -> sorted[1].second.second
+                      from == "BRL" -> "USD"
+                      else -> "BRL"
+                  }
+                  if (from == to) return "A origem e o destino são a mesma moeda."
+                  val text = get(
+                      "https://api.frankfurter.app/latest?amount=$amount&from=$from&to=$to",
+                      "application/json",
+                  ) ?: return "Não consegui consultar a cotação agora."
+                  val value = runCatching { JSONObject(text).optJSONObject("rates")?.optDouble(to, Double.NaN) ?: Double.NaN }
+                      .getOrDefault(Double.NaN)
+                  if (!value.isFinite()) return "A fonte de câmbio não retornou essa conversão agora."
+                  return "${num(amount)} ${currencyName(from)} equivalem a aproximadamente ${num(value)} ${currencyName(to)}, usando a cotação online mais recente disponível."
+              }
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
+              fun research(query: String): String {
+                  val clean = query.trim().take(220)
+                  if (clean.isBlank()) return "Diga o assunto que você quer pesquisar."
+                  val search = get(
+                      "https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${enc(clean)}&srlimit=1&format=json&utf8=1",
+                      "application/json",
+                  ) ?: return "Não consegui pesquisar esse assunto agora."
+                  val root = runCatching { JSONObject(search) }.getOrNull()
+                      ?: return "Não consegui interpretar a pesquisa agora."
+                  val hits = root.optJSONObject("query")?.optJSONArray("search")
+                  if (hits == null || hits.length() == 0) return "Não encontrei um resultado confiável para esse assunto."
+                  val title = hits.optJSONObject(0)?.optString("title", "").orEmpty()
+                  if (title.isBlank()) return "Não encontrei um resultado confiável para esse assunto."
+                  val extract = get(
+                      "https://pt.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=${enc(title)}&format=json&utf8=1",
+                      "application/json",
+                  ) ?: return "Encontrei $title, mas não consegui abrir o resumo agora."
+                  val pages = runCatching { JSONObject(extract).optJSONObject("query")?.optJSONObject("pages") }.getOrNull()
+                      ?: return "Encontrei $title, mas o resumo não estava disponível."
+                  val keys = pages.keys()
+                  var text = ""
+                  while (keys.hasNext()) {
+                      text = pages.optJSONObject(keys.next())?.optString("extract", "").orEmpty()
+                      if (text.isNotBlank()) break
+                  }
+                  if (text.isBlank()) return "Encontrei $title, mas não havia um resumo disponível."
+                  return "$title. ${sentences(text, 4, 850)}"
+              }
 
-      - name: Android platform and build tools
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+              fun summarizeUrl(rawUrl: String): String {
+                  val url = publicUrl(rawUrl) ?: return "Esse link não é um endereço público HTTP ou HTTPS válido."
+                  val html = get(url, "text/html, application/xhtml+xml") ?: return "Não consegui abrir essa página agora."
+                  val title = Regex("""(?is)<title[^>]*>(.*?)</title>""").find(html)
+                      ?.groupValues?.getOrNull(1)?.let(::htmlText).orEmpty()
+                  val desc = Regex("""(?is)<meta[^>]+(?:name|property)\s*=\s*["'](?:description|og:description)["'][^>]+content\s*=\s*["'](.*?)["'][^>]*>""")
+                      .find(html)?.groupValues?.getOrNull(1)?.let(::htmlText).orEmpty()
+                  val body = html
+                      .replace(Regex("""(?is)<script\b.*?</script>"""), " ")
+                      .replace(Regex("""(?is)<style\b.*?</style>"""), " ")
+                      .let(::htmlText)
+                  val summary = sentences(body, 4, 900)
+                  val parts = listOf(title, desc, summary).filter { it.isNotBlank() }.distinct()
+                  return if (parts.isEmpty()) "Abri a página, mas não encontrei texto suficiente para resumir."
+                  else parts.joinToString(". ").take(1_200)
+              }
 
-      - name: Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+              fun openUrl(context: Context, raw: String): Boolean {
+                  val url = publicUrl(raw) ?: return false
+                  return open(context, url)
+              }
 
-      - name: Set increasing versionCode and release metadata
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_VERSION'
-          from pathlib import Path
-          import os, re
-          path = Path('app/build.gradle.kts')
-          source = path.read_text(encoding='utf-8')
-          run = int(os.environ['GITHUB_RUN_NUMBER'])
-          code = 20300000 + run
-          source, count = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
-          if count != 1:
-              raise SystemExit('versionCode não encontrado.')
-          if 'versionName = "Gama 6.0"' not in source:
-              raise SystemExit('versionName Gama 6.0 não encontrado.')
-          path.write_text(source, encoding='utf-8')
-          print('versionCode:', code)
-          PY_VERSION
-          echo "GAMA_TAG=gama-6.0-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-          echo "GAMA_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+              fun openSearch(context: Context, query: String): Boolean =
+                  query.trim().takeIf { it.isNotBlank() }?.let { open(context, "https://www.google.com/search?q=${enc(it)}") } ?: false
 
-      - name: Download and verify offline voice models
-        working-directory: _gama_build
-        run: bash tools/download_models.sh
+              fun openPriceSearch(context: Context, query: String): Boolean =
+                  query.trim().takeIf { it.isNotBlank() }?.let { open(context, "https://www.google.com/search?tbm=shop&q=${enc(it)}") } ?: false
 
-      - name: Compile Gama APK
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
+              fun openRoute(context: Context, destination: String): Boolean =
+                  destination.trim().takeIf { it.isNotBlank() }?.let { open(context, "https://www.google.com/maps/dir/?api=1&destination=${enc(it)}") } ?: false
 
-      - name: Run all Gama unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          gradle :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+              private fun open(context: Context, url: String): Boolean = runCatching {
+                  context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                  true
+              }.getOrDefault(false)
 
-      - name: Verify regression test report exists
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          test -d app/build/test-results/testDebugUnitTest
-          grep -Rqs 'RuntimeStabilityRegressionTest' app/build/test-results/testDebugUnitTest
-          if grep -RqsE 'failures="[1-9]|errors="[1-9]' app/build/test-results/testDebugUnitTest; then
-            echo '::error::Há teste de regressão falhando.'
-            exit 1
-          fi
+              private fun get(url: String, accept: String): String? {
+                  val c = runCatching { (URL(url).openConnection() as HttpURLConnection).apply {
+                      requestMethod = "GET"
+                      connectTimeout = CONNECT_TIMEOUT_MS
+                      readTimeout = READ_TIMEOUT_MS
+                      instanceFollowRedirects = true
+                      setRequestProperty("User-Agent", "Gama/6.0 Android")
+                      setRequestProperty("Accept", accept)
+                      setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.5")
+                  } }.getOrNull() ?: return null
+                  return try {
+                      if (c.responseCode !in 200..299) return null
+                      c.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                          val out = StringBuilder()
+                          val buffer = CharArray(4096)
+                          while (out.length < MAX_TEXT_CHARS) {
+                              val r = reader.read(buffer, 0, minOf(buffer.size, MAX_TEXT_CHARS - out.length))
+                              if (r <= 0) break
+                              out.append(buffer, 0, r)
+                          }
+                          out.toString()
+                      }
+                  } catch (_: Exception) { null } finally { runCatching { c.disconnect() } }
+              }
 
-      - name: Show first failure in summary
-        if: failure()
-        run: |
-          python3 - <<'PY_DIAG'
-          from pathlib import Path
-          import os, re
-          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as out:
-              out.write('## Gama 6.0: diagnóstico de build\n\n')
-              for name in ('gama-build.log', 'gama-tests.log'):
-                  log = Path(name)
-                  if not log.is_file():
-                      continue
-                  lines = log.read_text(encoding='utf-8', errors='replace').splitlines()
-                  problems = [line for line in lines if re.search(
-                      r'(^e: |\berror:|^FAILURE:|^> Task .* FAILED|^\* What went wrong:|^Caused by:)', line)]
-                  excerpt = problems[:100] if problems else lines[-100:]
-                  out.write('### ' + name + '\n\n```text\n')
-                  out.write('\n'.join(excerpt))
-                  out.write('\n```\n\n')
-          PY_DIAG
+              private fun parseRss(xml: String, limit: Int): List<String> = runCatching {
+                  val factory = DocumentBuilderFactory.newInstance().apply {
+                      runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+                      runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+                      runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+                  }
+                  val doc = factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+                  val items = doc.getElementsByTagName("item")
+                  buildList {
+                      for (i in 0 until items.length) {
+                          val children = items.item(i).childNodes
+                          var title = ""
+                          for (j in 0 until children.length) {
+                              if (children.item(j).nodeName.equals("title", true)) {
+                                  title = children.item(j).textContent.orEmpty(); break
+                              }
+                          }
+                          val clean = title.replace(Regex("""\s+-\s+[^-]{2,80}$"""), " ").replace(Regex("""\s+"""), " ").trim()
+                          if (clean.isNotBlank() && clean !in this) add(clean)
+                          if (size >= limit) break
+                      }
+                  }
+              }.getOrDefault(emptyList())
 
-      - name: Upload build diagnostic logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-6.0-FIX79-build-logs
-          path: |
-            gama-build.log
-            gama-tests.log
-          if-no-files-found: warn
+              private fun publicUrl(raw: String): String? {
+                  val u = runCatching { URL(raw.trim().trimEnd('.', ',', ';', ')', ']', '}', '"', '\'')) }.getOrNull() ?: return null
+                  if (u.protocol != "https" && u.protocol != "http") return null
+                  val h = u.host.lowercase(Locale.ROOT)
+                  if (h.isBlank()) return null
+                  val blocked = h == "localhost" || h == "0.0.0.0" || h == "::1" || h.startsWith("127.") ||
+                      h.startsWith("10.") || h.startsWith("192.168.") || h.startsWith("169.254.") || h.endsWith(".local") ||
+                      Regex("""^172\.(1[6-9]|2\d|3[01])\.""").containsMatchIn(h)
+                  return if (blocked) null else u.toString()
+              }
 
-      - name: Sign and verify Gama.apk
-        id: package
-        working-directory: _gama_build
-        env:
-          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          input_apk="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n1)"
-          test -s "$input_apk"
+              private fun htmlText(value: String): String = Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY)
+                  .toString().replace(Regex("""\s+"""), " ").trim()
 
-          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
-            mkdir -p .gama-signing
-            chmod 700 .gama-signing
-            printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'
-            python3 - "$GAMA_SIGNING_SEED" .gama-signing/key.der <<'PY_KEY'
-          import sys
-          raw = bytes.fromhex(sys.argv[1])
-          order = int('FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551', 16)
-          d = (int.from_bytes(raw, 'big') % (order - 1)) + 1
-          key = d.to_bytes(32, 'big')
-          der = bytes.fromhex('30310201010420') + key + bytes.fromhex('A00A06082A8648CE3D030107')
-          open(sys.argv[2], 'wb').write(der)
-          PY_KEY
-            openssl ec -inform DER -in .gama-signing/key.der -out .gama-signing/key.pem >/dev/null 2>&1
-            printf '%s' 'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ1ekNDQVdHZ0F3SUJBZ0lFQVRVb1FEQUtCZ2dxaGtqT1BRUURBakE2TVJ3d0dnWURWUVFEREJOSFlXMWgKSUZOMFlXSnNaU0JUYVdkdWFXNW5NUTB3Q3dZRFZRUUtEQVJIWVcxaE1Rc3dDUVlEVlFRR0V3SkNVakFnRncweQpOakE1TWpneE5UTTROREJhR0E4eU1USTJNRGt3TkRFMU16ZzBNRm93T2pFY01Cb0dBMVVFQXd3VFIyRnRZU0JUCmRHRmliR1VnVTJsbmJtbHVaekVOTUFzR0ExVUVDZ3dFUjJGdFlURUxNQWtHQTFVRUJoTUNRbEl3V1RBVEJnY3EKaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUV2FNc3krYm84OEorSFcxQktpVGVJUU56REEzd29SQUo0Q0hXZAp4QndQN0NLR0F4QWFZK3Z4d0dBTFZTN1FNU2Zoa0VYd294NElya0kxZUhRck5tTzNvMU13VVRBZEJnTlZIUTRFCkZnUVU4a2ZjczhxMC9MQlA5NHRJTS8yVXZXbXRTZzh3SHdZRFZSMGpCQmd3Rm9BVThrZmNzOHEwL0xCUDk0dEkKTS8yVXZXbXRTZzh3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUVBajZmZQpEcyszSDZQQTRqRk1jS0FQR2pEY0E3amc1cU9WZjg4SkU0UDRvK1VDSURLS3BGMlZ2MTVHdTdaTTgyRlBPZFhtCmNQTHNDOUlkd1NzOUpLM05ZclhKCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K' | base64 --decode > .gama-signing/cert.pem
-            keyhash="$(openssl pkey -in .gama-signing/key.pem -pubout -outform DER | sha256sum | cut -d' ' -f1)"
-            certhash="$(openssl x509 -in .gama-signing/cert.pem -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)"
-            test "$keyhash" = "$certhash"
-            fingerprint="$(openssl x509 -in .gama-signing/cert.pem -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:lower:]' '[:upper:]')"
-            test "$fingerprint" = '6933EDA890C29567A8F4B6CEAD7A39A442DF109D43B813A19F3F6FA7F39B078C'
-            openssl pkcs12 -export -inkey .gama-signing/key.pem -in .gama-signing/cert.pem -out .gama-signing/gama.p12 -name gama -passout pass:GamaStable2026
-            "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f 4 "$input_apk" dist/Gama-aligned.apk
-            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks .gama-signing/gama.p12 --ks-type PKCS12 --ks-key-alias gama --ks-pass pass:GamaStable2026 --key-pass pass:GamaStable2026 --out dist/Gama.apk dist/Gama-aligned.apk
-            rm -f dist/Gama-aligned.apk
-            printf '%s\n' "$fingerprint" > dist/signing-cert-sha256.txt
-            printf '%s\n' 'stable' > dist/install-mode.txt
-            rm -rf .gama-signing
-          else
-            cp "$input_apk" dist/Gama.apk
-            printf '%s\n' 'debug-runner-signature' > dist/signing-cert-sha256.txt
-            printf '%s\n' 'FRESH INSTALL ONLY - configure GAMA_SIGNING_SEED for reliable future updates.' > dist/install-mode.txt
-            echo "::warning::APK em modo instalação limpa. Pode ser necessário desinstalar a versão anterior."
-          fi
+              private fun sentences(value: String, count: Int, maxChars: Int): String =
+                  Regex("""(?<=[.!?])\s+""").split(value.replace(Regex("""\s+"""), " ").trim())
+                      .take(count).joinToString(" ").take(maxChars).trim()
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/Gama.apk | tee dist/signature-info.txt
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Gama.apk > dist/apk-info.txt
-          grep -m1 '^package:' dist/apk-info.txt
-          grep -q "name='com.gama.assistant'" dist/apk-info.txt
-          grep -q "versionCode='2030" dist/apk-info.txt
-          grep -q "versionName='Gama 6.0'" dist/apk-info.txt
-          (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
+              private fun weatherDescription(code: Int): String = when (code) {
+                  0 -> "o céu está limpo"; 1, 2 -> "há poucas nuvens"; 3 -> "o céu está nublado"
+                  45, 48 -> "há neblina"; 51, 53, 55, 56, 57 -> "há garoa"
+                  61, 63, 65, 66, 67 -> "está chovendo"; 80, 81, 82 -> "há pancadas de chuva"
+                  95, 96, 99 -> "há trovoadas"; else -> "a previsão está disponível"
+              }
 
-      - name: Verify final APK metadata and package size
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          test -s dist/Gama.apk
-          test -s dist/Gama.apk.sha256
-          test -s dist/apk-info.txt
-          test -s dist/install-mode.txt
-          test -s dist/signing-cert-sha256.txt
-          grep -q "name='com.gama.assistant'" dist/apk-info.txt
-          grep -q "versionCode='2030" dist/apk-info.txt
-          grep -q "versionName='Gama 6.0'" dist/apk-info.txt
-          (cd dist && sha256sum -c Gama.apk.sha256)
-          apk_bytes="$(wc -c < dist/Gama.apk)"
-          test "$apk_bytes" -gt 1000000
-          echo "APK bytes: $apk_bytes" >> "$GITHUB_STEP_SUMMARY"
-          echo "Install mode: $(cat dist/install-mode.txt)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Brain process: isolated :gama_brain with Binder death supervision" >> "$GITHUB_STEP_SUMMARY"
-          echo "Main process: no killProcess / no stopSelf in GamaService" >> "$GITHUB_STEP_SUMMARY"
-          echo "Microphone: worker recovery + progressive backoff watchdog" >> "$GITHUB_STEP_SUMMARY"
-          echo "Voice: exact installed voice selection can be persisted" >> "$GITHUB_STEP_SUMMARY"
-          echo "Intro: native Canvas particle formation preserved and densified" >> "$GITHUB_STEP_SUMMARY"
+              private fun currencyName(code: String): String = when (code) {
+                  "USD" -> "dólares"; "BRL" -> "reais"; "EUR" -> "euros"; "GBP" -> "libras"; "JPY" -> "ienes"; else -> code
+              }
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.signing.outputs.artifact }}
-          path: |
-            _gama_build/dist/Gama.apk
-            _gama_build/dist/Gama.apk.sha256
-            _gama_build/dist/apk-info.txt
-            _gama_build/dist/install-mode.txt
-            _gama_build/dist/signing-cert-sha256.txt
-            _gama_build/dist/signature-info.txt
+              private fun num(value: Double): String = if (kotlin.math.abs(value - value.toLong()) < 0.000001) value.toLong().toString()
+                  else String.format(Locale("pt", "BR"), "%.2f", value)
 
-      - name: Upload test reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-6.0-FIX79-tests
-          path: |
-            _gama_build/app/build/reports/tests
-            _gama_build/app/build/test-results
-          if-no-files-found: warn
+              private fun one(value: Double): String = String.format(Locale("pt", "BR"), "%.1f", value)
+              private fun enc(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8.name())
+              private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+                  .replace(Regex("""\p{M}+"""), "").replace(Regex("""[^a-z0-9 ]+"""), " ").replace(Regex("""\s+"""), " ").trim()
+          }
+          KOTLIN_GAMA_INTERNET
 
-      - name: Publish Gama release
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          cat > /tmp/gama-release.md <<'NOTES'
-          Gama 6.0 runtime stability build based exactly on successful GitHub Actions run #67 (commit 87d85998667f9e51e39860991398a2e31cd5f3c7).
+          cat > app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt <<'KOTLIN_GAMA_ONLINE_ROUTER'
+          package com.gama.assistant
 
-          Stability changes:
-          - keeps Gemma/MediaPipe isolated in :gama_brain;
-          - watches the remote brain with a Binder liveness channel;
-          - a brain-process death clears only the current AI request and keeps the voice session alive;
-          - removes force-kill behavior from the main Gama process;
-          - GamaService no longer deliberately stops itself when voice/background state changes;
-          - adds a microphone worker watchdog with progressive restart backoff;
-          - adds a tiny privacy-safe CrashRecorder for the existing "Gama, diagnóstico" flow;
-          - "Gama, diagnóstico" now opens a private on-device screen with selectable crash text plus copy, clear and close controls instead of reading technical details aloud;
-          - removes technical model/process failure messages from normal conversation;
-          - adds a hard local-command gate before Gemma, including messages, notifications, time, battery, calendar, WhatsApp, apps and automations;
-          - preserves generation/request guards so late AI replies cannot overwrite newer local commands;
-          - adds persistent installed-voice selection and a native "Voz do Gama" picker with preview;
-          - preserves the native particle introduction and slightly densifies the Canvas particle field;
-          - preserves Gama 6.0, com.gama.assistant, increasing versionCode, existing automations and all run #67 tests.
-          - reuses the original run #67 GamaApplication instead of declaring a duplicate, and binds the persisted voice gate to the real GamaVoice.apply parameters.
+          import android.content.Context
+          import java.text.Normalizer
+          import java.util.Locale
 
-          - "bom dia" now builds a richer morning briefing with date/time, overnight messages, Internet news, today's calendar and battery;
-          - Internet news comes from a public Brazilian Google News RSS feed, not from notification headlines;
-          - saying "boa noite" or "vou dormir" starts a sleep window; without one, the briefing uses the previous 8 hours for messages;
-          - message contents remain local; the news request sends no message, contact, notification or calendar content;
-          - calendar creation is a hard local-first route and never falls through to Gemma just because the phrasing is incomplete;
-          - calendar verbs now include marque, agende, adicione, coloque, anote, crie, registre and bote variants;
-          - incomplete calendar creation asks locally for day/time instead of inventing a time or invoking the brain;
-          - calendar commands create real CalendarContract events after normal Android permission is granted;
-          - the automatic Portuguese TTS selector now prioritizes higher-quality/natural voices, including network voices when available;
-          - pitch was returned close to natural (0.96) with a calm speech rate (0.90) to avoid the metallic sound of the old 0.82 pitch;
-          - transient isolated-brain recovery no longer overwrites the user-facing crash diagnostic; only final unavailability is recorded;
-          - fixes the Android ongoing-notification flag to Notification.FLAG_ONGOING_EVENT.
+          object GamaOnlineRouter {
+              enum class Mode { NONE, NEWS, WEATHER, CURRENCY, RESEARCH, PAGE_SUMMARY, OPEN_LINK, ROUTE, PRICE, SPORTS, ENTERTAINMENT, WEB_SEARCH }
 
-          Android security boundaries remain intact. No PIN, biometric, permission, lockscreen, Device Admin or Notification Listener bypass is added.
-          NOTES
-          if gh release view "$GAMA_TAG" > /dev/null 2>&1; then
-            gh release upload "$GAMA_TAG" _gama_build/dist/Gama.apk _gama_build/dist/Gama.apk.sha256 _gama_build/dist/install-mode.txt --clobber
-          else
-            gh release create "$GAMA_TAG" _gama_build/dist/Gama.apk _gama_build/dist/Gama.apk.sha256 _gama_build/dist/install-mode.txt --target "$GAMA_COMMIT" --title "Gama 6.0 ($GAMA_TAG)" --notes-file /tmp/gama-release.md
-          fi
+              fun classify(raw: String): Mode {
+                  val c = normalize(raw)
+                  if (c.isBlank() || isPrivate(c)) return Mode.NONE
+                  val hasUrl = Regex("""https?://\S+""", RegexOption.IGNORE_CASE).containsMatchIn(raw)
+                  if (hasUrl && any(c, "resuma", "resumir", "resumo", "explique esse link", "o que diz esse link")) return Mode.PAGE_SUMMARY
+                  if (hasUrl && any(c, "abra", "abrir", "acesse", "entre")) return Mode.OPEN_LINK
+                  if (any(c, "noticia", "noticias", "manchete", "manchetes", "aconteceu hoje", "ultimas noticias")) return Mode.NEWS
+                  if (any(c, "clima", "previsao do tempo", "tempo em", "vai chover", "temperatura em")) return Mode.WEATHER
+                  if (any(c, "cotacao", "dolar", "dolares", "euro", "euros", "libra", "iene", "converter moeda")) return Mode.CURRENCY
+                  if (any(c, "rota para", "como chegar", "transito para", "ir para", "abrir maps", "abra o maps")) return Mode.ROUTE
+                  if (any(c, "quanto custa", "preco de", "precos de", "compare precos", "comparar precos")) return Mode.PRICE
+                  if (any(c, "placar", "brasileirao", "libertadores", "champions", "formula 1", "resultado do jogo", "proximo jogo")) return Mode.SPORTS
+                  if (any(c, "estreia do filme", "estreia da serie", "lancamento do filme", "lancamento da serie", "cinema hoje")) return Mode.ENTERTAINMENT
+                  if (any(c, "pesquise na internet", "procure na internet", "pesquise sobre", "pesquisar sobre", "pesquisa sobre")) return Mode.RESEARCH
+                  if (any(c, "abra o site", "abrir o site", "pesquise no google", "buscar no google", "busque no google")) return Mode.WEB_SEARCH
+                  return Mode.NONE
+              }
+
+              fun handleAsync(context: Context, raw: String, callback: (String) -> Unit): Boolean {
+                  val mode = classify(raw)
+                  if (mode == Mode.NONE) return false
+                  when (mode) {
+                      Mode.OPEN_LINK -> callback(if (extractUrl(raw)?.let { GamaInternetHub.openUrl(context, it) } == true) "Abri o link." else "Não consegui abrir esse link.")
+                      Mode.ROUTE -> {
+                          val destination = after(raw, "rota para", "como chegar em", "como chegar a", "transito para", "ir para")
+                          callback(if (destination.isBlank()) "Diga para onde você quer ir." else if (GamaInternetHub.openRoute(context, destination)) "Abri a rota para $destination." else "Não consegui abrir a rota agora.")
+                      }
+                      Mode.PRICE -> {
+                          val product = after(raw, "quanto custa", "preco de", "precos de", "compare precos de", "comparar precos de")
+                          callback(if (product.isBlank()) "Diga qual produto você quer pesquisar." else if (GamaInternetHub.openPriceSearch(context, product)) "Abri resultados atuais de preço para $product. Confira a loja e o valor antes de comprar." else "Não consegui abrir a pesquisa de preços agora.")
+                      }
+                      Mode.WEB_SEARCH -> {
+                          val q = after(raw, "abra o site", "abrir o site", "pesquise no google", "buscar no google", "busque no google")
+                          callback(if (GamaInternetHub.openSearch(context, q)) "Abri a pesquisa na Internet." else "Não consegui abrir a pesquisa agora.")
+                      }
+                      else -> Thread({
+                          val answer = runCatching { execute(context, raw, mode) }.getOrElse { "A consulta online falhou, mas continuo funcionando normalmente." }
+                          callback(answer)
+                      }, "gama-internet-${mode.name.lowercase(Locale.ROOT)}").apply { isDaemon = true; start() }
+                  }
+                  return true
+              }
+
+              private fun execute(context: Context, raw: String, mode: Mode): String = when (mode) {
+                  Mode.NEWS -> {
+                      val topic = newsTopic(raw)
+                      val headlines = if (topic.isBlank()) GamaInternetHub.topNews(context) else GamaInternetHub.newsAbout(topic)
+                      if (headlines.isEmpty()) "Não consegui atualizar as notícias pela Internet agora."
+                      else (if (topic.isBlank()) "As principais notícias que encontrei agora são: " else "As notícias mais recentes que encontrei sobre $topic são: ") + headlines.take(4).joinToString("; ") + "."
+                  }
+                  Mode.WEATHER -> GamaInternetHub.weather(weatherPlace(raw))
+                  Mode.CURRENCY -> GamaInternetHub.currency(raw)
+                  Mode.RESEARCH -> GamaInternetHub.research(after(raw, "pesquise na internet", "procure na internet", "pesquise sobre", "pesquisar sobre", "pesquisa sobre"))
+                  Mode.PAGE_SUMMARY -> extractUrl(raw)?.let { GamaInternetHub.summarizeUrl(it) } ?: "Não encontrei o link na sua frase."
+                  Mode.SPORTS -> {
+                      val h = GamaInternetHub.newsAbout(normalize(raw) + " esporte")
+                      if (h.isEmpty()) "Não consegui atualizar esse resultado esportivo agora." else "Encontrei estas atualizações esportivas: ${h.take(4).joinToString("; ")}."
+                  }
+                  Mode.ENTERTAINMENT -> {
+                      val q = normalize(raw)
+                      val h = GamaInternetHub.newsAbout(q)
+                      if (h.isEmpty()) GamaInternetHub.research(q) else "Encontrei estas informações recentes: ${h.take(3).joinToString("; ")}."
+                  }
+                  else -> "Não consegui concluir essa consulta online."
+              }
+
+              private fun isPrivate(c: String): Boolean = any(c,
+                  "agenda", "calendario", "compromisso", "evento", "mensagem", "mensagens", "whatsapp", "zap",
+                  "notificacao", "notificacoes", "contato", "contatos", "bateria", "alarme", "timer", "automatizacao",
+                  "automacao", "todo dia", "toda semana", "abra o aplicativo", "abrir o aplicativo", "abra o app", "abrir o app",
+                  "bom dia", "boa noite", "vou dormir", "pode descansar")
+
+              private fun newsTopic(raw: String): String {
+                  val c = normalize(raw)
+                  return listOf(Regex("""noticias?\s+(?:sobre|de|do|da)\s+(.+)"""), Regex("""manchetes?\s+(?:sobre|de|do|da)\s+(.+)"""))
+                      .firstNotNullOfOrNull { it.find(c)?.groupValues?.getOrNull(1) }?.trim().orEmpty()
+              }
+
+              private fun weatherPlace(raw: String): String {
+                  val c = normalize(raw)
+                  return listOf(Regex("""(?:clima|tempo|temperatura)\s+em\s+(.+)"""), Regex("""previsao(?:\
