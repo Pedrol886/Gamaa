@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX87 APK (unread-only messages, natural conversation, WhatsApp send and smoother voice)
+name: Build Gama 6.0 FIX88 APK (WhatsApp colon parser fix, unread-only messages and natural conversation)
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           WF=".github/workflows/build-gama.yml"
           bytes="$(wc -c < "$WF" | tr -d ' ')"
-          echo "FIX87 packed workflow bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "FIX88 packed workflow bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
           if [ "$bytes" -lt 60000 ]; then
             echo "::error::build-gama.yml parece incompleto: apenas $bytes bytes."
             exit 1
@@ -53,11 +53,11 @@ jobs:
             'Sign and verify Gama.apk' 'Upload APK' 'Publish Gama release'; do
             grep -Fq -- "- name: $step" "$WF" || { echo "::error::Etapa ausente: $step"; exit 1; }
           done
-          grep -Fq '# GAMA_FIX87_COMPLETE_END' "$WF" || {
+          grep -Fq '# GAMA_FIX88_COMPLETE_END' "$WF" || {
             echo '::error::Marcador final ausente. O arquivo foi truncado.'
             exit 1
           }
-          echo 'FIX87 packed workflow integrity passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'FIX88 packed workflow integrity passed.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify exact run 67 source of truth
         run: |
@@ -508,6 +508,38 @@ jobs:
           test "$(sha256sum /tmp/g87_unread_messages.sh | cut -d' ' -f1)" = "1a67927504200b1c2b67edbba8e68868bcbd87a19ce5f36d1909ecebcfc76d5d"
           bash /tmp/g87_unread_messages.sh
 
+      - name: Fix WhatsApp colon parser regression
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_FIX88'
+          from pathlib import Path
+
+          parser = Path("_gama_build/app/src/main/java/com/gama/assistant/GamaWhatsAppSendParser.kt")
+          if not parser.is_file():
+              raise SystemExit("GamaWhatsAppSendParser.kt não encontrado.")
+
+          source = parser.read_text(encoding="utf-8")
+          wrong = ':\\\\s*(.+)$"""),'
+          correct = ':\\s*(.+)$"""),'
+
+          if wrong not in source:
+              if correct in source:
+                  print("FIX88 já estava aplicado.")
+              else:
+                  raise SystemExit("Padrão de dois-pontos do WhatsApp não encontrado para correção.")
+          else:
+              source = source.replace(wrong, correct, 1)
+              parser.write_text(source, encoding="utf-8")
+
+          check = parser.read_text(encoding="utf-8")
+          if wrong in check:
+              raise SystemExit("Regex antigo ainda presente após FIX88.")
+          if correct not in check:
+              raise SystemExit("Regex corrigido não foi encontrado após FIX88.")
+
+          print("FIX88 WhatsApp colon parser correction applied.")
+          PY_FIX88
+
       - name: Verify fail-soft architecture and privacy-safe diagnostics
         working-directory: _gama_build
         run: |
@@ -614,7 +646,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX87-build-logs
+          name: Gama-6.0-FIX88-build-logs
           path: |
             gama-build.log
             gama-tests.log
@@ -678,7 +710,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-6.0-FIX87-tests
+          name: Gama-6.0-FIX88-tests
           path: |
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
@@ -702,4 +734,4 @@ jobs:
           test "$(sha256sum /tmp/g85_97ac7b37cff1.sh | cut -d' ' -f1)" = "f558451d007aa19b5ce62b45dd1086b6762e951a68342b498fff253432dbde1d"
           bash /tmp/g85_97ac7b37cff1.sh
 
-# GAMA_FIX87_COMPLETE_END
+# GAMA_FIX88_COMPLETE_END
