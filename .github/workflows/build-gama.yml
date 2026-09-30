@@ -1,4 +1,4 @@
-name: Build Gama 6.0 FIX82 APK (secure face gate, lock-screen identity and super-assistant core)
+name: Build Gama 6.0 FIX84 APK (full workflow integrity, secure face gate and super-assistant core)
 
 on:
   workflow_dispatch:
@@ -32,6 +32,56 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Verify FIX84 file is complete before building
+        run: |
+          set -euo pipefail
+          WF=".github/workflows/build-gama.yml"
+
+          lines="$(wc -l < "$WF" | tr -d ' ')"
+          bytes="$(wc -c < "$WF" | tr -d ' ')"
+
+          echo "FIX84 workflow lines: $lines" >> "$GITHUB_STEP_SUMMARY"
+          echo "FIX84 workflow bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$lines" -lt 6600 ]; then
+            echo "::error::build-gama.yml foi truncado. Esperado: pelo menos 6600 linhas. Recebido: $lines."
+            exit 1
+          fi
+
+          if [ "$bytes" -lt 230000 ]; then
+            echo "::error::build-gama.yml foi truncado. Esperado: pelo menos 230000 bytes. Recebido: $bytes."
+            exit 1
+          fi
+
+          required_steps=(
+            'Add centralized Internet hub and online intent router'
+            'Add Gama super-assistant conversational core and screen context'
+            'Add secure face gate, lock-screen identity and official unlock flow'
+            'Verify fail-soft architecture and privacy-safe diagnostics'
+            'Java 17'
+            'Android SDK'
+            'Gradle 8.9'
+            'Compile Gama APK'
+            'Run all Gama unit tests'
+            'Sign and verify Gama.apk'
+            'Upload APK'
+            'Publish Gama release'
+          )
+
+          for step in "${required_steps[@]}"; do
+            if ! grep -Fq -- "- name: $step" "$WF"; then
+              echo "::error::Workflow incompleto. Etapa ausente: $step"
+              exit 1
+            fi
+          done
+
+          if ! grep -Fq '# GAMA_FIX84_COMPLETE_END' "$WF"; then
+            echo "::error::Marcador final do FIX84 ausente. O arquivo foi cortado antes do fim."
+            exit 1
+          fi
+
+          echo "FIX84 integrity check passed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify exact run 67 source of truth
         run: |
@@ -4385,31 +4435,4 @@ jobs:
                   Mode.WEATHER -> GamaInternetHub.weather(weatherPlace(raw))
                   Mode.CURRENCY -> GamaInternetHub.currency(raw)
                   Mode.RESEARCH -> GamaInternetHub.research(after(raw, "pesquise na internet", "procure na internet", "pesquise sobre", "pesquisar sobre", "pesquisa sobre"))
-                  Mode.PAGE_SUMMARY -> extractUrl(raw)?.let { GamaInternetHub.summarizeUrl(it) } ?: "Não encontrei o link na sua frase."
-                  Mode.SPORTS -> {
-                      val h = GamaInternetHub.newsAbout(normalize(raw) + " esporte")
-                      if (h.isEmpty()) "Não consegui atualizar esse resultado esportivo agora." else "Encontrei estas atualizações esportivas: ${h.take(4).joinToString("; ")}."
-                  }
-                  Mode.ENTERTAINMENT -> {
-                      val q = normalize(raw)
-                      val h = GamaInternetHub.newsAbout(q)
-                      if (h.isEmpty()) GamaInternetHub.research(q) else "Encontrei estas informações recentes: ${h.take(3).joinToString("; ")}."
-                  }
-                  else -> "Não consegui concluir essa consulta online."
-              }
-
-              private fun isPrivate(c: String): Boolean = any(c,
-                  "agenda", "calendario", "compromisso", "evento", "mensagem", "mensagens", "whatsapp", "zap",
-                  "notificacao", "notificacoes", "contato", "contatos", "bateria", "alarme", "timer", "automatizacao",
-                  "automacao", "todo dia", "toda semana", "abra o aplicativo", "abrir o aplicativo", "abra o app", "abrir o app",
-                  "bom dia", "boa noite", "vou dormir", "pode descansar")
-
-              private fun newsTopic(raw: String): String {
-                  val c = normalize(raw)
-                  return listOf(Regex("""noticias?\s+(?:sobre|de|do|da)\s+(.+)"""), Regex("""manchetes?\s+(?:sobre|de|do|da)\s+(.+)"""))
-                      .firstNotNullOfOrNull { it.find(c)?.groupValues?.getOrNull(1) }?.trim().orEmpty()
-              }
-
-              private fun weatherPlace(raw: String): String {
-                  val c = normalize(raw)
-                  return listOf(Regex("""(?:clima|tempo|temperatura)\s+em\s+(.+)"""), Regex("""previsao(?:\
+                  Mode.PAGE_SUMMARY -> extractUrl(raw)?.let { GamaInternetHub.
