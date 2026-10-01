@@ -1,4 +1,4 @@
-name: Build Zevron 1.0 FIX102 APK
+name: Build Zevron 2.0 JARVIS Core FIX104 APK
 
 on:
   workflow_dispatch:
@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: zevron-${{ github.ref }}
@@ -17,364 +18,316 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 50
     defaults:
       run:
         shell: bash
-
     env:
-      # Run #92. Compilou o APK e deixou somente 2 testes falhando.
-      FIX101_COMMIT: a3feb7aeb8983c6fdf7fe9eab44bfeb75170358b
-
-      FIX99_COMMIT: f0b431456536578a079380430e28e084fdd31819
-      FIX98_COMMIT: bf1b2d549ce2973a607dc09ce57931857b3dfb90
-      FIX93_COMMIT: 9921e17c918a2ea358ade085c05b06af85d0b7fb
-      FIX97_COMMIT: 1e349c21c1fd344f357f8c84cf656f9ba0565a45
-
-      GAMA_67_COMMIT: 87d85998667f9e51e39860991398a2e31cd5f3c7
-      GAMA_43_COMMIT: ae7f8993cad81d749ffdf04dfc84d828705b1a1a
+      FIX101_RUN_ID: "36863175724"
+      FIX101_ARTIFACT: "Zevron-1.0-FIX101-source"
+      FIX93_COMMIT: "9921e17c918a2ea358ade085c05b06af85d0b7fb"
 
     steps:
-      # ============================================================
-      # CHECKOUT
-      # ============================================================
-
       - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ============================================================
-      # CARREGA O FIX101 DO RUN #92
-      # ============================================================
-
-      - name: Load FIX101 workflow
+      - name: Restore last source that compiled
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          rm -rf _gama_build
+          mkdir -p _gama_build
+          gh run download "$FIX101_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$FIX101_ARTIFACT" \
+            --dir _gama_build
 
-          git cat-file -e "${FIX101_COMMIT}^{commit}"
-          git cat-file -e "${FIX99_COMMIT}^{commit}"
-          git cat-file -e "${FIX98_COMMIT}^{commit}"
-          git cat-file -e "${FIX93_COMMIT}^{commit}"
-          git cat-file -e "${FIX97_COMMIT}^{commit}"
-          git cat-file -e "${GAMA_67_COMMIT}^{commit}"
-          git cat-file -e "${GAMA_43_COMMIT}^{commit}"
+          test -s _gama_build/app/build.gradle.kts
+          test -s _gama_build/app/src/main/AndroidManifest.xml
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/ZevronConversationEngine.kt
+          test -s _gama_build/tools/download_models.sh
 
-          git show \
-            "${FIX101_COMMIT}:.github/workflows/build-gama.yml" \
-            > /tmp/fix101.yml
+          echo "Restored source artifact from run #92, which already reached Android compilation." >> "$GITHUB_STEP_SUMMARY"
 
-          test -s \
-            /tmp/fix101.yml
-
-          grep -Fq \
-            'Build Zevron 1.0 FIX101 APK' \
-            /tmp/fix101.yml
-
-          grep -Fq \
-            'FIX101 repair Zevron math parser' \
-            /tmp/fix101.yml
-
-          grep -Fq \
-            'FIX101 migrate legacy command tests' \
-            /tmp/fix101.yml
-
-          echo \
-            "FIX101 do run #92 carregado." \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      # ============================================================
-      # RUNNER DE ETAPAS HISTÓRICAS
-      # ============================================================
-
-      - name: Create historical step runner
+      - name: Apply audited JARVIS core patch
         run: |
           set -euo pipefail
+          cat > /tmp/zevron-jarvis-core.patch.xz.b64 <<'PATCH_B64'
+          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
+          PATCH_B64
+          tr -d ' \n\r\t' < /tmp/zevron-jarvis-core.patch.xz.b64 | base64 --decode > /tmp/zevron-jarvis-core.patch.xz
+          test "$(sha256sum /tmp/zevron-jarvis-core.patch.xz | cut -d' ' -f1)" = "e7066417e9b975e2e9797158e9042aceb49359e93ff0269250015b0ce0fa41ec"
+          xz -dc /tmp/zevron-jarvis-core.patch.xz > /tmp/zevron-jarvis-core.patch
+          test "$(sha256sum /tmp/zevron-jarvis-core.patch | cut -d' ' -f1)" = "37630a26e9f2331a3bcf91640afb168aba979bdf71409524bef3ff51556708f2"
+          cd _gama_build
+          patch -p2 --batch --forward < /tmp/zevron-jarvis-core.patch
 
-          cat > /tmp/run_historical_step.py <<'PY'
-          from pathlib import Path
-          import os
-          import re
-          import subprocess
-          import sys
-
-          if len(sys.argv) != 3:
-              raise SystemExit(
-                  "Uso: run_historical_step.py WORKFLOW STEP"
-              )
-
-          workflow_path = Path(
-              sys.argv[1]
-          )
-
-          step_name = sys.argv[2]
-
-          if not workflow_path.is_file():
-              raise SystemExit(
-                  f"Workflow não encontrado: {workflow_path}"
-              )
-
-          workflow = workflow_path.read_text(
-              encoding="utf-8"
-          )
-
-          pattern = re.compile(
-              r"^      - name: "
-              + re.escape(step_name)
-              + r"\n(?P<body>.*?)(?=^      - name: |\Z)",
-              re.MULTILINE | re.DOTALL,
-          )
-
-          match = pattern.search(
-              workflow
-          )
-
-          if match is None:
-              raise SystemExit(
-                  f"Etapa não encontrada: {step_name}"
-              )
-
-          body = match.group(
-              "body"
-          )
-
-          working_directory = None
-
-          wd = re.search(
-              r"^        working-directory:\s*(.+?)\s*$",
-              body,
-              re.MULTILINE,
-          )
-
-          if wd:
-              working_directory = (
-                  wd.group(1)
-                  .strip()
-              )
-
-          lines = body.splitlines()
-
-          run_start = None
-
-          for index, line in enumerate(
-              lines
-          ):
-              if line.strip() == "run: |":
-                  run_start = index + 1
-                  break
-
-          if run_start is None:
-              raise SystemExit(
-                  f"run não encontrado: {step_name}"
-              )
-
-          script_lines = []
-
-          for line in lines[run_start:]:
-
-              if line.strip() == "":
-                  script_lines.append("")
-                  continue
-
-              if not line.startswith(
-                  "          "
-              ):
-                  break
-
-              script_lines.append(
-                  line[10:]
-              )
-
-          script = (
-              "\n".join(
-                  script_lines
-              )
-              + "\n"
-          )
-
-          if not script.strip():
-              raise SystemExit(
-                  f"Script vazio: {step_name}"
-              )
-
-          root = Path.cwd()
-
-          cwd = root
-
-          if working_directory:
-              cwd = (
-                  root /
-                  working_directory
-              )
-
-          if not cwd.exists():
-              raise SystemExit(
-                  f"Diretório ausente para {step_name}: {cwd}"
-              )
-
-          print()
-          print("=" * 76)
-          print("Executando:", step_name)
-          print("Diretório:", cwd)
-          print("=" * 76)
-
-          result = subprocess.run(
-              [
-                  "bash",
-                  "-euo",
-                  "pipefail",
-                  "-c",
-                  script,
-              ],
-              cwd=str(cwd),
-              env=os.environ.copy(),
-          )
-
-          if result.returncode != 0:
-              raise SystemExit(
-                  f"{step_name} falhou: {result.returncode}"
-              )
-          PY
-
-          python3 -m py_compile \
-            /tmp/run_historical_step.py
-
-      # ============================================================
-      # RECONSTRÓI O MESMO SOURCE DO RUN #92
-      #
-      # Todas essas etapas JÁ passaram no #92.
-      # ============================================================
-
-      - name: Rebuild verified FIX101 source
-        run: |
-          set -euo pipefail
-
-          STEPS=(
-            "Load FIX99 source workflow"
-            "Create stable step runner"
-            "Load FIX98 workflow"
-            "Create previous workflow runner"
-            "Prepare historical stable sources"
-            "Create FIX93 workflow runner"
-            "Restore exact stable Gama base"
-            "Apply stable runtime and anti-noise"
-            "Apply stable FIX93"
-            "Install Zevron core"
-            "Apply verified Kotlin return fix"
-            "FIX101 repair Zevron math parser"
-            "FIX101 migrate legacy command tests"
-            "Add FIX101 regression tests"
-            "Verify Zevron conversation rules"
-          )
-
-          for step in "${STEPS[@]}"; do
-
-            python3 \
-              /tmp/run_historical_step.py \
-              /tmp/fix101.yml \
-              "$step"
-
-          done
-
-          PKG="_gama_build/app/src/main/java/com/gama/assistant"
-
-          REQUIRED=(
-            "_gama_build/app/build.gradle.kts"
-            "_gama_build/app/src/main/AndroidManifest.xml"
-            "$PKG/GamaService.kt"
-            "$PKG/ConversationSession.kt"
-            "$PKG/GamaTimePolicy.kt"
-            "$PKG/ZevronConversationEngine.kt"
-            "$PKG/ZevronMathTool.kt"
-            "$PKG/ZevronAppTool.kt"
-            "$PKG/ZevronCalendarFlow.kt"
-            "$PKG/ZevronLocalRouter.kt"
-            "_gama_build/tools/download_models.sh"
-          )
-
-          for file in "${REQUIRED[@]}"; do
-
-            if [ ! -s "$file" ]; then
-              echo \
-                "::error::Arquivo obrigatório ausente: $file"
-              exit 1
-            fi
-
-          done
-
-          echo \
-            "Source exato do FIX101 reconstruído." \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      # ============================================================
-      # FIX102
-      #
-      # FALHA 1 DO #92:
-      #
-      # ConversationSession.isGoodbye(
-      #     "Zevron, pode descansar"
-      # )
-      #
-      # ainda possuía regras com "gama".
-      #
-      # Agora removemos o nome do assistente antes de analisar
-      # o comando. Mantemos "gama" como compatibilidade interna.
-      # ============================================================
-
-      - name: FIX102 repair conversation goodbye
+      - name: Audit Zevron core before compiling
         working-directory: _gama_build
         run: |
           set -euo pipefail
+          PKG="app/src/main/java/com/gama/assistant"
+          SERVICE="$PKG/GamaService.kt"
 
-          python3 - <<'PY'
+          grep -Fq 'android:label="Zevron"' app/src/main/AndroidManifest.xml
+          grep -Fq 'private val wake = Regex("\\b(?:zevron|sevron|zevrom|zevrun)\\b")' "$PKG/VoicePolicy.kt"
+          ! grep -Eq 'private val wake.*gama|private val wake.*gamma' "$PKG/VoicePolicy.kt"
+          grep -Fq 'handleBargeInAudio(rec, buffer, read, now)' "$SERVICE"
+          grep -Fq 'interruptSpeechForBargeIn()' "$SERVICE"
+          grep -Fq 'ZevronContextResolver.resolve(command)' "$SERVICE"
+          grep -Fq 'ZevronContextResolver.brainContext()' "$SERVICE"
+          grep -Fq 'GamaAudioNoiseSupervisor.attachNow(recorder)' "$SERVICE"
+          grep -Fq 'GamaPersona.formalAddress' "$SERVICE"
+          grep -Fq 'ConversationSession.isGoodbye(raw)' "$PKG/SessionExitPolicy.kt"
+          grep -Fq 'class ZevronContextResolverTest' app/src/test/java/com/gama/assistant/ZevronContextResolverTest.kt
+
+          ! grep -Fq 'Ativo em segundo plano • diga Gama' "$SERVICE"
+          ! grep -Fq 'Em espera • diga Gama' "$SERVICE"
+          ! grep -Fq 'android:label="Gama"' app/src/main/AndroidManifest.xml
+
+          echo "Static JARVIS-core audit passed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android platform
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Resolve Zevron signing mode
+        id: signing
+        env:
+          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
+            echo "mode=fresh" >> "$GITHUB_OUTPUT"
+            echo "artifact=Zevron-2.0-JARVIS-Core-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+            echo "::warning::GAMA_SIGNING_SEED não configurado. APK somente para instalação limpa."
+          elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+            echo "mode=stable" >> "$GITHUB_OUTPUT"
+            echo "artifact=Zevron-2.0-JARVIS-Core-APK" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::GAMA_SIGNING_SEED precisa ter exatamente 64 caracteres hexadecimais."
+            exit 1
+          fi
+
+      - name: Set Zevron JARVIS-core version
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_VERSION'
           from pathlib import Path
+          import os, re
+          path = Path("app/build.gradle.kts")
+          source = path.read_text(encoding="utf-8")
+          code = 21000000 + int(os.environ["GITHUB_RUN_NUMBER"])
+          source, a = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
+          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Zevron 2.0 JARVIS Core FIX104"', source, count=1)
+          if a != 1 or b != 1:
+              raise SystemExit(f"version metadata patch failed: code={a}, name={b}")
+          path.write_text(source, encoding="utf-8")
+          print("versionCode", code)
+          PY_VERSION
+          echo "ZEVRON_TAG=zevron-2.0-jarvis-core-$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
-          path = Path(
-              "app/src/main/java/com/gama/assistant/ConversationSession.kt"
-          )
+      - name: Download and verify offline models
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          bash tools/download_models.sh
 
-          source = path.read_text(
-              encoding="utf-8"
-          )
+      - name: Compile complete Zevron APK
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/zevron-build.log"
 
-          function_start = source.find(
-              "fun isGoodbye("
-          )
+      - name: Run complete Zevron unit-test suite
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace --rerun-tasks 2>&1 | tee "$GITHUB_WORKSPACE/zevron-tests.log"
 
-          if function_start < 0:
-              raise SystemExit(
-                  "ConversationSession.isGoodbye não encontrado."
-              )
+      - name: Verify complete test suite
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_TESTS'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          root = Path("app/build/test-results/testDebugUnitTest")
+          files = list(root.glob("TEST-*.xml"))
+          if not files:
+              raise SystemExit("No unit-test XML files were produced")
+          tests = failures = errors = skipped = 0
+          failed = []
+          for path in files:
+              suite = ET.parse(path).getroot()
+              tests += int(suite.attrib.get("tests", 0))
+              failures += int(suite.attrib.get("failures", 0))
+              errors += int(suite.attrib.get("errors", 0))
+              skipped += int(suite.attrib.get("skipped", 0))
+              for case in suite.findall(".//testcase"):
+                  node = case.find("failure")
+                  if node is None:
+                      node = case.find("error")
+                  if node is not None:
+                      failed.append(f"{case.attrib.get('classname')} > {case.attrib.get('name')}: {node.attrib.get('message','')}")
+          print(f"tests={tests} failures={failures} errors={errors} skipped={skipped}")
+          for item in failed:
+              print("FAILED", item)
+          if tests < 130:
+              raise SystemExit(f"Unexpectedly low test count: {tests}")
+          if failures or errors:
+              raise SystemExit(f"Suite failed: failures={failures}, errors={errors}")
+          PY_TESTS
+          echo "Full Zevron unit-test suite passed." >> "$GITHUB_STEP_SUMMARY"
 
-          marker = (
-              '.replace(Regex("\\\\s+"), " ").trim()'
-          )
+      - name: Prepare stable signing runner
+        run: |
+          set -euo pipefail
+          git show "${FIX93_COMMIT}:.github/workflows/build-gama.yml" > /tmp/fix93.yml
+          test -s /tmp/fix93.yml
+          cat > /tmp/run_workflow_step.py <<'PY_RUNNER'
+          from pathlib import Path
+          import os, re, subprocess, sys
+          workflow_path = Path(sys.argv[1])
+          step_name = sys.argv[2]
+          workflow = workflow_path.read_text(encoding="utf-8")
+          pattern = re.compile(r"^      - name: " + re.escape(step_name) + r"\n(?P<body>.*?)(?=^      - name: |\Z)", re.MULTILINE | re.DOTALL)
+          match = pattern.search(workflow)
+          if match is None:
+              raise SystemExit(f"Step not found: {step_name}")
+          body = match.group("body")
+          wd = re.search(r"^        working-directory:\s*(.+?)\s*$", body, re.MULTILINE)
+          cwd = Path.cwd() / wd.group(1).strip() if wd else Path.cwd()
+          lines = body.splitlines()
+          start = next((i + 1 for i, line in enumerate(lines) if line.strip() == "run: |"), None)
+          if start is None:
+              raise SystemExit("run block not found")
+          script_lines = []
+          for line in lines[start:]:
+              if line.strip() == "":
+                  script_lines.append("")
+                  continue
+              if not line.startswith("          "):
+                  break
+              script_lines.append(line[10:])
+          subprocess.run(["bash", "-euo", "pipefail", "-c", "\n".join(script_lines) + "\n"], cwd=str(cwd), env=os.environ.copy(), check=True)
+          PY_RUNNER
+          python3 -m py_compile /tmp/run_workflow_step.py
 
-          marker_position = source.find(
-              marker,
-              function_start
-          )
+      - name: Sign Zevron APK
+        env:
+          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
+        run: |
+          set -euo pipefail
+          python3 /tmp/run_workflow_step.py /tmp/fix93.yml "Sign and verify Gama.apk"
+          test -s _gama_build/dist/Gama.apk
+          cp _gama_build/dist/Gama.apk _gama_build/dist/Zevron.apk
+          (cd _gama_build/dist && sha256sum Zevron.apk > Zevron.apk.sha256)
 
-          if marker_position < 0:
-              raise SystemExit(
-                  "Normalização de isGoodbye não encontrada."
-              )
+      - name: Verify final Zevron APK
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          test -s dist/Zevron.apk
+          test -s dist/Zevron.apk.sha256
+          (cd dist && sha256sum -c Zevron.apk.sha256)
+          bytes="$(wc -c < dist/Zevron.apk)"
+          test "$bytes" -gt 1000000
+          grep -q "name='com.gama.assistant'" dist/apk-info.txt
+          echo "## Zevron 2.0 JARVIS Core FIX104" >> "$GITHUB_STEP_SUMMARY"
+          echo "- APK bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package retained for update compatibility: com.gama.assistant" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Zevron hotword, continuous context, voice barge-in and natural persona patch compiled and tested." >> "$GITHUB_STEP_SUMMARY"
 
-          insert_at = (
-              marker_position
-              + len(marker)
-          )
+      - name: Print exact diagnostics
+        if: failure()
+        run: |
+          set +e
+          echo "## FIX104 diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          for log in zevron-build.log zevron-tests.log; do
+            [ -s "$log" ] || continue
+            echo "### $log" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            grep -E '(^e: |error:|FAILED|FAILURE:|AssertionError|ComparisonFailure|Caused by:|expected|but was)' "$log" | head -220 >> "$GITHUB_STEP_SUMMARY" || tail -180 "$log" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
 
-          tail = source[
-              insert_at:
-              insert_at + 300
-          ]
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zevron-2.0-FIX104-diagnostics
+          path: |
+            zevron-build.log
+            zevron-tests.log
+            _gama_build/app/build/reports/tests
+            _gama_build/app/build/test-results
+          if-no-files-found: warn
 
-          if (
-              '.removePrefix("zevron ")'
-              not in tail
-          ):
+      - name: Upload Zevron APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.signing.outputs.artifact }}
+          path: |
+            _gama_build/dist/Zevron.apk
+            _gama_build/dist/Zevron.apk.sha256
+            _gama_build/dist/apk-info.txt
+            _gama_build/dist/install-mode.txt
+            _gama_build/dist/signing-cert-sha256.txt
+            _gama_build/dist/signature-info.txt
+          if-no-files-found: error
 
-              addition = '''
-                .removePrefix("zevron ")
+      - name: Upload audited source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zevron-2.0-FIX104-source
+          path: |
+            _gama_build/app/src
+            _gama_build/app/build.gradle.kts
+            _gama_build/settings.gradle.kts
+            _gama_build/build.gradle.kts
+            _gama_build/gradle.properties
+            _gama_build/tools
+          if-no-files-found: warn
+
+      - name: Publish Zevron release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="$ZEVRON_TAG"
+          gh release delete "$TAG" --yes >/dev/null 2>&1 || true
+          gh release create "$TAG" \
+            "_gama_build/dist/Zevron.apk#Zevron.apk" \
+            "_gama_build/dist/Zevron.apk.sha256#Zevron.apk.sha256" \
+            --title "Zevron 2.0 JARVIS Core FIX104" \
+            --notes "Audited core update built from the last source that successfully compiled. Adds Zevron-only wake behavior, real in-session voice barge-in with echo filtering, unified short-term conversational referents, broader brain context, natural non-repetitive addressing, safer masculine-voice selection, corrected sleep/greeting behavior, clean fail-soft AI responses, and visible Zevron identity. Android security boundaries remain intact."
+
+# ZEVRON_FIX104_COMPLETE_END
