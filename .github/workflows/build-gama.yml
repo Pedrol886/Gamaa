@@ -1,4 +1,4 @@
-name: Build Zevron 1.0 FIX101 APK
+name: Build Zevron 1.0 FIX102 APK
 
 on:
   workflow_dispatch:
@@ -24,24 +24,18 @@ jobs:
         shell: bash
 
     env:
-      # Run #90. Este foi importante porque o APK já compilou.
+      # Run #92. Compilou o APK e deixou somente 2 testes falhando.
+      FIX101_COMMIT: a3feb7aeb8983c6fdf7fe9eab44bfeb75170358b
+
       FIX99_COMMIT: f0b431456536578a079380430e28e084fdd31819
-
-      # Run #89.
       FIX98_COMMIT: bf1b2d549ce2973a607dc09ce57931857b3dfb90
-
-      # Base estável confirmada no run #87.
       FIX93_COMMIT: 9921e17c918a2ea358ade085c05b06af85d0b7fb
-
-      # Primeiro núcleo Zevron.
       FIX97_COMMIT: 1e349c21c1fd344f357f8c84cf656f9ba0565a45
 
-      # Fontes históricas estáveis.
       GAMA_67_COMMIT: 87d85998667f9e51e39860991398a2e31cd5f3c7
       GAMA_43_COMMIT: ae7f8993cad81d749ffdf04dfc84d828705b1a1a
 
     steps:
-
       # ============================================================
       # CHECKOUT
       # ============================================================
@@ -52,22 +46,14 @@ jobs:
           fetch-depth: 0
 
       # ============================================================
-      # CARREGA O FIX99
-      #
-      # O run #90 conseguiu:
-      # - reconstruir a base
-      # - instalar Zevron
-      # - configurar Android
-      # - baixar modelos
-      # - COMPILAR O APK
-      #
-      # Ele falhou apenas nos testes.
+      # CARREGA O FIX101 DO RUN #92
       # ============================================================
 
-      - name: Load FIX99 source workflow
+      - name: Load FIX101 workflow
         run: |
           set -euo pipefail
 
+          git cat-file -e "${FIX101_COMMIT}^{commit}"
           git cat-file -e "${FIX99_COMMIT}^{commit}"
           git cat-file -e "${FIX98_COMMIT}^{commit}"
           git cat-file -e "${FIX93_COMMIT}^{commit}"
@@ -76,32 +62,37 @@ jobs:
           git cat-file -e "${GAMA_43_COMMIT}^{commit}"
 
           git show \
-            "${FIX99_COMMIT}:.github/workflows/build-gama.yml" \
-            > /tmp/fix99.yml
+            "${FIX101_COMMIT}:.github/workflows/build-gama.yml" \
+            > /tmp/fix101.yml
 
-          test -s /tmp/fix99.yml
-
-          grep -Fq \
-            'Build Zevron 1.0 FIX99 APK' \
-            /tmp/fix99.yml
+          test -s \
+            /tmp/fix101.yml
 
           grep -Fq \
-            'Repair Zevron Kotlin returns' \
-            /tmp/fix99.yml
+            'Build Zevron 1.0 FIX101 APK' \
+            /tmp/fix101.yml
+
+          grep -Fq \
+            'FIX101 repair Zevron math parser' \
+            /tmp/fix101.yml
+
+          grep -Fq \
+            'FIX101 migrate legacy command tests' \
+            /tmp/fix101.yml
 
           echo \
-            "FIX99 carregado do run #90." \
+            "FIX101 do run #92 carregado." \
             >> "$GITHUB_STEP_SUMMARY"
 
       # ============================================================
-      # RUNNER GENÉRICO
+      # RUNNER DE ETAPAS HISTÓRICAS
       # ============================================================
 
-      - name: Create stable step runner
+      - name: Create historical step runner
         run: |
           set -euo pipefail
 
-          cat > /tmp/run_step.py <<'PY'
+          cat > /tmp/run_historical_step.py <<'PY'
           from pathlib import Path
           import os
           import re
@@ -110,7 +101,7 @@ jobs:
 
           if len(sys.argv) != 3:
               raise SystemExit(
-                  "Uso: run_step.py WORKFLOW STEP_NAME"
+                  "Uso: run_historical_step.py WORKFLOW STEP"
               )
 
           workflow_path = Path(
@@ -132,8 +123,7 @@ jobs:
               r"^      - name: "
               + re.escape(step_name)
               + r"\n(?P<body>.*?)(?=^      - name: |\Z)",
-              re.MULTILINE |
-              re.DOTALL,
+              re.MULTILINE | re.DOTALL,
           )
 
           match = pattern.search(
@@ -151,37 +141,37 @@ jobs:
 
           working_directory = None
 
-          wd_match = re.search(
+          wd = re.search(
               r"^        working-directory:\s*(.+?)\s*$",
               body,
               re.MULTILINE,
           )
 
-          if wd_match:
+          if wd:
               working_directory = (
-                  wd_match.group(1)
+                  wd.group(1)
                   .strip()
               )
 
           lines = body.splitlines()
 
-          run_index = None
+          run_start = None
 
           for index, line in enumerate(
               lines
           ):
               if line.strip() == "run: |":
-                  run_index = index + 1
+                  run_start = index + 1
                   break
 
-          if run_index is None:
+          if run_start is None:
               raise SystemExit(
-                  f"Bloco run não encontrado: {step_name}"
+                  f"run não encontrado: {step_name}"
               )
 
           script_lines = []
 
-          for line in lines[run_index:]:
+          for line in lines[run_start:]:
 
               if line.strip() == "":
                   script_lines.append("")
@@ -220,16 +210,16 @@ jobs:
 
           if not cwd.exists():
               raise SystemExit(
-                  f"Diretório não existe para {step_name}: {cwd}"
+                  f"Diretório ausente para {step_name}: {cwd}"
               )
 
           print()
-          print("=" * 74)
+          print("=" * 76)
           print("Executando:", step_name)
           print("Diretório:", cwd)
-          print("=" * 74)
+          print("=" * 76)
 
-          process = subprocess.run(
+          result = subprocess.run(
               [
                   "bash",
                   "-euo",
@@ -241,1426 +231,150 @@ jobs:
               env=os.environ.copy(),
           )
 
-          if process.returncode != 0:
+          if result.returncode != 0:
               raise SystemExit(
-                  f"Etapa '{step_name}' falhou com código {process.returncode}."
+                  f"{step_name} falhou: {result.returncode}"
               )
           PY
 
           python3 -m py_compile \
-            /tmp/run_step.py
+            /tmp/run_historical_step.py
 
       # ============================================================
-      # CARREGA O FIX98
+      # RECONSTRÓI O MESMO SOURCE DO RUN #92
+      #
+      # Todas essas etapas JÁ passaram no #92.
       # ============================================================
 
-      - name: Load FIX98 workflow
+      - name: Rebuild verified FIX101 source
         run: |
           set -euo pipefail
 
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
+          STEPS=(
+            "Load FIX99 source workflow"
+            "Create stable step runner"
             "Load FIX98 workflow"
-
-          test -s \
-            /tmp/fix98.yml
-
-      # ============================================================
-      # CRIA RUNNER DO FIX98
-      # ============================================================
-
-      - name: Create previous workflow runner
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Create previous-step runner"
-
-          test -s \
-            /tmp/run_previous_step.py
-
-      # ============================================================
-      # PREPARA FIX93 / FIX97 / RUN 67
-      # ============================================================
-
-      - name: Prepare historical stable sources
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Prepare stable workflow sources"
-
-          test -s \
-            /tmp/gama-67-workflow.yml
-
-          test -s \
-            /tmp/fix93.yml
-
-          test -s \
-            /tmp/fix97.yml
-
-          grep -Fq \
-            'Build Gama 6.0 FIX93 APK' \
-            /tmp/fix93.yml
-
-          grep -Fq \
-            'Build Zevron 1.0 FIX97 APK' \
-            /tmp/fix97.yml
-
-      # ============================================================
-      # CRIA RUNNER DO FIX93
-      # ============================================================
-
-      - name: Create FIX93 workflow runner
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Create workflow step runner"
-
-          test -s \
-            /tmp/run_workflow_step.py
-
-      # ============================================================
-      # RESTAURA A BASE QUE PASSOU NO RUN #87
-      # ============================================================
-
-      - name: Restore exact stable Gama base
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
+            "Create previous workflow runner"
+            "Prepare historical stable sources"
+            "Create FIX93 workflow runner"
             "Restore exact stable Gama base"
+            "Apply stable runtime and anti-noise"
+            "Apply stable FIX93"
+            "Install Zevron core"
+            "Apply verified Kotlin return fix"
+            "FIX101 repair Zevron math parser"
+            "FIX101 migrate legacy command tests"
+            "Add FIX101 regression tests"
+            "Verify Zevron conversation rules"
+          )
+
+          for step in "${STEPS[@]}"; do
+
+            python3 \
+              /tmp/run_historical_step.py \
+              /tmp/fix101.yml \
+              "$step"
+
+          done
+
+          PKG="_gama_build/app/src/main/java/com/gama/assistant"
 
           REQUIRED=(
             "_gama_build/app/build.gradle.kts"
             "_gama_build/app/src/main/AndroidManifest.xml"
-            "_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt"
-            "_gama_build/app/src/main/java/com/gama/assistant/ConversationSession.kt"
+            "$PKG/GamaService.kt"
+            "$PKG/ConversationSession.kt"
+            "$PKG/GamaTimePolicy.kt"
+            "$PKG/ZevronConversationEngine.kt"
+            "$PKG/ZevronMathTool.kt"
+            "$PKG/ZevronAppTool.kt"
+            "$PKG/ZevronCalendarFlow.kt"
+            "$PKG/ZevronLocalRouter.kt"
             "_gama_build/tools/download_models.sh"
           )
 
           for file in "${REQUIRED[@]}"; do
 
             if [ ! -s "$file" ]; then
-              echo "::error::Arquivo obrigatório ausente: $file"
+              echo \
+                "::error::Arquivo obrigatório ausente: $file"
               exit 1
             fi
 
           done
 
-      # ============================================================
-      # FIX90 + FIX91
-      # ============================================================
-
-      - name: Apply stable runtime and anti-noise
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Apply stable runtime and anti-noise"
-
-          test -s \
-            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-
-      # ============================================================
-      # FIX93
-      # ============================================================
-
-      - name: Apply stable FIX93
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Apply stable FIX93"
-
-          SERVICE="_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt"
-
-          grep -Fq \
-            'GAMA92_TIME_AND_SCREEN_FAST_LANES' \
-            "$SERVICE"
-
-          grep -Fq \
-            'GamaScreenFastLane' \
-            "$SERVICE"
-
           echo \
-            "Base FIX93 estável reconstruída." \
+            "Source exato do FIX101 reconstruído." \
             >> "$GITHUB_STEP_SUMMARY"
 
       # ============================================================
-      # INSTALA NÚCLEO ZEVRON
-      # ============================================================
-
-      - name: Install Zevron core
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Install Zevron FIX97 core"
-
-          PKG="_gama_build/app/src/main/java/com/gama/assistant"
-
-          REQUIRED=(
-            "$PKG/ZevronConversationEngine.kt"
-            "$PKG/ZevronAppTool.kt"
-            "$PKG/ZevronMathTool.kt"
-            "$PKG/ZevronCalendarFlow.kt"
-            "$PKG/ZevronLocalRouter.kt"
-          )
-
-          for file in "${REQUIRED[@]}"; do
-
-            if [ ! -s "$file" ]; then
-              echo "::error::Arquivo Zevron ausente: $file"
-              exit 1
-            fi
-
-          done
-
-          grep -Fq \
-            'ZEVRON_FIX97_UNIFIED_ROUTER' \
-            "$PKG/GamaService.kt"
-
-      # ============================================================
-      # PRESERVA CORREÇÃO DO #89
+      # FIX102
       #
-      # O run #90 provou que estas correções compilam.
+      # FALHA 1 DO #92:
+      #
+      # ConversationSession.isGoodbye(
+      #     "Zevron, pode descansar"
+      # )
+      #
+      # ainda possuía regras com "gama".
+      #
+      # Agora removemos o nome do assistente antes de analisar
+      # o comando. Mantemos "gama" como compatibilidade interna.
       # ============================================================
 
-      - name: Apply verified Kotlin return fix
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Repair Zevron Kotlin returns"
-
-          APP="_gama_build/app/src/main/java/com/gama/assistant/ZevronAppTool.kt"
-
-          CAL="_gama_build/app/src/main/java/com/gama/assistant/ZevronCalendarFlow.kt"
-
-          grep -Fq \
-            'return@mapNotNull null' \
-            "$APP"
-
-          grep -Fq \
-            'return "Abrindo $label."' \
-            "$APP"
-
-          grep -Fq \
-            'return "Certo. Cancelei."' \
-            "$CAL"
-
-      # ============================================================
-      # FIX101
-      #
-      # CORRIGE MATEMÁTICA DE FORMA ESTRUTURAL.
-      #
-      # O FIX100 falhou porque procurava um bloco inteiro com
-      # formatação idêntica.
-      #
-      # Agora localizamos apenas a função solve(), então mudanças
-      # de espaços/quebras de linha não derrubam o patch.
-      # ============================================================
-
-      - name: FIX101 repair Zevron math parser
+      - name: FIX102 repair conversation goodbye
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path(
-              "app/src/main/java/com/gama/assistant/ZevronMathTool.kt"
-          )
-
-          if not path.is_file():
-              raise SystemExit(
-                  "ZevronMathTool.kt não encontrado."
-              )
-
-          source = path.read_text(
-              encoding="utf-8"
-          )
-
-          solve_start = source.find(
-              "fun solve("
-          )
-
-          if solve_start < 0:
-              raise SystemExit(
-                  "Função solve() não encontrada em ZevronMathTool."
-              )
-
-          solve_end = source.find(
-              "private fun solveCanonical",
-              solve_start
-          )
-
-          if solve_end < 0:
-              raise SystemExit(
-                  "Final de solve() não encontrado."
-              )
-
-          before = source[
-              :solve_start
-          ]
-
-          block = source[
-              solve_start:
-              solve_end
-          ]
-
-          after = source[
-              solve_end:
-          ]
-
-          # --------------------------------------------------------
-          # 1. Hotword precisa sair ANTES da canonicalização.
-          # --------------------------------------------------------
-
-          canonical_pattern = re.compile(
-              r'canonical\s*\(\s*raw\s*\)',
-              re.MULTILINE
-          )
-
-          block, canonical_count = (
-              canonical_pattern.subn(
-                  '''canonical(
-                          ZevronConversationEngine
-                              .stripWakeWord(
-                                  raw
-                              )
-                      )''',
-                  block,
-                  count=1
-              )
-          )
-
-          if canonical_count != 1:
-
-              if (
-                  "ZevronConversationEngine"
-                  not in block
-                  or
-                  ".stripWakeWord(" not in block
-              ):
-                  raise SystemExit(
-                      "Não consegui inserir stripWakeWord em solve()."
-                  )
-
-          # --------------------------------------------------------
-          # 2. Depois disso removePrefix("zevron ") fica redundante.
-          # Remove SOMENTE dentro de solve().
-          # --------------------------------------------------------
-
-          wake_prefix_pattern = re.compile(
-              r'\s*\.removePrefix\s*\(\s*"zevron "\s*\)',
-              re.MULTILINE
-          )
-
-          block, prefix_count = (
-              wake_prefix_pattern.subn(
-                  "",
-                  block,
-                  count=1
-              )
-          )
-
-          # Se já foi removido em alguma tentativa anterior,
-          # não transforma isso em erro.
-          if (
-              prefix_count == 0
-              and '"zevron "' in block
-          ):
-              raise SystemExit(
-                  'removePrefix("zevron ") ainda existe em solve().'
-              )
-
-          final_source = (
-              before
-              + block
-              + after
-          )
-
-          path.write_text(
-              final_source,
-              encoding="utf-8"
-          )
-
-          verify = path.read_text(
-              encoding="utf-8"
-          )
-
-          solve_start = verify.find(
-              "fun solve("
-          )
-
-          solve_end = verify.find(
-              "private fun solveCanonical",
-              solve_start
-          )
-
-          solve_block = verify[
-              solve_start:
-              solve_end
-          ]
-
-          if (
-              ".stripWakeWord(" not in solve_block
-          ):
-              raise SystemExit(
-                  "stripWakeWord não está em solve()."
-              )
-
-          if (
-              'removePrefix(\n                              "zevron "' in
-              solve_block
-          ):
-              raise SystemExit(
-                  "Prefixo Zevron redundante ainda presente."
-              )
-
-          print(
-              "FIX101 math patch aplicado."
-          )
-          print()
-          print(
-              solve_block
-          )
-          PY
-
-      # ============================================================
-      # FIX101
-      #
-      # MIGRA OS TESTES ANTIGOS PARA A IDENTIDADE ZEVRON.
-      #
-      # O run #90 teve 6 falhas antigas causadas por isso:
-      #
-      # ConversationSessionTest
-      # GamaCalendarCommandParserTest
-      # GamaSuperAssistantCoreTest
-      # GamaTimePolicyTest
-      #
-      # Só alteramos TEXTO ENTRE ASPAS.
-      # Classes e package continuam como antes.
-      # ============================================================
-
-      - name: FIX101 migrate legacy command tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          root = Path(
-              "app/src/test/java/com/gama/assistant"
-          )
-
-          targets = [
-              root / "ConversationSessionTest.kt",
-              root / "GamaCalendarCommandParserTest.kt",
-              root / "GamaSuperAssistantCoreTest.kt",
-              root / "GamaTimePolicyTest.kt",
-          ]
-
-          for path in targets:
-
-              if not path.is_file():
-                  raise SystemExit(
-                      f"Teste não encontrado: {path}"
-                  )
-
-          # Strings Kotlin normais e triple-quoted.
-          string_pattern = re.compile(
-              r'"""[\s\S]*?"""|"(?:\\.|[^"\\])*"'
-          )
-
-          total_changes = 0
-
-          for path in targets:
-
-              source = path.read_text(
-                  encoding="utf-8"
-              )
-
-              counter = [0]
-
-              def replace_literal(match):
-
-                  literal = match.group(
-                      0
-                  )
-
-                  updated = (
-                      literal
-                      .replace(
-                          "Gama",
-                          "Zevron"
-                      )
-                      .replace(
-                          "gama",
-                          "zevron"
-                      )
-                  )
-
-                  if updated != literal:
-                      counter[0] += 1
-
-                  return updated
-
-              updated_source = (
-                  string_pattern.sub(
-                      replace_literal,
-                      source
-                  )
-              )
-
-              path.write_text(
-                  updated_source,
-                  encoding="utf-8"
-              )
-
-              total_changes += (
-                  counter[0]
-              )
-
-              print(
-                  f"{path.name}: "
-                  f"{counter[0]} strings migradas"
-              )
-
-          print(
-              "Total:",
-              total_changes
-          )
-
-          # Não exigimos um número exato.
-          # Isso evita outro build morrer só porque a quantidade
-          # de frases mudou entre versões.
-          PY
-
-      # ============================================================
-      # REGRESSÕES FIX101
-      # ============================================================
-
-      - name: Add FIX101 regression tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          TEST_DIR="app/src/test/java/com/gama/assistant"
-
-          mkdir -p \
-            "$TEST_DIR"
-
-          cat > \
-            "$TEST_DIR/ZevronFix101RegressionTest.kt" \
-            <<'KOTLIN'
-
-          package com.gama.assistant
-
-          import org.junit.Assert.assertEquals
-          import org.junit.Assert.assertNotNull
-          import org.junit.Test
-
-          class ZevronFix101RegressionTest {
-
-              @Test
-              fun multiplicationWithWakeWordWorks() {
-
-                  val answer =
-                      ZevronMathTool.solve(
-                          "Zevron, quanto é 18 vezes 37?"
-                      )
-
-                  assertNotNull(
-                      answer
-                  )
-
-                  assertEquals(
-                      "666",
-                      answer?.spoken
-                  )
-              }
-
-              @Test
-              fun multiplicationWithoutWakeWordWorks() {
-
-                  val answer =
-                      ZevronMathTool.solve(
-                          "quanto é 18 vezes 37?"
-                      )
-
-                  assertEquals(
-                      "666",
-                      answer?.spoken
-                  )
-              }
-
-              @Test
-              fun bareZevronIsWakeOnly() {
-
-                  assertEquals(
-                      ZevronConversationEngine
-                          .Control.WAKE_ONLY,
-                      ZevronConversationEngine
-                          .control(
-                              "Zevron"
-                          )
-                  )
-              }
-
-              @Test
-              fun acordadoIsNormalConversation() {
-
-                  assertEquals(
-                      ZevronConversationEngine
-                          .Control.NORMAL,
-                      ZevronConversationEngine
-                          .control(
-                              "Zevron, acordado?"
-                          )
-                  )
-              }
-
-              @Test
-              fun commandAfterZevronIsNormal() {
-
-                  assertEquals(
-                      ZevronConversationEngine
-                          .Control.NORMAL,
-                      ZevronConversationEngine
-                          .control(
-                              "Zevron, abra o WhatsApp"
-                          )
-                  )
-              }
-
-              @Test
-              fun restEndsConversation() {
-
-                  assertEquals(
-                      ZevronConversationEngine
-                          .Control.SLEEP,
-                      ZevronConversationEngine
-                          .control(
-                              "pode descansar"
-                          )
-                  )
-              }
-          }
-          KOTLIN
-
-      # ============================================================
-      # CONFERE REGRAS DO HOTWORD
-      # ============================================================
-
-      - name: Verify Zevron conversation rules
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_step.py \
-            /tmp/fix99.yml \
-            "Verify natural Zevron conversation rules"
-
-          FILE="_gama_build/app/src/main/java/com/gama/assistant/ZevronConversationEngine.kt"
-
-          grep -Fq \
-            'normalized == "zevron"' \
-            "$FILE"
-
-          grep -Fq \
-            '"pode descansar"' \
-            "$FILE"
-
-      # ============================================================
-      # JAVA
-      # ============================================================
-
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # ============================================================
-      # ANDROID
-      # ============================================================
-
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-
-      - name: Install Android platform
-        run: |
-          set -euo pipefail
-
-          yes | sdkmanager --licenses \
-            >/dev/null 2>&1 \
-            || true
-
-          sdkmanager \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
-
-      # ============================================================
-      # GRADLE
-      # ============================================================
-
-      - name: Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
-
-      # ============================================================
-      # ASSINATURA
-      # ============================================================
-
-      - name: Resolve Zevron signing mode
-        id: signing
-        env:
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
-
-            echo \
-              "mode=fresh" \
-              >> "$GITHUB_OUTPUT"
-
-            echo \
-              "artifact=Zevron-1.0-FIX101-FRESH-INSTALL-ONLY" \
-              >> "$GITHUB_OUTPUT"
-
-            echo \
-              "::warning::GAMA_SIGNING_SEED não configurado. APK somente para instalação limpa."
-
-          elif printf '%s' \
-            "$GAMA_SIGNING_SEED" \
-            | grep -Eq \
-            '^[0-9A-Fa-f]{64}$'; then
-
-            echo \
-              "mode=stable" \
-              >> "$GITHUB_OUTPUT"
-
-            echo \
-              "artifact=Zevron-1.0-FIX101-APK" \
-              >> "$GITHUB_OUTPUT"
-
-          else
-
-            echo \
-              "::error::GAMA_SIGNING_SEED precisa ter exatamente 64 caracteres hexadecimais."
-
-            exit 1
-          fi
-
-      # ============================================================
-      # VERSÃO
-      # ============================================================
-
-      - name: Set Zevron FIX101 version
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import re
-
-          path = Path(
-              "app/build.gradle.kts"
+              "app/src/main/java/com/gama/assistant/ConversationSession.kt"
           )
 
           source = path.read_text(
               encoding="utf-8"
           )
 
-          version_code = (
-              20700000
-              + int(
-                  os.environ[
-                      "GITHUB_RUN_NUMBER"
-                  ]
-              )
+          function_start = source.find(
+              "fun isGoodbye("
           )
 
-          source, code_count = (
-              re.subn(
-                  r'versionCode\s*=\s*\d+',
-                  f'versionCode = {version_code}',
-                  source,
-                  count=1
-              )
-          )
-
-          source, name_count = (
-              re.subn(
-                  r'versionName\s*=\s*"[^"]+"',
-                  'versionName = "Zevron 1.0 FIX101"',
-                  source,
-                  count=1
-              )
-          )
-
-          if code_count != 1:
+          if function_start < 0:
               raise SystemExit(
-                  "versionCode não encontrado."
+                  "ConversationSession.isGoodbye não encontrado."
               )
 
-          if name_count != 1:
+          marker = (
+              '.replace(Regex("\\\\s+"), " ").trim()'
+          )
+
+          marker_position = source.find(
+              marker,
+              function_start
+          )
+
+          if marker_position < 0:
               raise SystemExit(
-                  "versionName não encontrado."
+                  "Normalização de isGoodbye não encontrada."
               )
 
-          path.write_text(
-              source,
-              encoding="utf-8"
+          insert_at = (
+              marker_position
+              + len(marker)
           )
 
-          print(
-              "versionCode:",
-              version_code
-          )
-          PY
-
-          echo \
-            "ZEVRON_TAG=zevron-1.0-fix101-${GITHUB_RUN_NUMBER}" \
-            >> "$GITHUB_ENV"
-
-      # ============================================================
-      # MODELOS OFFLINE
-      # ============================================================
-
-      - name: Download offline models
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          test -s \
-            tools/download_models.sh
-
-          bash \
-            tools/download_models.sh
-
-      # ============================================================
-      # COMPILA
-      # ============================================================
-
-      - name: Compile Zevron APK
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          gradle \
-            :app:assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/zevron-build.log"
-
-      # ============================================================
-      # PRIMEIRO: RODA OS TESTES QUE FALHARAM NO #90
-      #
-      # Assim, se algo ainda estiver errado, teremos resposta
-      # específica antes dos outros 130+ testes.
-      # ============================================================
-
-      - name: Run previously failing tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          gradle \
-            :app:testDebugUnitTest \
-            --no-daemon \
-            --stacktrace \
-            --tests \
-              "com.gama.assistant.ConversationSessionTest" \
-            --tests \
-              "com.gama.assistant.GamaCalendarCommandParserTest" \
-            --tests \
-              "com.gama.assistant.GamaSuperAssistantCoreTest" \
-            --tests \
-              "com.gama.assistant.GamaTimePolicyTest" \
-            --tests \
-              "com.gama.assistant.ZevronMathToolTest" \
-            --tests \
-              "com.gama.assistant.ZevronFix101RegressionTest" \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/zevron-focused-tests.log"
-
-      # ============================================================
-      # DEPOIS: RODA TUDO
-      # ============================================================
-
-      - name: Run all Zevron unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          gradle \
-            :app:testDebugUnitTest \
-            --no-daemon \
-            --stacktrace \
-            --rerun-tasks \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/zevron-tests.log"
-
-      # ============================================================
-      # CONFERE RESULTADOS
-      # ============================================================
-
-      - name: Verify Zevron unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          RESULTS="app/build/test-results/testDebugUnitTest"
-
-          test -d \
-            "$RESULTS"
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-
-          root = Path(
-              "app/build/test-results/testDebugUnitTest"
-          )
-
-          files = list(
-              root.glob(
-                  "TEST-*.xml"
-              )
-          )
-
-          if not files:
-              raise SystemExit(
-                  "Nenhum XML de teste encontrado."
-              )
-
-          tests = 0
-          failures = 0
-          errors = 0
-          skipped = 0
-
-          for path in files:
-
-              suite = ET.parse(
-                  path
-              ).getroot()
-
-              tests += int(
-                  suite.attrib.get(
-                      "tests",
-                      0
-                  )
-              )
-
-              failures += int(
-                  suite.attrib.get(
-                      "failures",
-                      0
-                  )
-              )
-
-              errors += int(
-                  suite.attrib.get(
-                      "errors",
-                      0
-                  )
-              )
-
-              skipped += int(
-                  suite.attrib.get(
-                      "skipped",
-                      0
-                  )
-              )
-
-          print(
-              "tests:",
-              tests
-          )
-
-          print(
-              "failures:",
-              failures
-          )
-
-          print(
-              "errors:",
-              errors
-          )
-
-          print(
-              "skipped:",
-              skipped
-          )
-
-          if tests < 130:
-              raise SystemExit(
-                  f"Poucos testes executados: {tests}"
-              )
-
-          if failures:
-              raise SystemExit(
-                  f"{failures} testes falharam."
-              )
-
-          if errors:
-              raise SystemExit(
-                  f"{errors} testes tiveram erro."
-              )
-          PY
-
-          grep -Rqs \
-            'ConversationSessionTest' \
-            "$RESULTS"
-
-          grep -Rqs \
-            'GamaCalendarCommandParserTest' \
-            "$RESULTS"
-
-          grep -Rqs \
-            'GamaSuperAssistantCoreTest' \
-            "$RESULTS"
-
-          grep -Rqs \
-            'GamaTimePolicyTest' \
-            "$RESULTS"
-
-          grep -Rqs \
-            'ZevronMathToolTest' \
-            "$RESULTS"
-
-          grep -Rqs \
-            'ZevronFix101RegressionTest' \
-            "$RESULTS"
-
-          echo \
-            "Todos os testes Zevron passaram." \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      # ============================================================
-      # DIAGNÓSTICO MUITO MAIS COMPLETO
-      #
-      # SE O PRÓXIMO BUILD FALHAR EM TESTE, O LOG JÁ MOSTRARÁ:
-      # - classe
-      # - método
-      # - mensagem
-      # - expected / actual
-      #
-      # Não precisaremos mais adivinhar.
-      # ============================================================
-
-      - name: Print exact failed tests
-        if: failure()
-        run: |
-          set +e
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import xml.etree.ElementTree as ET
-
-          result_dir = Path(
-              "_gama_build/app/build/test-results/testDebugUnitTest"
-          )
-
-          summary = Path(
-              os.environ[
-                  "GITHUB_STEP_SUMMARY"
-              ]
-          )
-
-          failures = []
-
-          if result_dir.is_dir():
-
-              for path in result_dir.glob(
-                  "TEST-*.xml"
-              ):
-
-                  try:
-                      suite = ET.parse(
-                          path
-                      ).getroot()
-                  except Exception:
-                      continue
-
-                  for case in suite.findall(
-                      ".//testcase"
-                  ):
-
-                      failure = case.find(
-                          "failure"
-                      )
-
-                      error = case.find(
-                          "error"
-                      )
-
-                      node = (
-                          failure
-                          if failure is not None
-                          else error
-                      )
-
-                      if node is None:
-                          continue
-
-                      failures.append(
-                          {
-                              "class": case.attrib.get(
-                                  "classname",
-                                  ""
-                              ),
-                              "name": case.attrib.get(
-                                  "name",
-                                  ""
-                              ),
-                              "message": node.attrib.get(
-                                  "message",
-                                  ""
-                              ),
-                              "text": (
-                                  node.text
-                                  or ""
-                              ),
-                          }
-                      )
-
-          print()
-          print(
-              "========== TESTES QUE FALHARAM =========="
-          )
-
-          for item in failures:
-
-              print()
-              print(
-                  item["class"]
-                  + " > "
-                  + item["name"]
-              )
-
-              print(
-                  item["message"]
-              )
-
-              text = (
-                  item["text"]
-                  .strip()
-              )
-
-              if text:
-                  print(
-                      text[:4000]
-                  )
-
-          with summary.open(
-              "a",
-              encoding="utf-8"
-          ) as out:
-
-              out.write(
-                  "## Falhas exatas dos testes\n\n"
-              )
-
-              if not failures:
-
-                  out.write(
-                      "Nenhuma falha XML de teste disponível. "
-                      "A falha ocorreu antes dos testes.\n\n"
-                  )
-
-              for item in failures:
-
-                  out.write(
-                      "### "
-                      + item["class"]
-                      + " > "
-                      + item["name"]
-                      + "\n\n"
-                  )
-
-                  out.write(
-                      "```text\n"
-                  )
-
-                  out.write(
-                      (
-                          item["message"]
-                          + "\n"
-                          + item["text"]
-                      )[:5000]
-                  )
-
-                  out.write(
-                      "\n```\n\n"
-                  )
-          PY
-
-      # ============================================================
-      # LOGS
-      # ============================================================
-
-      - name: Upload Zevron diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Zevron-1.0-FIX101-diagnostics
-          path: |
-            zevron-build.log
-            zevron-focused-tests.log
-            zevron-tests.log
-            _gama_build/app/build/reports/tests
-            _gama_build/app/build/test-results
-          if-no-files-found: warn
-
-      # ============================================================
-      # ASSINATURA
-      # ============================================================
-
-      - name: Sign Zevron APK
-        env:
-          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-        run: |
-          set -euo pipefail
-
-          python3 \
-            /tmp/run_workflow_step.py \
-            /tmp/fix93.yml \
-            "Sign and verify Gama.apk"
-
-          test -s \
-            _gama_build/dist/Gama.apk
-
-          cp \
-            _gama_build/dist/Gama.apk \
-            _gama_build/dist/Zevron.apk
-
-          (
-            cd \
-              _gama_build/dist
-
-            sha256sum \
-              Zevron.apk \
-              > Zevron.apk.sha256
-          )
-
-      # ============================================================
-      # VERIFICA O APK
-      # ============================================================
-
-      - name: Verify final Zevron APK
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          test -s \
-            dist/Zevron.apk
-
-          test -s \
-            dist/Zevron.apk.sha256
-
-          (
-            cd dist
-
-            sha256sum -c \
-              Zevron.apk.sha256
-          )
-
-          APK_BYTES="$(
-            wc -c \
-              < dist/Zevron.apk
-          )"
-
-          if [ \
-            "$APK_BYTES" \
-            -le 1000000 \
-          ]; then
-
-            echo \
-              "::error::APK final pequeno demais: ${APK_BYTES} bytes."
-
-            exit 1
-          fi
-
-          echo \
-            "## Zevron 1.0 FIX101" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- APK: ${APK_BYTES} bytes" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Package: com.gama.assistant" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Nome: Zevron" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Hotword: Zevron" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- FIX93 base estável: OK" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Erro #88: corrigido" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Erros Kotlin #89: corrigidos" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Compilação #90: preservada" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo \
-            "- Erro de patch #91: corrigido" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-      # ============================================================
-      # APK
-      # ============================================================
-
-      - name: Upload Zevron APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.signing.outputs.artifact }}
-          path: |
-            _gama_build/dist/Zevron.apk
-            _gama_build/dist/Zevron.apk.sha256
-            _gama_build/dist/apk-info.txt
-            _gama_build/dist/install-mode.txt
-            _gama_build/dist/signing-cert-sha256.txt
-            _gama_build/dist/signature-info.txt
-          if-no-files-found: error
-
-      # ============================================================
-      # SOURCE SNAPSHOT
-      # ============================================================
-
-      - name: Upload Zevron source snapshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Zevron-1.0-FIX101-source
-          path: |
-            _gama_build/app/src
-            _gama_build/app/build.gradle.kts
-            _gama_build/settings.gradle.kts
-            _gama_build/build.gradle.kts
-            _gama_build/gradle.properties
-            _gama_build/tools
-          if-no-files-found: warn
-
-      # ============================================================
-      # RELEASE
-      # ============================================================
-
-      - name: Publish Zevron release
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          TAG="${ZEVRON_TAG}"
-
-          gh release delete \
-            "$TAG" \
-            --yes \
-            >/dev/null 2>&1 \
-            || true
-
-          gh release create \
-            "$TAG" \
-            "_gama_build/dist/Zevron.apk#Zevron.apk" \
-            "_gama_build/dist/Zevron.apk.sha256#Zevron.apk.sha256" \
-            --title \
-            "Zevron 1.0 FIX101" \
-            --notes \
-            "Zevron 1.0 FIX101
-
-          Correções acumuladas:
-          - mantém base estável do run #87
-          - corrige dependência histórica do run #88
-          - corrige returns Kotlin do run #89
-          - preserva compilação que passou no run #90
-          - corrige parser matemático com hotword Zevron
-          - corrige migração dos testes antigos
-          - remove patch frágil que derrubou o run #91
-          - usa patch estrutural da função solve()
-          - adiciona diagnóstico XML exato dos testes
-
-          Zevron:
-          - nome e hotword Zevron
-          - package com.gama.assistant preservado
-          - conversa contínua
-          - Zevron sozinho ativa
-          - Zevron + comando segue direto
-          - 'Zevron, acordado?' é conversa normal
-          - 'pode descansar' encerra a sessão
-          - abertura de apps
-          - WhatsApp
-          - calendário multi-turno
-          - matemática local
-          - memória curta
-          - Internet
-          - clima
-          - notícias
-          - mensagens
-          - briefings
-          - tela
-          - anti-ruído
-          - cérebro isolado
-          - face gate
-          - biometria Android"
-
-# ZEVRON_FIX101_COMPLETE_END
+          tail = source[
+              insert_at:
+              insert_at + 300
+          ]
+
+          if (
+              '.removePrefix("zevron ")'
+              not in tail
+          ):
+
+              addition = '''
+                .removePrefix("zevron ")
