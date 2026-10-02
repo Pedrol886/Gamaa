@@ -1,4 +1,4 @@
-name: Build Zevron MAX JARVIS APK
+name: Build Zevron MAX JARVIS FIX96 APK
 
 on:
   workflow_dispatch:
@@ -399,10 +399,30 @@ jobs:
           1LqTRBAc3mIrfITl062C86hFm3uXjsXeA2WNrEWUE3JnVtAv+dFwqG8hx2ynxX3P0c4UODInZIw4h0IhnuFw00fNKtXyW+YZjFIrdjfeDo26m7yfSTPppErR
           C3rBo7ZuMKPyAIPmERiPez4kKRWWpuw5ZoiH5XcmbyAAAAAA6OEdgMBB8tUAAabvAZiHCSVONuCxxGf7AgAAAAAEWVo=
           PATCH_B64
-          tr -d ' \\n\\r\\t' < /tmp/zevron-max.patch.xz.b64 | base64 --decode > /tmp/zevron-max.patch.xz
-          test "$(sha256sum /tmp/zevron-max.patch.xz | cut -d' ' -f1)" = "92f3a44dd513dfb33fc1dc1e3a88269d1968b1178a28e243b7414b0699c2067e"
-          xz -dc /tmp/zevron-max.patch.xz > /tmp/zevron-max.patch
-          test "$(sha256sum /tmp/zevron-max.patch | cut -d' ' -f1)" = "10af79f356a6065c8a9a186827c6e039c9661e5e1c09126b10bb2c285c63903e"
+          python3 - <<'PY_PATCH'
+          from pathlib import Path
+          import base64, hashlib, lzma
+
+          source = Path("/tmp/zevron-max.patch.xz.b64").read_text(encoding="ascii")
+          compact = "".join(source.split())
+          compressed = base64.b64decode(compact, validate=True)
+
+          compressed_sha = hashlib.sha256(compressed).hexdigest()
+          expected_compressed = "92f3a44dd513dfb33fc1dc1e3a88269d1968b1178a28e243b7414b0699c2067e"
+          if compressed_sha != expected_compressed:
+              raise SystemExit(f"compressed patch hash mismatch: {compressed_sha}")
+
+          patch = lzma.decompress(compressed)
+          patch_sha = hashlib.sha256(patch).hexdigest()
+          expected_patch = "10af79f356a6065c8a9a186827c6e039c9661e5e1c09126b10bb2c285c63903e"
+          if patch_sha != expected_patch:
+              raise SystemExit(f"decoded patch hash mismatch: {patch_sha}")
+
+          Path("/tmp/zevron-max.patch.xz").write_bytes(compressed)
+          Path("/tmp/zevron-max.patch").write_bytes(patch)
+          print(f"Patch transport OK: {len(compressed)} compressed bytes, {len(patch)} patch bytes")
+          PY_PATCH
+
           cd _gama_build
           patch -p1 --batch --forward < /tmp/zevron-max.patch
 
@@ -501,7 +521,7 @@ jobs:
           source = path.read_text(encoding="utf-8")
           code = 21100000 + int(os.environ["GITHUB_RUN_NUMBER"])
           source, a = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
-          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Zevron MAX JARVIS"', source, count=1)
+          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Zevron MAX JARVIS FIX96"', source, count=1)
           if a != 1 or b != 1:
               raise SystemExit(f"version metadata patch failed: code={a}, name={b}")
           path.write_text(source, encoding="utf-8")
@@ -709,7 +729,7 @@ jobs:
           gh release create "$TAG" \
             "_gama_build/dist/Zevron.apk#Zevron.apk" \
             "_gama_build/dist/Zevron.apk.sha256#Zevron.apk.sha256" \
-            --title "Zevron MAX JARVIS" \
+            --title "Zevron MAX JARVIS FIX96" \
             --notes "Zevron MAX JARVIS built from the last Android source that compiled. Includes Zevron-only wake behavior, continuous voice conversation, barge-in, contextual memory, multi-step planning, screen perception, notification/message tools, calendar/math/app/WhatsApp tools, local-first knowledge with Internet routing for fresh information, and a user-authorized system-control layer through Android Accessibility: back, home, recents, notifications, quick settings, screen reading, click-by-label, text entry and scrolling. It does not bypass Android PIN, password, biometrics or other platform security boundaries."
 
 # ZEVRON_MAX_JARVIS_COMPLETE_END
