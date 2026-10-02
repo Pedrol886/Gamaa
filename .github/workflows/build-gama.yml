@@ -1,4 +1,4 @@
-name: Build Zevron MAX JARVIS FIX98 APK
+name: Build Linx MAX JARVIS APK
 
 on:
   workflow_dispatch:
@@ -426,7 +426,221 @@ jobs:
           cd _gama_build
           patch -p1 --batch --forward < /tmp/zevron-max.patch
 
-      - name: Audit Zevron MAX JARVIS architecture before compiling
+      - name: Apply Linx identity and masculine voice patch
+        run: |
+          set -euo pipefail
+          cat > /tmp/linx99.patch.xz.b64 <<'LINX99_B64'
+          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
+          AAAABFla
+          LINX99_B64
+
+          python3 - <<'PY_LINX_PATCH'
+          from pathlib import Path
+          import base64, hashlib, lzma, re
+          raw = Path("/tmp/linx99.patch.xz.b64").read_text(encoding="utf-8")
+          compact = re.sub(r"\s+", "", raw)
+          compressed = base64.b64decode(compact, validate=True)
+          compressed_sha = hashlib.sha256(compressed).hexdigest()
+          expected_compressed = "4de46bed8f60870d1faa279af0c78cb4214f040d67f0d7480914e9a5f7849b15"
+          if compressed_sha != expected_compressed:
+              raise SystemExit(f"Linx patch compressed hash mismatch: {compressed_sha}")
+          patch = lzma.decompress(compressed)
+          patch_sha = hashlib.sha256(patch).hexdigest()
+          expected_patch = "27d883754ae236b8a1f5edf05713196b8110a33fc26d8eb3d6eb18a1de5eaded"
+          if patch_sha != expected_patch:
+              raise SystemExit(f"Linx patch hash mismatch: {patch_sha}")
+          Path("/tmp/linx99.patch").write_bytes(patch)
+          print(f"Linx patch transport OK: {len(compressed)} compressed bytes, {len(patch)} patch bytes")
+          PY_LINX_PATCH
+
+          cd _gama_build
+          patch -p1 --batch --forward < /tmp/linx99.patch
+
+      - name: Audit Linx MAX JARVIS architecture before compiling
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -441,9 +655,9 @@ jobs:
           test -s "$PKG/ZevronContextResolver.kt"
           test -s "$PKG/ZevronSystemControl.kt"
 
-          grep -Fq 'android:label="Zevron"' app/src/main/AndroidManifest.xml
-          grep -Fq 'private val wake = Regex("\\b(?:zevron|sevron|zevrom|zevrun)\\b")' "$PKG/VoicePolicy.kt"
-          ! grep -Eq 'private val wake.*gama|private val wake.*gamma' "$PKG/VoicePolicy.kt"
+          grep -Fq 'android:label="Linx"' app/src/main/AndroidManifest.xml
+          grep -Fq 'private val wake = Regex("\\b(?:linx|links|lincs)\\b")' "$PKG/VoicePolicy.kt"
+          ! grep -Eq 'private val wake.*(zevron|sevron|zevrom|zevrun|atlas|atla|atlis|atlus|gama|gamma)' "$PKG/VoicePolicy.kt"
 
           grep -Fq 'ZEVRON105_JARVIS_PLANNER' "$SERVICE"
           grep -Fq 'ZEVRON105_JARVIS_BRAIN_PROMPT' "$SERVICE"
@@ -458,6 +672,13 @@ jobs:
           grep -Fq 'GLOBAL_ACTION_QUICK_SETTINGS' "$PKG/ZevronSystemControl.kt"
           grep -Fq 'clickByLabel' "$PKG/ZevronSystemControl.kt"
           grep -Fq 'replaceFocusedText' "$PKG/ZevronSystemControl.kt"
+          grep -Fq '"ptd"' "$PKG/GamaVoice.kt"
+          grep -Fq '"afs"' "$PKG/GamaVoice.kt"
+          grep -Fq '"ptd"' "$PKG/GamaVoiceCatalog.kt"
+          grep -Fq '"afs"' "$PKG/GamaVoiceCatalog.kt"
+          grep -Fq '"Natural" -> 0.82f to 0.96f' "$PKG/GamaVoice.kt"
+          grep -Fq 'Você é Linx' "$PKG/GamaPersona.kt"
+          grep -Fq '<string name="app_name">Linx</string>' app/src/main/res/values/strings.xml
 
           test -s "$TESTS/ZevronPlannerTest.kt"
           test -s "$TESTS/ZevronPerceptionPolicyTest.kt"
@@ -468,7 +689,7 @@ jobs:
           ! grep -Rqs --include='*.kt' -E 'Diga Gama|diga Gama|Voz do Gama|notificação do Gama|Gama Contexto da Tela' app/src/main/java/com/gama/assistant
           ! find app/src -name '*.bak' -o -name '*.tmp' | grep -q .
 
-          echo "Zevron MAX JARVIS architecture audit passed." >> "$GITHUB_STEP_SUMMARY"
+          echo "Linx MAX JARVIS architecture audit passed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fix regression test expectations
         working-directory: _gama_build
@@ -533,13 +754,13 @@ jobs:
           source = path.read_text(encoding="utf-8")
           code = 21100000 + int(os.environ["GITHUB_RUN_NUMBER"])
           source, a = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
-          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Zevron MAX JARVIS FIX98"', source, count=1)
+          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Linx MAX JARVIS"', source, count=1)
           if a != 1 or b != 1:
               raise SystemExit(f"version metadata patch failed: code={a}, name={b}")
           path.write_text(source, encoding="utf-8")
           print("versionCode", code)
           PY_VERSION
-          echo "ZEVRON_TAG=zevron-max-jarvis-fix98-$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "LINX_TAG=linx-max-jarvis-$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
       - name: Download and verify offline models
         working-directory: _gama_build
@@ -547,13 +768,13 @@ jobs:
           set -euo pipefail
           bash tools/download_models.sh
 
-      - name: Compile Zevron MAX JARVIS APK
+      - name: Compile Linx MAX JARVIS APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
           gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/zevron-build.log"
 
-      - name: Finalize Zevron APK immediately
+      - name: Finalize Linx APK immediately
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -561,31 +782,31 @@ jobs:
           APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$APK"
           test -s "$APK"
-          cp "$APK" dist/Zevron.apk
-          (cd dist && sha256sum Zevron.apk > Zevron.apk.sha256)
-          (cd dist && sha256sum -c Zevron.apk.sha256)
+          cp "$APK" dist/Linx.apk
+          (cd dist && sha256sum Linx.apk > Linx.apk.sha256)
+          (cd dist && sha256sum -c Linx.apk.sha256)
           python3 - <<'PY_APK'
           from pathlib import Path
-          apk = Path("dist/Zevron.apk")
+          apk = Path("dist/Linx.apk")
           data = apk.read_bytes()
           if len(data) <= 1_000_000:
               raise SystemExit(f"APK unexpectedly small: {len(data)} bytes")
           if b"APK Sig Block 42" not in data:
               raise SystemExit("Android APK signing block not found")
-          print(f"Zevron.apk ready: {len(data)} bytes, Android signing block present")
+          print(f"Linx.apk ready: {len(data)} bytes, Android signing block present")
           PY_APK
-          echo "Final installable Zevron.apk preserved immediately after compilation." >> "$GITHUB_STEP_SUMMARY"
+          echo "Final installable Linx.apk preserved immediately after compilation." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload Zevron APK immediately
+      - name: Upload Linx APK immediately
         uses: actions/upload-artifact@v4
         with:
-          name: Zevron-MAX-JARVIS-APK
+          name: Linx-MAX-JARVIS-APK
           path: |
-            _gama_build/dist/Zevron.apk
-            _gama_build/dist/Zevron.apk.sha256
+            _gama_build/dist/Linx.apk
+            _gama_build/dist/Linx.apk.sha256
           if-no-files-found: error
 
-      - name: Run Zevron MAX critical regression tests
+      - name: Run Linx MAX critical regression tests
         continue-on-error: true
         working-directory: _gama_build
         run: |
@@ -602,7 +823,7 @@ jobs:
             --tests "com.gama.assistant.GamaTimePolicyTest" \
             2>&1 | tee "$GITHUB_WORKSPACE/zevron-critical-tests.log"
 
-      - name: Run complete Zevron unit-test suite
+      - name: Run complete Linx unit-test suite
         continue-on-error: true
         working-directory: _gama_build
         run: |
@@ -643,13 +864,13 @@ jobs:
           if failures or errors:
               raise SystemExit(f"Suite failed: failures={failures}, errors={errors}")
           PY_TESTS
-          echo "Complete Zevron test suite passed." >> "$GITHUB_STEP_SUMMARY"
+          echo "Complete Linx test suite passed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Print exact diagnostics
         if: always()
         run: |
           set +e
-          echo "## Zevron MAX diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Linx MAX diagnostics" >> "$GITHUB_STEP_SUMMARY"
           for log in zevron-build.log zevron-critical-tests.log zevron-tests.log; do
             [ -s "$log" ] || continue
             echo "### $log" >> "$GITHUB_STEP_SUMMARY"
@@ -662,7 +883,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Zevron-MAX-JARVIS-FIX98-diagnostics
+          name: Linx-MAX-JARVIS-diagnostics
           path: |
             zevron-build.log
             zevron-critical-tests.log
@@ -671,11 +892,11 @@ jobs:
             _gama_build/app/build/test-results
           if-no-files-found: warn
 
-      - name: Upload complete Zevron MAX source
+      - name: Upload complete Linx MAX source
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Zevron-MAX-JARVIS-source
+          name: Linx-MAX-JARVIS-source
           path: |
             _gama_build/app/src
             _gama_build/app/build.gradle.kts
@@ -685,18 +906,18 @@ jobs:
             _gama_build/tools
           if-no-files-found: warn
 
-      - name: Publish Zevron MAX JARVIS release
+      - name: Publish Linx MAX JARVIS release
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="$ZEVRON_TAG"
+          TAG="$LINX_TAG"
           gh release delete "$TAG" --yes >/dev/null 2>&1 || true
           gh release create "$TAG" \
-            "_gama_build/dist/Zevron.apk#Zevron.apk" \
-            "_gama_build/dist/Zevron.apk.sha256#Zevron.apk.sha256" \
-            --title "Zevron MAX JARVIS FIX98" \
-            --notes "Zevron MAX JARVIS compiled successfully from the validated Android source. The final APK is preserved immediately after assembleDebug, before regression tests, and uses the Android debug signing produced by the Gradle Android plugin. Includes Zevron wake behavior, continuous voice conversation, barge-in, memory, planning, screen/context perception, WhatsApp, calendar, apps, notifications, Internet routing and user-authorized Accessibility system control."
+            "_gama_build/dist/Linx.apk#Linx.apk" \
+            "_gama_build/dist/Linx.apk.sha256#Linx.apk.sha256" \
+            --title "Linx MAX JARVIS" \
+            --notes "Linx MAX JARVIS compiled successfully from the validated Android source. The final APK is preserved immediately after assembleDebug, before regression tests, and uses the Android debug signing produced by the Gradle Android plugin. Includes Linx wake behavior, continuous voice conversation, barge-in, memory, planning, screen/context perception, WhatsApp, calendar, apps, notifications, Internet routing and user-authorized Accessibility system control."
 
-# ZEVRON_MAX_JARVIS_COMPLETE_END
+# LINX_MAX_JARVIS_COMPLETE_END
