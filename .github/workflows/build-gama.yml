@@ -1,4 +1,4 @@
-name: Build Gama 7.0.0 APK
+name: Build Gama 7.0.1 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-7-0-0-${{ github.ref }}
+  group: gama-7-0-1-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -31,6 +31,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Verify workflow file is complete
+        run: |
+          set -euo pipefail
+          grep -Fq 'GAMA_WORKFLOW_COMPLETE_7_0_1' .github/workflows/build-gama.yml || {
+            echo 'ERROR: build-gama.yml foi salvo/copiado incompleto.' >&2
+            echo 'Baixe o arquivo inteiro e substitua o workflow completo.' >&2
+            exit 1
+          }
 
       - name: Restore last successful Gama source
         env:
@@ -85,12 +94,3 @@ jobs:
           GAMA111_B64
           python3 - <<'PY_PATCH'
           from pathlib import Path
-          import base64, hashlib, lzma, re
-          raw = Path('/tmp/gama111.patch.xz.b64').read_text(encoding='utf-8')
-          compact = re.sub(r'\s+', '', raw)
-          compressed = base64.b64decode(compact, validate=True)
-          got = hashlib.sha256(compressed).hexdigest()
-          expected = '31b9d7a813abbdbc286ccbf41f0f345f2188c2bad4259af10a3768f775499202'
-          if got != expected:
-              raise SystemExit(f'compressed patch hash mismatch: {got}')
-          patch = lzma.decompress(compressed)
