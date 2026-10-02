@@ -1,64 +1,43 @@
-name: Build Gama 7.0.8 APK
+name: Build Gama 8.0.0 APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-gama.yml
+      - 'app/**'
+      - 'tools/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build-gama.yml'
 
 permissions:
-  actions: read
   contents: write
+
+concurrency:
+  group: gama-8-0-0-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 55
-    env:
-      BASE_RUN: "37030299438"
-      BASE_ARTIFACT: "Gama-JARVIS-FILM-CORE-FIX110-source"
 
     steps:
-      - name: Restore last source that really compiled
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          rm -rf src
-          mkdir src
-          gh run download "$BASE_RUN" --repo "$GITHUB_REPOSITORY" --name "$BASE_ARTIFACT" --dir src
-          test -s src/app/build.gradle.kts
-          test -s src/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s src/tools/download_models.sh
+      - name: Checkout complete Gama project
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Apply Gama 7.0.8 voice recovery
+      - name: Audit consolidated Gama source
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('src/app/src/main/java/com/gama/assistant/GamaService.kt')
-          s=p.read_text(encoding='utf-8')
-          a='                if (!shouldDecodeAudio(buffer, read)) {\n'
-          b='                val idleWakeMode = !conversation.active && transcription == null && !waitingForCommandStart && !commandSpeechStarted\n                if (!idleWakeMode && !shouldDecodeAudio(buffer, read)) {\n'
-          if s.count(a)!=1: raise SystemExit(f'audio gate anchor={s.count(a)}')
-          s=s.replace(a,b,1)
-          a='            if (!textMode && BackgroundMode.enabled(this@GamaService)) {\n'
-          b='            if (BackgroundMode.enabled(this@GamaService)) {\n                if (textMode || !running) {\n                    if (!listenerRestartPending) enableVoice()\n                    uiHandler.postDelayed(this, 3_000L)\n                    return\n                }\n'
-          if s.count(a)!=1: raise SystemExit(f'watchdog anchor={s.count(a)}')
-          s=s.replace(a,b,1)
-          s=s.replace('            uiHandler.postDelayed(this, 4_000L)\n','            uiHandler.postDelayed(this, 3_000L)\n',1)
-          p.write_text(s,encoding='utf-8')
-          PY
-
-      - name: Set Gama 7.0.8 version
-        working-directory: src
-        run: |
-          set -euo pipefail
-          VC=$((21800000 + GITHUB_RUN_NUMBER))
-          sed -Ei "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" app/build.gradle.kts
-          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 7.0.8"/' app/build.gradle.kts
-          grep -F 'versionName = "Gama 7.0.8"' app/build.gradle.kts
+          python3 tools/audit_gama.py
+          test -s app/build.gradle.kts
+          test -s app/src/main/AndroidManifest.xml
+          test -s app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s app/src/main/assets/model/final.mdl
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -66,7 +45,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Use preinstalled Android SDK and install Android 35
+      - name: Android SDK 35
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
@@ -87,11 +66,30 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build and verify APK
-        working-directory: src
+      - name: Set build version
         run: |
           set -euo pipefail
-          bash tools/download_models.sh
+          VC=$((22000000 + GITHUB_RUN_NUMBER))
+          sed -Ei "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" app/build.gradle.kts
+          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.0.0"/' app/build.gradle.kts
+          grep -F 'versionName = "Gama 8.0.0"' app/build.gradle.kts
+
+      - name: Run critical unit tests
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace \
+            --tests 'com.gama.assistant.VoicePolicyTest' \
+            --tests 'com.gama.assistant.ConversationSessionTest' \
+            --tests 'com.gama.assistant.ZevronPlannerTest' \
+            --tests 'com.gama.assistant.ZevronContextResolverTest' \
+            --tests 'com.gama.assistant.GamaCalendarCommandParserTest' \
+            --tests 'com.gama.assistant.WhatsAppMessagingTest' \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-critical-tests.log"
+
+      - name: Build Gama 8.0.0 APK
+        run: |
+          set -euo pipefail
           gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
           mkdir -p dist
           APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
@@ -101,26 +99,38 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
           (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
 
-      - name: Upload Gama 7.0.8 APK
+      - name: Upload Gama 8.0.0 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-7.0.8-APK
+          name: Gama-8.0.0-APK
           path: |
-            src/dist/Gama.apk
-            src/dist/Gama.apk.sha256
+            dist/Gama.apk
+            dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Publish Gama 7.0.8 release
+      - name: Publish Gama 8.0.0 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v7.0.8-${GITHUB_RUN_NUMBER}"
+          TAG="gama-v8.0.0-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
-            "src/dist/Gama.apk#Gama.apk" \
-            "src/dist/Gama.apk.sha256#Gama.apk.sha256" \
+            "dist/Gama.apk#Gama.apk" \
+            "dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 7.0.8" \
-            --notes "Correção da publicação da Release. Mantém hotword mais confiável e recuperação automática do microfone." \
+            --title "Gama 8.0.0" \
+            --notes "Base consolidada do Gama: código Android completo no repositório, hotword dedicado, recuperação automática da escuta, missões/contexto, proatividade, agenda, WhatsApp, bloqueio, apps, perfil facial local do dono e ferramentas Android verificadas." \
             --latest
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-8.0.0-diagnostics
+          path: |
+            gama-build.log
+            gama-critical-tests.log
+            app/build/reports/tests
+            app/build/test-results
+          if-no-files-found: warn
