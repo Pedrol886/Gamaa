@@ -1,74 +1,128 @@
+          fetch-depth: 0
 
-      - name: Apply Gama 7.0.2 voice recovery
+      - name: Restore compiled Gama source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf _gama_build
+          mkdir -p _gama_build
+          gh run download "$GAMA_BASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$GAMA_BASE_ARTIFACT" \
+            --dir _gama_build
+          test -s _gama_build/app/build.gradle.kts
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s _gama_build/tools/download_models.sh
+
+      - name: Apply Gama 7.0.3 voice recovery
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt')
-          s=p.read_text()
-          a='''                if (!shouldDecodeAudio(buffer, read)) {\n'''
-          b='''                val idleWakeMode = !conversation.active && transcription == null && !waitingForCommandStart && !commandSpeechStarted\n                if (!idleWakeMode && !shouldDecodeAudio(buffer, read)) {\n'''
-          if a not in s: raise SystemExit('audio gate anchor not found')
-          s=s.replace(a,b,1)
-          a='''            if (!textMode && BackgroundMode.enabled(this@GamaService)) {\n                val now = SystemClock.elapsedRealtime()\n                val alive = listenerThread?.isAlive == true\n                val staleAudio = lastAudioReadAt > 0L && now - lastAudioReadAt > 5_000L\n                if (alive && voiceReady && !staleAudio) {\n                    listenerRestartDelayMs = 750L\n                } else {\n                    recoverMicrophoneOnly(if (staleAudio) "watchdog-stale-audio" else "watchdog")\n                }\n            }\n            uiHandler.postDelayed(this, 4_000L)\n'''
-          b='''            if (BackgroundMode.enabled(this@GamaService)) {\n                val now = SystemClock.elapsedRealtime()\n                val alive = listenerThread?.isAlive == true\n                val staleAudio = lastAudioReadAt > 0L && now - lastAudioReadAt > 5_000L\n                when {\n                    textMode || !running -> if (!listenerRestartPending) enableVoice()\n                    alive && voiceReady && !staleAudio -> listenerRestartDelayMs = 750L\n                    else -> recoverMicrophoneOnly(if (staleAudio) "watchdog-stale-audio" else "watchdog")\n                }\n            }\n            uiHandler.postDelayed(this, 3_000L)\n'''
-          if a not in s: raise SystemExit('watchdog anchor not found')
-          s=s.replace(a,b,1)
-          p.write_text(s)
+          import re
+          p = Path('_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt')
+          s = p.read_text(encoding='utf-8')
+          old1 = '                if (!shouldDecodeAudio(buffer, read)) {\n'
+          new1 = '                val idleWakeMode = !conversation.active && transcription == null && !waitingForCommandStart && !commandSpeechStarted\n                if (!idleWakeMode && !shouldDecodeAudio(buffer, read)) {\n'
+          if s.count(old1) != 1:
+              raise SystemExit(f'audio gate anchor count={s.count(old1)}')
+          s = s.replace(old1, new1, 1)
+          pattern = re.compile(r'''            if \(!textMode && BackgroundMode\.enabled\(this@GamaService\)\) \{\n                val now = SystemClock\.elapsedRealtime\(\)\n                val alive = listenerThread\?\.isAlive == true\n                val staleAudio = lastAudioReadAt > 0L && now - lastAudioReadAt > 5_000L\n                if \(alive && voiceReady && !staleAudio\) \{\n                    listenerRestartDelayMs = 750L\n                \} else \{\n                    recoverMicrophoneOnly\(if \(staleAudio\) "watchdog-stale-audio" else "watchdog"\)\n                \}\n            \}\n            uiHandler\.postDelayed\(this, 4_000L\)\n''')
+          replacement = '\n'.join([
+              '            if (BackgroundMode.enabled(this@GamaService)) {',
+              '                val now = SystemClock.elapsedRealtime()',
+              '                val alive = listenerThread?.isAlive == true',
+              '                val staleAudio = lastAudioReadAt > 0L && now - lastAudioReadAt > 5_000L',
+              '                when {',
+              '                    textMode || !running -> if (!listenerRestartPending) enableVoice()',
+              '                    alive && voiceReady && !staleAudio -> listenerRestartDelayMs = 750L',
+              '                    else -> recoverMicrophoneOnly(if (staleAudio) "watchdog-stale-audio" else "watchdog")',
+              '                }',
+              '            }',
+              '            uiHandler.postDelayed(this, 3_000L)',
+              ''
+          ])
+          s, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'watchdog anchor count={n}')
+          p.write_text(s, encoding='utf-8')
           PY
+          grep -Fq 'val idleWakeMode = !conversation.active' _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'textMode || !running -> if (!listenerRestartPending) enableVoice()' _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
 
-      - uses: actions/setup-java@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Set version
+      - name: Set Gama 7.0.3 version
         working-directory: _gama_build
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import os,re
-          p=Path('app/build.gradle.kts'); s=p.read_text()
-          s=re.sub(r'versionCode\s*=\s*\d+',f"versionCode = {21600000+int(os.environ['GITHUB_RUN_NUMBER'])}",s,count=1)
-          s=re.sub(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 7.0.2"',s,count=1)
-          p.write_text(s)
+          import os, re
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          s, a = re.subn(r'versionCode\s*=\s*\d+', f"versionCode = {21700000 + int(os.environ['GITHUB_RUN_NUMBER'])}", s, count=1)
+          s, b = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 7.0.3"', s, count=1)
+          if a != 1 or b != 1:
+              raise SystemExit(f'version patch failed: code={a} name={b}')
+          p.write_text(s, encoding='utf-8')
           PY
 
-      - name: Build APK
+      - name: Build Gama 7.0.3 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
           bash tools/download_models.sh
-          gradle :app:assembleDebug --no-daemon --stacktrace | tee "$GITHUB_WORKSPACE/gama-build.log"
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
           mkdir -p dist
-          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
-          test -n "$APK" && test -s "$APK"
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test -s "$APK"
           cp "$APK" dist/Gama.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
           (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
 
-      - name: Upload Gama 7.0.2 APK
+      - name: Upload Gama 7.0.3 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-7.0.2-APK
+          name: Gama-7.0.3-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Publish Gama 7.0.2
+      - name: Publish Gama 7.0.3 release
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v7.0.2-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" _gama_build/dist/Gama.apk#Gama.apk _gama_build/dist/Gama.apk.sha256#Gama.apk.sha256 --title "Gama 7.0.2" --notes "Hotword mais confiável e recuperação automática do microfone." --latest
+          TAG="gama-v7.0.3-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            "_gama_build/dist/Gama.apk#Gama.apk" \
+            "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
+            --title "Gama 7.0.3" \
+            --notes "Correção do workflow e recuperação de escuta do Gama." \
+            --latest
 
-# GAMA_WORKFLOW_COMPLETE
+      - name: Upload diagnostics
+        if: always()
