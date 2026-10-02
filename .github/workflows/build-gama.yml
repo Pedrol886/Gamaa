@@ -1,96 +1,74 @@
-name: Build Gama 7.0.1 APK
 
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/build-gama.yml
-
-permissions:
-  contents: write
-  actions: read
-
-concurrency:
-  group: gama-7-0-1-${{ github.ref }}
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 55
-    defaults:
-      run:
-        shell: bash
-    env:
-      GAMA_BASE_RUN_ID: "37030299438"
-      GAMA_BASE_ARTIFACT: "Gama-JARVIS-FILM-CORE-FIX110-source"
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify workflow file is complete
+      - name: Apply Gama 7.0.2 voice recovery
         run: |
           set -euo pipefail
-          grep -Fq 'GAMA_WORKFLOW_COMPLETE_7_0_1' .github/workflows/build-gama.yml || {
-            echo 'ERROR: build-gama.yml foi salvo/copiado incompleto.' >&2
-            echo 'Baixe o arquivo inteiro e substitua o workflow completo.' >&2
-            exit 1
-          }
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt')
+          s=p.read_text()
+          a='''                if (!shouldDecodeAudio(buffer, read)) {\n'''
+          b='''                val idleWakeMode = !conversation.active && transcription == null && !waitingForCommandStart && !commandSpeechStarted\n                if (!idleWakeMode && !shouldDecodeAudio(buffer, read)) {\n'''
+          if a not in s: raise SystemExit('audio gate anchor not found')
+          s=s.replace(a,b,1)
+          a='''            if (!textMode && BackgroundMode.enabled(this@GamaService)) {\n                val now = SystemClock.elapsedRealtime()\n                val alive = listenerThread?.isAlive == true\n                val staleAudio = lastAudioReadAt > 0L && now - lastAudioReadAt > 5_000L\n                if (alive && voiceReady && !staleAudio) {\n                    listenerRestartDelayMs = 750L\n                } else {\n                    recoverMicrophoneOnly(if (staleAudio) "watchdog-stale-audio" else "watchdog")\n                }\n            }\n            uiHandler.postDelayed(this, 4_000L)\n'''
+          b='''            if (BackgroundMode.enabled(this@GamaService)) {\n                val now = SystemClock.elapsedRealtime()\n                val alive = listenerThread?.isAlive == true\n                val staleAudio = lastAudioReadAt > 0L && now - lastAudioReadAt > 5_000L\n                when {\n                    textMode || !running -> if (!listenerRestartPending) enableVoice()\n                    alive && voiceReady && !staleAudio -> listenerRestartDelayMs = 750L\n                    else -> recoverMicrophoneOnly(if (staleAudio) "watchdog-stale-audio" else "watchdog")\n                }\n            }\n            uiHandler.postDelayed(this, 3_000L)\n'''
+          if a not in s: raise SystemExit('watchdog anchor not found')
+          s=s.replace(a,b,1)
+          p.write_text(s)
+          PY
 
-      - name: Restore last successful Gama source
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Set version
+        working-directory: _gama_build
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,re
+          p=Path('app/build.gradle.kts'); s=p.read_text()
+          s=re.sub(r'versionCode\s*=\s*\d+',f"versionCode = {21600000+int(os.environ['GITHUB_RUN_NUMBER'])}",s,count=1)
+          s=re.sub(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 7.0.2"',s,count=1)
+          p.write_text(s)
+          PY
+
+      - name: Build APK
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          bash tools/download_models.sh
+          gradle :app:assembleDebug --no-daemon --stacktrace | tee "$GITHUB_WORKSPACE/gama-build.log"
+          mkdir -p dist
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' -print -quit)"
+          test -n "$APK" && test -s "$APK"
+          cp "$APK" dist/Gama.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
+          (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
+
+      - name: Upload Gama 7.0.2 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-7.0.2-APK
+          path: |
+            _gama_build/dist/Gama.apk
+            _gama_build/dist/Gama.apk.sha256
+          if-no-files-found: error
+
+      - name: Publish Gama 7.0.2
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          rm -rf _gama_build
-          mkdir -p _gama_build
-          gh run download "$GAMA_BASE_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "$GAMA_BASE_ARTIFACT" \
-            --dir _gama_build
-          test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/VoicePolicy.kt
+          TAG="gama-v7.0.2-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" _gama_build/dist/Gama.apk#Gama.apk _gama_build/dist/Gama.apk.sha256#Gama.apk.sha256 --title "Gama 7.0.2" --notes "Hotword mais confiável e recuperação automática do microfone." --latest
 
-      - name: Apply dedicated always-on Gama hotword patch
-        run: |
-          set -euo pipefail
-          cat > /tmp/gama111.patch.xz.b64 <<'GAMA111_B64'
-          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
-          GAMA111_B64
-          python3 - <<'PY_PATCH'
-          from pathlib import Path
+# GAMA_WORKFLOW_COMPLETE
