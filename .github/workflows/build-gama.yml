@@ -1,4 +1,4 @@
-name: Build Linx MAX JARVIS APK
+name: Build Linx MAX JARVIS FIX100 APK
 
 on:
   workflow_dispatch:
@@ -625,12 +625,12 @@ jobs:
           compact = re.sub(r"\s+", "", raw)
           compressed = base64.b64decode(compact, validate=True)
           compressed_sha = hashlib.sha256(compressed).hexdigest()
-          expected_compressed = "4de46bed8f60870d1faa279af0c78cb4214f040d67f0d7480914e9a5f7849b15"
+          expected_compressed = "db1ebfcac0dcb5a8f85d741f02e66285292d2d8d51ec9718e621f0df2877d673"
           if compressed_sha != expected_compressed:
               raise SystemExit(f"Linx patch compressed hash mismatch: {compressed_sha}")
           patch = lzma.decompress(compressed)
           patch_sha = hashlib.sha256(patch).hexdigest()
-          expected_patch = "27d883754ae236b8a1f5edf05713196b8110a33fc26d8eb3d6eb18a1de5eaded"
+          expected_patch = "9574c5f5f99c7cbf195364a4f1051794acc29233da111a7098b7b89797e1874e"
           if patch_sha != expected_patch:
               raise SystemExit(f"Linx patch hash mismatch: {patch_sha}")
           Path("/tmp/linx99.patch").write_bytes(patch)
