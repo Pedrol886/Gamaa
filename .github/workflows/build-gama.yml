@@ -15,7 +15,7 @@
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
           test -s _gama_build/tools/download_models.sh
 
-      - name: Apply Gama 7.0.3 voice recovery
+      - name: Apply Gama 7.0.4 voice recovery
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -71,7 +71,7 @@
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 7.0.3 version
+      - name: Set Gama 7.0.4 version
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -81,13 +81,13 @@
           p = Path('app/build.gradle.kts')
           s = p.read_text(encoding='utf-8')
           s, a = re.subn(r'versionCode\s*=\s*\d+', f"versionCode = {21700000 + int(os.environ['GITHUB_RUN_NUMBER'])}", s, count=1)
-          s, b = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 7.0.3"', s, count=1)
+          s, b = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 7.0.4"', s, count=1)
           if a != 1 or b != 1:
               raise SystemExit(f'version patch failed: code={a} name={b}')
           p.write_text(s, encoding='utf-8')
           PY
 
-      - name: Build Gama 7.0.3 APK
+      - name: Build Gama 7.0.4 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -101,26 +101,26 @@
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
           (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
 
-      - name: Upload Gama 7.0.3 APK
+      - name: Upload Gama 7.0.4 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-7.0.3-APK
+          name: Gama-7.0.4-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Publish Gama 7.0.3 release
+      - name: Publish Gama 7.0.4 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v7.0.3-${GITHUB_RUN_NUMBER}"
+          TAG="gama-v7.0.4-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
-            --title "Gama 7.0.3" \
+            --title "Gama 7.0.4" \
             --notes "Correção do workflow e recuperação de escuta do Gama." \
             --latest
 
