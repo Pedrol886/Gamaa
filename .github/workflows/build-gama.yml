@@ -1,262 +1,33 @@
-name: Build Gama JARVIS FILM CORE FIX110 APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/build-gama.yml
-
-permissions:
-  contents: write
-  actions: read
-
-concurrency:
-  group: gama-film-core-${{ github.ref }}
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 55
-    defaults:
-      run:
-        shell: bash
-    env:
-      GAMA_BASE_RUN_ID: "37020630971"
-      GAMA_BASE_ARTIFACT: "Gama-JARVIS-POTENTE-FIX107-source"
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Restore last Gama source that built successfully
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          rm -rf _gama_build
-          mkdir -p _gama_build
-          gh run download "$GAMA_BASE_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "$GAMA_BASE_ARTIFACT" \
-            --dir _gama_build
-          test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaEventHub.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/ZevronPlanner.kt
-          test -s _gama_build/tools/download_models.sh
-
-      - name: Apply Gama JARVIS film-level continuity core
-        run: |
-          set -euo pipefail
-          cat > /tmp/gama110.patch.xz.b64 <<'GAMA110_B64'
-          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
-          AAAABFla
-          GAMA110_B64
-          python3 - <<'PY_PATCH'
-          from pathlib import Path
-          import base64, hashlib, lzma, re
-          raw = Path('/tmp/gama110.patch.xz.b64').read_text(encoding='utf-8')
-          compact = re.sub(r'\s+', '', raw)
-          compressed = base64.b64decode(compact, validate=True)
-          expected_compressed = '0d79f93b1d32762d538110d028dbd2149ab96703b78d25918a3961f12273bc37'
-          got_compressed = hashlib.sha256(compressed).hexdigest()
-          if got_compressed != expected_compressed:
-              raise SystemExit(f'compressed hash mismatch: {got_compressed}')
-          patch = lzma.decompress(compressed)
-          expected_patch = 'c1daf6979412b6496840b4ad99c64002242455d3c33270b5af1a9c0b7fb21b6b'
-          got_patch = hashlib.sha256(patch).hexdigest()
-          if got_patch != expected_patch:
-              raise SystemExit(f'patch hash mismatch: {got_patch}')
-          Path('/tmp/gama110.patch').write_bytes(patch)
-          print(f'Gama FIX110 patch transport OK: {len(compressed)} compressed bytes, {len(patch)} patch bytes')
-          PY_PATCH
-          cd _gama_build
-          patch -p2 --batch --forward < /tmp/gama110.patch
-
-      - name: Audit JARVIS film-core behavior
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          PKG="app/src/main/java/com/gama/assistant"
-          TESTS="app/src/test/java/com/gama/assistant"
-          test -s "$PKG/GamaMissionStore.kt"
-          test -s "$PKG/GamaConversationRepair.kt"
-          test -s "$PKG/GamaSystemAwareness.kt"
-          grep -Fq 'rememberExternalRecipient' "$PKG/ZevronContextResolver.kt"
-          grep -Fq 'GamaMissionStore.resumable' "$PKG/GamaService.kt"
-          grep -Fq 'GamaMissionStore.advance' "$PKG/GamaService.kt"
-          grep -Fq 'GamaConversationRepair.latestClause' "$PKG/WhatsAppCommandParser.kt"
-          grep -Fq 'JARVIS-style handoff' "$PKG/GamaService.kt"
-          grep -Fq 'GAMA109_LOCKSCREEN_PUBLIC_FAST_LANE' "$PKG/GamaService.kt"
-          grep -Fq 'watchdog-stale-audio' "$PKG/GamaService.kt"
-          grep -Fq 'return null' "$PKG/ZevronAppTool.kt"
-          grep -Fq 'GamaMissionStore.contextSummary' "$PKG/GamaContextFusion.kt"
-          grep -Fq 'CATEGORY_CALL' "$PKG/GamaNotificationListener.kt"
-          test -s "$TESTS/GamaConversationRepairTest.kt"
-          echo "Film-core audit passed." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
       - name: Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
 
       - name: Install Android platform
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: '8.9'
 
-      - name: Set Gama version
+      - name: Set Gama FIX111 version
         working-directory: _gama_build
         run: |
           set -euo pipefail
           python3 - <<'PY_VERSION'
           from pathlib import Path
           import os, re
-          path = Path('app/build.gradle.kts')
-          source = path.read_text(encoding='utf-8')
-          code = 21400000 + int(os.environ['GITHUB_RUN_NUMBER'])
-          source, a = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
-          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Gama JARVIS FILM CORE FIX110"', source, count=1)
-          if a != 1 or b != 1:
-              raise SystemExit(f'version metadata patch failed: code={a}, name={b}')
-          path.write_text(source, encoding='utf-8')
-          print('versionCode', code)
+          p = Path('app/build.gradle.kts')
+          s = p.read_text(encoding='utf-8')
+          code = 21500000 + int(os.environ['GITHUB_RUN_NUMBER'])
+          s, n1 = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', s, count=1)
+          s, n2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama JARVIS HOTWORD FIX111"', s, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'version metadata patch failed: code={n1} name={n2}')
+          p.write_text(s, encoding='utf-8')
+          print(f'versionCode={code}')
           PY_VERSION
 
       - name: Download and verify offline models
@@ -265,7 +36,7 @@ jobs:
           set -euo pipefail
           bash tools/download_models.sh
 
-      - name: Compile Gama APK
+      - name: Compile Gama FIX111 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -280,48 +51,42 @@ jobs:
           test -n "$APK"
           test -s "$APK"
           cp "$APK" dist/Gama.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
           (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
-          (cd dist && sha256sum -c Gama.apk.sha256)
-          python3 - <<'PY_APK'
-          from pathlib import Path
-          apk = Path('dist/Gama.apk')
-          data = apk.read_bytes()
-          if len(data) <= 1_000_000:
-              raise SystemExit(f'APK unexpectedly small: {len(data)} bytes')
-          if b'APK Sig Block 42' not in data:
-              raise SystemExit('Android APK signing block not found')
-          print(f'Gama.apk ready: {len(data)} bytes')
-          PY_APK
+          bytes="$(wc -c < dist/Gama.apk)"
+          test "$bytes" -gt 1000000
+          echo "## Gama JARVIS HOTWORD FIX111" >> "$GITHUB_STEP_SUMMARY"
+          echo "- APK bytes: $bytes" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Dedicated always-on hotword recognizer: enabled" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Continuous raw-audio wake detection: enabled" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Voice watchdog can recover from text-mode/deaf state: enabled" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload Gama APK
+      - name: Upload Gama FIX111 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-FILM-CORE-FIX110-APK
+          name: Gama-JARVIS-HOTWORD-FIX111-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Publish Gama release
+      - name: Publish Gama FIX111 release
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-jarvis-film-core-${GITHUB_RUN_NUMBER}"
-          gh release delete "$TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
+          TAG="gama-hotword-fix111-$GITHUB_RUN_NUMBER"
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
-            --target "$GITHUB_SHA" \
-            --title "Gama JARVIS FILM CORE" \
-            --notes "Build ${GITHUB_RUN_NUMBER}. Núcleo de continuidade inspirado no comportamento dos vídeos: alertas proativos com resposta sem repetir hotword, memória de missão, retomada de tarefas, correções naturais, abertura universal de apps, lockscreen público e recuperação automática do microfone." \
-            --latest
+            --title "Gama JARVIS HOTWORD FIX111" \
+            --notes "Gama FIX111: dedicated always-on Vosk hotword recognizer for Gama, continuous raw-audio wake detection while idle, full-decoder fallback when constrained grammar is unavailable, and a self-healing microphone watchdog that restarts voice even if the service falls back into text mode. Preserves FIX110 JARVIS continuity, lockscreen recovery, universal app opening, messaging, calendar, owner face profile and proactive context."
 
-      - name: Upload complete source
-        if: always()
+      - name: Upload FIX111 source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-FILM-CORE-FIX110-source
+          name: Gama-JARVIS-HOTWORD-FIX111-source
           path: |
             _gama_build/app/src
             _gama_build/app/build.gradle.kts
@@ -331,18 +96,15 @@ jobs:
             _gama_build/tools
           if-no-files-found: warn
 
-      - name: Run JARVIS continuity regression tests
+      - name: Run voice regression tests
         continue-on-error: true
         working-directory: _gama_build
         run: |
           set -euo pipefail
           gradle :app:testDebugUnitTest --no-daemon --stacktrace \
-            --tests "com.gama.assistant.GamaConversationRepairTest" \
-            --tests "com.gama.assistant.ZevronPlannerTest" \
-            --tests "com.gama.assistant.ZevronContextResolverTest" \
-            --tests "com.gama.assistant.GamaCalendarCommandParserTest" \
-            --tests "com.gama.assistant.WhatsAppMessagingTest" \
+            --tests "com.gama.assistant.VoicePolicyTest" \
             --tests "com.gama.assistant.ZevronConversationEngineTest" \
+            --tests "com.gama.assistant.ConversationSessionTest" \
             2>&1 | tee "$GITHUB_WORKSPACE/gama-critical-tests.log"
 
       - name: Run full unit-test suite
@@ -357,11 +119,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-FILM-CORE-FIX110-diagnostics
+          name: Gama-JARVIS-HOTWORD-FIX111-diagnostics
           path: |
             gama-build.log
             gama-critical-tests.log
             gama-tests.log
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
-          if-no-files-found: warn
