@@ -1,4 +1,4 @@
-name: Build Gama JARVIS POTENTE FIX104 APK
+name: Build Gama JARVIS POTENTE FIX106 ACOES APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-max-${{ github.ref }}
+  group: gama-fix106-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,280 +23,189 @@ jobs:
       run:
         shell: bash
     env:
-      BASE_RUN_ID: "37000254395"
-      BASE_ARTIFACT: "Linx-MAX-JARVIS-source"
+      GAMA_BASE_RUN_ID: "37010949358"
+      GAMA_BASE_ARTIFACT: "Gama-JARVIS-POTENTE-source"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Restore source from successful build 100
+      - name: Restore last Gama source that built successfully
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           rm -rf _gama_build
           mkdir -p _gama_build
-          gh run download "$BASE_RUN_ID" \
+          gh run download "$GAMA_BASE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "$BASE_ARTIFACT" \
+            --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
           test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/VoicePolicy.kt
-          echo "Source restored from successful run #100." >> "$GITHUB_STEP_SUMMARY"
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaCalendarManager.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaWhatsAppAutomation.kt
+          test -s _gama_build/tools/download_models.sh
 
-      - name: Apply Gama identity wake voice and red theme
-        working-directory: _gama_build
+      - name: Apply Gama FIX106 complete actions patch
         run: |
           set -euo pipefail
-          python3 - <<'PY_GAMA'
-          from pathlib import Path
-          import re
-
-          root = Path('.')
-          app = root / 'app'
-          pkg = app / 'src/main/java/com/gama/assistant'
-
-          # Replace only source/resource text. File names, package name and class names stay intact.
-          text_files = list(app.rglob('*.kt')) + list(app.rglob('*.xml')) + [app / 'build.gradle.kts']
-          for path in text_files:
-              if not path.exists():
-                  continue
-              text = path.read_text(encoding='utf-8')
-              text = text.replace('Linx', 'Gama').replace('LINX', 'GAMA').replace('linx', 'gama')
-              path.write_text(text, encoding='utf-8')
-
-          def edit(name, transform):
-              path = pkg / name
-              source = path.read_text(encoding='utf-8')
-              path.write_text(transform(source), encoding='utf-8')
-
-          # Remove the final user-visible Zevron labels left in the successful #100 source.
-          edit('MainActivity.kt', lambda s: s
-              .replace('text = "ZEVRON"', 'text = "GAMA"')
-              .replace('Color.rgb(113, 224, 239)', 'Color.rgb(239, 68, 68)'))
-
-          edit('GamaLockConversationActivity.kt', lambda s: s
-              .replace('text = "ZEVRON"', 'text = "GAMA"')
-              .replace('Color.rgb(255, 153, 51)', 'Color.rgb(239, 68, 68)'))
-
-          # Gama is the single hotword. "gamma" is only tolerated as an ASR spelling.
-          def voice_policy(source):
-              return re.sub(
-                  r'private val wake = Regex\(".*?"\)',
-                  lambda _: 'private val wake = Regex("\\\\b(?:gama|gamma)\\\\b")',
-                  source,
-                  count=1,
-              )
-          edit('VoicePolicy.kt', voice_policy)
-
-          edit('GamaService.kt', lambda s: s
-              .replace('private fun currentWakePhrase(): String = "gama"', 'private fun currentWakePhrase(): String = "gama"')
-              .replace('setOf("gama", "gama", "gama", "gama")', 'setOf("gama", "gamma")')
-              .replace('preRoll = (preRoll + buffer.copyOf(read)).takeLast(16000).toByteArray()',
-                       'preRoll = (preRoll + buffer.copyOf(read)).takeLast(24000).toByteArray()')
-              .replace('val gate = maxOf(38.0, noiseFloor * 1.45).coerceAtMost(650.0)',
-                       'val gate = maxOf(24.0, noiseFloor * 1.25).coerceAtMost(520.0)'))
-
-          edit('ZevronConversationEngine.kt', lambda s: s
-              .replace('setOf("gama", "atla", "atlis", "atlus")', 'setOf("gama", "gamma")')
-              .replace('(?:gama|links|lincs)', '(?:gama|gamma)'))
-
-          edit('GamaPersona.kt', lambda s: s.replace('(?:gama|links|lincs)', '(?:gama|gamma)'))
-
-          # Remove obsolete Atlas aliases from old normalization code.
-          for name in ('ConversationSession.kt', 'GamaTimePolicy.kt'):
-              def clean_aliases(source):
-                  for line in (
-                      '            .removePrefix("atla ")\n',
-                      '            .removePrefix("atlis ")\n',
-                      '            .removePrefix("atlus ")\n',
-                      '            .removeSuffix(" atla")\n',
-                      '            .removeSuffix(" atlis")\n',
-                      '            .removeSuffix(" atlus")\n',
-                      '        .removePrefix("atla ")\n',
-                      '        .removePrefix("atlis ")\n',
-                      '        .removePrefix("atlus ")\n',
-                      '        .removeSuffix(" atla")\n',
-                      '        .removeSuffix(" atlis")\n',
-                      '        .removeSuffix(" atlus")\n',
-                  ):
-                      source = source.replace(line, '')
-                  return source
-              edit(name, clean_aliases)
-
-          # Red visual theme, replacing the old orange/cyan energy colors.
-          edit('GamaEnergyView.kt', lambda s: s
-              .replace('Color.rgb(255,132,36)', 'Color.rgb(239,68,68)')
-              .replace('Color.argb((24 + 28 * pulse).toInt(),255,132,36)', 'Color.argb((24 + 28 * pulse).toInt(),239,68,68)')
-              .replace('Color.argb((92 + activity * 105 - ringIndex * 8).toInt().coerceIn(40,220),255,144,45)',
-                       'Color.argb((92 + activity * 105 - ringIndex * 8).toInt().coerceIn(40,220),239,68,68)')
-              .replace('Color.rgb(255,188,94)', 'Color.rgb(248,113,113)'))
-
-          edit('GamaFaceRingView.kt', lambda s: s
-              .replace('/** Orange Gama energy/logo ring', '/** Red Gama energy/logo ring')
-              .replace('Color.rgb(255, 145, 46)', 'Color.rgb(239, 68, 68)')
-              .replace('Color.argb(105, 255, 153, 69)', 'Color.argb(105, 239, 68, 68)')
-              .replace('Color.rgb(255, 170, 82)', 'Color.rgb(248, 113, 113)'))
-
-          # Update wake tests to match the product name again.
-          voice_test = app / 'src/test/java/com/gama/assistant/VoicePolicyTest.kt'
-          test_source = voice_test.read_text(encoding='utf-8')
-          test_source = test_source.replace(
-              'listOf("Gama", "Atla", "Atlis", "Atlus").forEach { assertTrue(VoicePolicy.hasWake(it)) }',
-              'listOf("Gama", "Gamma").forEach { assertTrue(VoicePolicy.hasWake(it)) }'
-          )
-          test_source = test_source.replace(
-              'listOf("zevron", "sevron", "gama", "gamma", "kavus", "nada").forEach { assertFalse(VoicePolicy.hasWake(it)) }',
-              'listOf("zevron", "sevron", "kavus", "linx", "atlas", "nada").forEach { assertFalse(VoicePolicy.hasWake(it)) }'
-          )
-          voice_test.write_text(test_source, encoding='utf-8')
-
-          # Gama is the product name again, so this old assertion must not reject it.
-          guard_test = app / 'src/test/java/com/gama/assistant/GamaReplyGuardTest.kt'
-          guard = guard_test.read_text(encoding='utf-8')
-          guard = guard.replace('        assertFalse(answer.contains("Gama"))\n', '')
-          guard_test.write_text(guard, encoding='utf-8')
-
-          print('Gama identity/wake/red-theme transform complete.')
-          PY_GAMA
-
-      - name: Apply Gama JARVIS Potente core
-        run: |
-          set -euo pipefail
-          cat > /tmp/gama-potente.patch.xz.b64 <<'GAMA_POTENTE_B64'
-          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
-          KMpkpwAB5S7tugEA6xzqDrHEZ/sCAAAAAARZWg==
-          GAMA_POTENTE_B64
-          python3 - <<'PY_POWER_PATCH'
+          cat > /tmp/gama-fix106.patch.xz.b64 <<'GAMA106_B64'
+          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
+          GAMA106_B64
+          python3 - <<'PY_PATCH'
           from pathlib import Path
           import base64, hashlib, lzma, re
-          raw = Path('/tmp/gama-potente.patch.xz.b64').read_text(encoding='utf-8')
+          raw = Path('/tmp/gama-fix106.patch.xz.b64').read_text(encoding='utf-8')
           compact = re.sub(r'\s+', '', raw)
           compressed = base64.b64decode(compact, validate=True)
-          if hashlib.sha256(compressed).hexdigest() != 'f47d95920207c45ce440dab27d55e7937c789a1523ce2fee53e24465d8750d88':
-              raise SystemExit('Gama Potente compressed patch hash mismatch')
+          expected_compressed = '7f5305a5f17027888eaa1c19be1ff2b80e70b04a1f7a8621666bd21be04366bc'
+          got_compressed = hashlib.sha256(compressed).hexdigest()
+          if got_compressed != expected_compressed:
+              raise SystemExit(f'compressed hash mismatch: {got_compressed}')
           patch = lzma.decompress(compressed)
-          if hashlib.sha256(patch).hexdigest() != 'c2da84e4e841df5d51098b359bb9195de3bd7edd9ecd2bf67feffd79b97956f3':
-              raise SystemExit('Gama Potente patch hash mismatch')
-          Path('/tmp/gama-potente.patch').write_bytes(patch)
-          print(f'Gama Potente patch OK: {len(patch)} bytes')
-          PY_POWER_PATCH
+          expected_patch = '17ae2a68066abb0853c84bab9b1256ac1fceea756c25815a22132ef1ab1c8b0a'
+          got_patch = hashlib.sha256(patch).hexdigest()
+          if got_patch != expected_patch:
+              raise SystemExit(f'patch hash mismatch: {got_patch}')
+          Path('/tmp/gama-fix106.patch').write_bytes(patch)
+          print(f'FIX106 patch transport OK: {len(compressed)} compressed bytes, {len(patch)} patch bytes')
+          PY_PATCH
           cd _gama_build
-          patch -p1 --batch --forward < /tmp/gama-potente.patch
+          patch -p1 --batch --forward < /tmp/gama-fix106.patch
 
-      - name: Audit Gama before compiling
+      - name: Audit direct action architecture
         working-directory: _gama_build
         run: |
           set -euo pipefail
           PKG="app/src/main/java/com/gama/assistant"
-          grep -Fq 'android:label="Gama"' app/src/main/AndroidManifest.xml
-          grep -Fq '<string name="app_name">Gama</string>' app/src/main/res/values/strings.xml
-          grep -Fq 'private val wake = Regex("\\b(?:gama|gamma)\\b")' "$PKG/VoicePolicy.kt"
-          grep -Fq 'private fun currentWakePhrase(): String = "gama"' "$PKG/GamaService.kt"
-          grep -Fq 'setOf("gama", "gamma")' "$PKG/GamaService.kt"
-          grep -Fq 'text = "GAMA"' "$PKG/MainActivity.kt"
-          grep -Fq 'text = "GAMA"' "$PKG/GamaLockConversationActivity.kt"
-          grep -Fq 'Color.rgb(239, 68, 68)' "$PKG/MainActivity.kt"
-          grep -Fq 'Color.rgb(239,68,68)' "$PKG/GamaEnergyView.kt"
-          grep -Fq '"ptd"' "$PKG/GamaVoice.kt"
-          grep -Fq '"afs"' "$PKG/GamaVoice.kt"
-          test -s "$PKG/GamaEventHub.kt"
-          test -s "$PKG/GamaContextFusion.kt"
-          test -s "$PKG/GamaProactivePolicy.kt"
-          test -s "$PKG/GamaCalendarAwareness.kt"
-          grep -Fq 'GamaProactiveBridge.listener' "$PKG/GamaService.kt"
-          grep -Fq 'GamaCalendarAwareness.poll(applicationContext)' "$PKG/GamaService.kt"
-          grep -Fq 'GamaContextFusion.snapshot(context)' "$PKG/ZevronJarvisCore.kt"
-          grep -Fq 'captureSituationEvent(sbn)' "$PKG/GamaNotificationListener.kt"
-          ! grep -Rq --include='*.kt' --include='*.xml' -E '"[^"[:cntrl:]]*(Linx|Atlas|ZEVRON)[^"[:cntrl:]]*"' app/src/main || {
-            echo "Old visible assistant name still found" >&2
-            exit 1
-          }
-          echo "Gama identity + JARVIS Potente context/proactivity audit passed." >> "$GITHUB_STEP_SUMMARY"
+          grep -Fq 'GAMA106_DIRECT_ACTION_FAST_LANE' "$PKG/GamaService.kt"
+          grep -Fq 'sendWhatsAppReliableAsync' "$PKG/GamaService.kt"
+          grep -Fq 'resumePendingAccessibilityActions' "$PKG/GamaService.kt"
+          grep -Fq 'WRITE_CALENDAR' "$PKG/MainActivity.kt"
+          grep -Fq 'GLOBAL_ACTION_LOCK_SCREEN' "$PKG/GamaService.kt"
+          grep -Fq 'if (c in lockCommands) return null' "$PKG/ZevronSystemControl.kt"
+          grep -Fq 'current.stage == Stage.SEARCH' "$PKG/GamaWhatsAppAutomation.kt"
+          grep -Fq 'GamaOwnerFaceProfile' "$PKG/GamaFaceGateActivity.kt"
+          test -s "$PKG/GamaOwnerFaceProfile.kt"
+          echo "Direct actions + owner face audit passed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -329,9 +238,9 @@ jobs:
           import os, re
           path = Path('app/build.gradle.kts')
           source = path.read_text(encoding='utf-8')
-          code = 21200000 + int(os.environ['GITHUB_RUN_NUMBER'])
+          code = 21300000 + int(os.environ['GITHUB_RUN_NUMBER'])
           source, a = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
-          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Gama JARVIS POTENTE FIX104"', source, count=1)
+          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Gama JARVIS POTENTE FIX106 ACOES"', source, count=1)
           if a != 1 or b != 1:
               raise SystemExit(f'version metadata patch failed: code={a}, name={b}')
           path.write_text(source, encoding='utf-8')
@@ -375,17 +284,17 @@ jobs:
       - name: Upload Gama APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-MAX-JARVIS-APK
+          name: Gama-JARVIS-POTENTE-FIX106-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Upload Gama JARVIS Potente source
+      - name: Upload complete source
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-POTENTE-source
+          name: Gama-JARVIS-POTENTE-FIX106-source
           path: |
             _gama_build/app/src
             _gama_build/app/build.gradle.kts
@@ -395,18 +304,18 @@ jobs:
             _gama_build/tools
           if-no-files-found: warn
 
-      - name: Run critical tests
+      - name: Run direct action regression tests
         continue-on-error: true
         working-directory: _gama_build
         run: |
           set -euo pipefail
           gradle :app:testDebugUnitTest --no-daemon --stacktrace \
+            --tests "com.gama.assistant.GamaCalendarCommandParserTest" \
+            --tests "com.gama.assistant.ZevronCalendarFlowTest" \
+            --tests "com.gama.assistant.WhatsAppMessagingTest" \
+            --tests "com.gama.assistant.ZevronSystemControlTest" \
             --tests "com.gama.assistant.VoicePolicyTest" \
             --tests "com.gama.assistant.ZevronConversationEngineTest" \
-            --tests "com.gama.assistant.GamaReplyGuardTest" \
-            --tests "com.gama.assistant.ZevronPlannerTest" \
-            --tests "com.gama.assistant.ZevronSystemControlTest" \
-            --tests "com.gama.assistant.GamaProactivePolicyTest" \
             2>&1 | tee "$GITHUB_WORKSPACE/gama-critical-tests.log"
 
       - name: Run full unit-test suite
@@ -421,7 +330,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-MAX-JARVIS-diagnostics
+          name: Gama-JARVIS-POTENTE-FIX106-diagnostics
           path: |
             gama-build.log
             gama-critical-tests.log
