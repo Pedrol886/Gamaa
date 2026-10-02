@@ -1,4 +1,4 @@
-name: Build Gama JARVIS POTENTE FIX106 ACOES APK
+name: Build Gama JARVIS POTENTE FIX107 RELEASE APK
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ on:
       - .github/workflows/build-gama.yml
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 concurrency:
-  group: gama-fix106-${{ github.ref }}
+  group: gama-fix107-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -240,7 +240,7 @@ jobs:
           source = path.read_text(encoding='utf-8')
           code = 21300000 + int(os.environ['GITHUB_RUN_NUMBER'])
           source, a = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {code}', source, count=1)
-          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Gama JARVIS POTENTE FIX106 ACOES"', source, count=1)
+          source, b = re.subn(r'versionName\s*=\s*"[^"]+"', 'versionName = "Gama JARVIS POTENTE FIX107 RELEASE"', source, count=1)
           if a != 1 or b != 1:
               raise SystemExit(f'version metadata patch failed: code={a}, name={b}')
           path.write_text(source, encoding='utf-8')
@@ -284,17 +284,32 @@ jobs:
       - name: Upload Gama APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-POTENTE-FIX106-APK
+          name: Gama-JARVIS-POTENTE-FIX107-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
+      - name: Publish Gama release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="gama-jarvis-potente-${GITHUB_RUN_NUMBER}"
+          gh release delete "$TAG" --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release create "$TAG" \
+            "_gama_build/dist/Gama.apk#Gama.apk" \
+            "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "Gama JARVIS POTENTE" \
+            --notes "Build ${GITHUB_RUN_NUMBER} do Gama JARVIS POTENTE. APK Android gerado automaticamente pelo GitHub Actions." \
+            --latest
+
       - name: Upload complete source
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-POTENTE-FIX106-source
+          name: Gama-JARVIS-POTENTE-FIX107-source
           path: |
             _gama_build/app/src
             _gama_build/app/build.gradle.kts
@@ -330,7 +345,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-JARVIS-POTENTE-FIX106-diagnostics
+          name: Gama-JARVIS-POTENTE-FIX107-diagnostics
           path: |
             gama-build.log
             gama-critical-tests.log
