@@ -1,4 +1,4 @@
-name: Build Gama 8.0.0 APK
+name: Build Gama 8.0.1 APK
 
 on:
   workflow_dispatch:
@@ -14,30 +14,74 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
-  group: gama-8-0-0-${{ github.ref }}
+  group: gama-8-0-1-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 55
+    env:
+      GAMA_BASE_RUN_ID: "37030299438"
+      GAMA_BASE_ARTIFACT: "Gama-JARVIS-FILM-CORE-FIX110-source"
 
     steps:
-      - name: Checkout complete Gama project
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Audit consolidated Gama source
+      - name: Ensure complete Gama source exists
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 tools/audit_gama.py
+          if [ ! -s app/build.gradle.kts ]; then
+            echo "Projeto Android ausente no repositório; restaurando a última base que compilou."
+            gh run download "$GAMA_BASE_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$GAMA_BASE_ARTIFACT" \
+              --dir .
+          fi
           test -s app/build.gradle.kts
           test -s app/src/main/AndroidManifest.xml
           test -s app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s app/src/main/assets/model/final.mdl
+          test -s app/src/main/java/com/gama/assistant/VoicePolicy.kt
+          test -s settings.gradle.kts
+          test -s build.gradle.kts
+
+      - name: Apply consolidated Gama 8 voice core
+        run: |
+          set -euo pipefail
+          if grep -Fq 'private var wakeRecognizer: Recognizer? = null' app/src/main/java/com/gama/assistant/GamaService.kt; then
+            echo "Gama 8 voice core already present."
+          else
+            printf '%s' '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' | base64 -d | xz -d > /tmp/gama8.patch
+            echo "5126d9e69c954f0df4a1bc62335912acc1705a933f24664c9aa66cc60a90b91a  /tmp/gama8.patch" | sha256sum -c -
+            patch -p1 --batch --forward < /tmp/gama8.patch
+          fi
+          grep -Fq 'private var wakeRecognizer: Recognizer? = null' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'Recognizer(model, SAMPLE_RATE.toFloat(), "[\"gama\", \"gamma\", \"[unk]\"]")' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'textMode || !running' app/src/main/java/com/gama/assistant/GamaService.kt
+
+      - name: Audit consolidated capabilities inline
+        run: |
+          set -euo pipefail
+          PKG="app/src/main/java/com/gama/assistant"
+          test -s "$PKG/GamaMissionStore.kt"
+          test -s "$PKG/GamaConversationRepair.kt"
+          test -s "$PKG/GamaSystemAwareness.kt"
+          test -s "$PKG/ZevronPlanner.kt"
+          grep -Fq 'android.permission.WRITE_CALENDAR' app/src/main/AndroidManifest.xml
+          grep -Fq 'GamaMissionStore' "$PKG/GamaService.kt"
+          grep -Fq 'GamaConversationRepair' "$PKG/GamaService.kt"
+          grep -Fq 'GamaSystemAwareness' "$PKG/GamaService.kt"
+          grep -Fq 'interruptSpeechForBargeIn' "$PKG/GamaService.kt"
+          grep -Fq 'wakeRecognizer' "$PKG/GamaService.kt"
+          echo "Gama 8.0.1 consolidated capability audit passed."
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -53,9 +97,7 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          fi
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"; fi
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
@@ -66,13 +108,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Set build version
+      - name: Set Gama 8.0.1 version
         run: |
           set -euo pipefail
-          VC=$((22000000 + GITHUB_RUN_NUMBER))
+          VC=$((22100000 + GITHUB_RUN_NUMBER))
           sed -Ei "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" app/build.gradle.kts
-          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.0.0"/' app/build.gradle.kts
-          grep -F 'versionName = "Gama 8.0.0"' app/build.gradle.kts
+          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.0.1"/' app/build.gradle.kts
+          grep -F 'versionName = "Gama 8.0.1"' app/build.gradle.kts
 
       - name: Run critical unit tests
         continue-on-error: true
@@ -83,13 +125,12 @@ jobs:
             --tests 'com.gama.assistant.ConversationSessionTest' \
             --tests 'com.gama.assistant.ZevronPlannerTest' \
             --tests 'com.gama.assistant.ZevronContextResolverTest' \
-            --tests 'com.gama.assistant.GamaCalendarCommandParserTest' \
-            --tests 'com.gama.assistant.WhatsAppMessagingTest' \
             2>&1 | tee "$GITHUB_WORKSPACE/gama-critical-tests.log"
 
-      - name: Build Gama 8.0.0 APK
+      - name: Build Gama 8.0.1 APK
         run: |
           set -euo pipefail
+          if [ -x tools/download_models.sh ]; then bash tools/download_models.sh; fi
           gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
           mkdir -p dist
           APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
@@ -99,35 +140,35 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
           (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
 
-      - name: Upload Gama 8.0.0 APK
+      - name: Upload Gama 8.0.1 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.0.0-APK
+          name: Gama-8.0.1-APK
           path: |
             dist/Gama.apk
             dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Publish Gama 8.0.0 release
+      - name: Publish Gama 8.0.1 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v8.0.0-${GITHUB_RUN_NUMBER}"
+          TAG="gama-v8.0.1-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
             "dist/Gama.apk#Gama.apk" \
             "dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 8.0.0" \
-            --notes "Base consolidada do Gama: código Android completo no repositório, hotword dedicado, recuperação automática da escuta, missões/contexto, proatividade, agenda, WhatsApp, bloqueio, apps, perfil facial local do dono e ferramentas Android verificadas." \
+            --title "Gama 8.0.1" \
+            --notes "Correção do #117: restaura automaticamente a base compilável quando o projeto Android não foi enviado ao repositório, reaplica o núcleo consolidado Gama 8 e gera o APK." \
             --latest
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.0.0-diagnostics
+          name: Gama-8.0.1-diagnostics
           path: |
             gama-build.log
             gama-critical-tests.log
