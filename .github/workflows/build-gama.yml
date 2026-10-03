@@ -1,4 +1,4 @@
-name: Build Gama 9.2.1 Red Core Verified APK
+name: Build Gama 9.2.2 Red Core Directory-Fix APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-9-2-1-red-core-${{ github.ref }}
+  group: gama-9-2-2-red-core-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -43,11 +43,11 @@ jobs:
           set -euo pipefail
           if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
             echo "mode=fresh" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.2.1-RED-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-9.2.2-RED-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
             echo "::warning::GAMA_SIGNING_SEED não está configurado. O APK será apenas para instalação limpa."
           elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
             echo "mode=stable" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.2.1-RED-CORE-APK" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-9.2.2-RED-CORE-APK" >> "$GITHUB_OUTPUT"
           else
             echo "::error::GAMA_SIGNING_SEED existe, mas não possui exatamente 64 caracteres hexadecimais."
             exit 1
@@ -245,8 +245,8 @@ jobs:
           echo "$GAMA_PATCH_SHA256  /tmp/gama-9.2.patch" | sha256sum -c -
 
           cd _gama_build
-          git apply --check /tmp/gama-9.2.patch
-          git apply /tmp/gama-9.2.patch
+          patch --batch --forward --dry-run -p1 < /tmp/gama-9.2.patch
+          patch --batch --forward -p1 < /tmp/gama-9.2.patch
 
           mkdir -p app/src/main/res/drawable
           cat > /tmp/gama-red-core.webp.b64 <<'GAMA920_LOGO'
@@ -534,7 +534,7 @@ jobs:
           set -euo pipefail
           gradle :app:compileDebugKotlin --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
 
-      - name: Set Gama 9.2.1 Red Core version
+      - name: Set Gama 9.2.2 Red Core version
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -543,15 +543,15 @@ jobs:
           import os, re
           p = Path('app/build.gradle.kts')
           s = p.read_text(encoding='utf-8')
-          version_code = 24_310_000 + int(os.environ['GITHUB_RUN_NUMBER'])
+          version_code = 24_320_000 + int(os.environ['GITHUB_RUN_NUMBER'])
           s, n1 = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {version_code}', s, count=1)
-          s, n2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 9.2.1 Red Core"', s, count=1)
+          s, n2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 9.2.2 Red Core"', s, count=1)
           if n1 != 1 or n2 != 1:
               raise SystemExit('Não consegui atualizar versionCode/versionName de forma segura.')
           p.write_text(s, encoding='utf-8')
           PY_VERSION
-          grep -Fq 'versionName = "Gama 9.2.1 Red Core"' app/build.gradle.kts
-          grep -Eq 'versionCode = 24310[0-9]+' app/build.gradle.kts
+          grep -Fq 'versionName = "Gama 9.2.2 Red Core"' app/build.gradle.kts
+          grep -Eq 'versionCode = 24320[0-9]+' app/build.gradle.kts
 
       - name: Run full Gama regression suite
         working-directory: _gama_build
@@ -559,7 +559,7 @@ jobs:
           set -euo pipefail
           gradle :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      - name: Build Gama 9.2.1 Red Core APK
+      - name: Build Gama 9.2.2 Red Core APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -645,7 +645,7 @@ jobs:
           (cd dist && sha256sum -c Gama.apk.sha256)
 
 
-      - name: Upload Gama 9.2.1 Red Core APK
+      - name: Upload Gama 9.2.2 Red Core APK
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.signing_mode.outputs.artifact }}
@@ -658,10 +658,10 @@ jobs:
             _gama_build/dist/install-mode.txt
           if-no-files-found: error
 
-      - name: Upload Gama 9.2.1 Red Core source
+      - name: Upload Gama 9.2.2 Red Core source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-9.2.1-RED-CORE-source
+          name: Gama-9.2.2-RED-CORE-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -692,7 +692,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-9.2.1-RED-CORE-diagnostics
+          name: Gama-9.2.2-RED-CORE-diagnostics
           path: |
             gama-compile.log
             gama-build.log
@@ -707,12 +707,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v9.2.1-red-core-${{ github.run_number }}"
+          TAG="gama-v9.2.2-red-core-${{ github.run_number }}"
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.2.1 Red Core Reliability" \
-            --notes "Base exata do build #131 aprovado. Corrige o gate silencioso que derrubou o #132 antes da compilação, adicionando diagnóstico explícito e compileDebugKotlin antes dos testes.  Corrige todos os problemas observados no vídeo: leitura de notificações com retomada após permissão, botão explícito de controle/rolagem, verificação real de troca de tela, retentativas de abertura de apps e WhatsApp com IntentSender no Android 13+, continuidade entre sessões, recuperação silenciosa e planos verificados. Nova identidade Red Core: logo enviada pelo usuário como ícone/overlay/lockscreen, interface vermelha e mandíbula animada durante a fala. Workflow compactado para evitar truncamento no editor móvel do GitHub." \
+            --title "Gama 9.2.2 Red Core Reliability" \
+            --notes "Base exata do build #131 aprovado. Corrige o #133: o git apply estava encontrando o .git do checkout pai e aplicando o patch fora de _gama_build. Agora usa patch -p1 dentro do source restaurado, com dry-run obrigatório e guardas explícitos antes da compilação.  Corrige todos os problemas observados no vídeo: leitura de notificações com retomada após permissão, botão explícito de controle/rolagem, verificação real de troca de tela, retentativas de abertura de apps e WhatsApp com IntentSender no Android 13+, continuidade entre sessões, recuperação silenciosa e planos verificados. Nova identidade Red Core: logo enviada pelo usuário como ícone/overlay/lockscreen, interface vermelha e mandíbula animada durante a fala. Workflow compactado para evitar truncamento no editor móvel do GitHub." \
             --latest
