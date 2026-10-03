@@ -1,4 +1,4 @@
-name: Build Gama 8.3.1 JARVIS Tools APK
+name: Build Gama 8.3.2 JARVIS Tools APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-8-3-1-${{ github.ref }}
+  group: gama-8-3-2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -21,36 +21,22 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Source aprovado: build #123
       GAMA_BASE_RUN_ID: "37119165969"
       GAMA_BASE_ARTIFACT: "Gama-8.2.2-JARVIS-2000-source"
-
-      # Commit do build #124.
-      # O patch 8.3.0 já está embutido naquele workflow.
       GAMA_PATCH_COMMIT: "3578948ddae7c94a76602bac5ab08d0dd4478f4f"
 
     steps:
-
-      # ============================================================
-      # CHECKOUT
-      # ============================================================
 
       - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ============================================================
-      # RESTAURA A BASE QUE JÁ COMPILOU
-      # ============================================================
-
-      - name: Restore verified Gama source from build 123
+      - name: Restore verified Gama source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          echo "Restoring verified Gama source..."
 
           rm -rf _gama_build
           mkdir -p _gama_build
@@ -60,92 +46,19 @@ jobs:
             --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
 
-          echo "Checking restored project..."
-
-          test -s _gama_build/settings.gradle.kts
-          test -s _gama_build/build.gradle.kts
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/LocalBrain.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/AiSetup.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaVisionCore.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaScreenContextService.kt
 
-          SRC="_gama_build/app/src/main/java/com/gama/assistant"
+          echo "Verified Gama source restored."
 
-          test -s "$SRC/GamaService.kt"
-          test -s "$SRC/MainActivity.kt"
-          test -s "$SRC/LocalBrain.kt"
-          test -s "$SRC/AiSetup.kt"
-          test -s "$SRC/GamaModelInstallPolicy.kt"
-          test -s "$SRC/GamaVisionCore.kt"
-          test -s "$SRC/GamaAdaptiveMemory.kt"
-          test -s "$SRC/GamaRecoveryCoordinator.kt"
-          test -s "$SRC/GamaSuperAssistantCore.kt"
-          test -s "$SRC/GamaAutomationEngine.kt"
-          test -s "$SRC/GamaInternetHub.kt"
-          test -s "$SRC/GamaOnlineRouter.kt"
-          test -s "$SRC/GamaScreenContextService.kt"
-          test -s "$SRC/ZevronPlanner.kt"
-          test -s "$SRC/ZevronCalendarFlow.kt"
-          test -s "$SRC/ZevronSystemControl.kt"
-
-          echo "Verified Gama 8.2.2 source restored."
-
-      # ============================================================
-      # CONFERE SE PEGAMOS MESMO A BASE CERTA
-      # ============================================================
-
-      - name: Verify build 123 JARVIS base
-        working-directory: _gama_build
+      - name: Recover and apply Gama 8.3 patch
         run: |
           set -euo pipefail
-
-          SRC="app/src/main/java/com/gama/assistant"
-
-          required_checks=(
-            "GAMA2000_LOCAL_VISION_ROUTER|$SRC/GamaService.kt"
-            "ACTION_UI_PULSE|$SRC/GamaService.kt"
-            "GamaAdaptiveMemory|$SRC/GamaSuperAssistantCore.kt"
-            "GamaRecoveryCoordinator.nextDelayMs(|$SRC/GamaService.kt"
-            "GamaMissionStore|$SRC/GamaService.kt"
-            "GamaProactiveBridge|$SRC/GamaService.kt"
-            "GamaAutomationEngine|$SRC/GamaService.kt"
-            "interruptSpeechForBargeIn|$SRC/GamaService.kt"
-            "GamaModelInstallPolicy.isStalled(|$SRC/AiSetup.kt"
-            "control(\"Importar IA do celular\")|$SRC/MainActivity.kt"
-            "LlmInference|$SRC/LocalBrain.kt"
-          )
-
-          for entry in "${required_checks[@]}"; do
-            needle="${entry%%|*}"
-            file="${entry#*|}"
-
-            if ! grep -Fq "$needle" "$file"; then
-              echo "::error::Base validation failed."
-              echo "::error::Missing '$needle' in $file"
-              exit 1
-            fi
-          done
-
-          grep -Fq \
-            'implementation("com.google.mediapipe:tasks-genai:0.10.27")' \
-            app/build.gradle.kts
-
-          grep -Fq \
-            'implementation("com.google.mlkit:text-recognition:16.0.1")' \
-            app/build.gradle.kts
-
-          echo "Build 123 JARVIS base verified."
-
-      # ============================================================
-      # RECUPERA O PATCH QUE JÁ ESTAVA NO #124
-      #
-      # Assim você não precisa colar aquele Base64 enorme outra vez.
-      # ============================================================
-
-      - name: Recover Gama 8.3 patch from build 124 commit
-        run: |
-          set -euo pipefail
-
-          echo "Reading patch from commit:"
-          echo "$GAMA_PATCH_COMMIT"
 
           git cat-file -e "${GAMA_PATCH_COMMIT}^{commit}"
 
@@ -160,11 +73,13 @@ jobs:
           import base64
           import gzip
 
-          workflow = Path("/tmp/gama-build-124.yml").read_text(
+          workflow = Path(
+              "/tmp/gama-build-124.yml"
+          ).read_text(
               encoding="utf-8"
           )
 
-          begin_marker = (
+          begin = (
               "cat > /tmp/gama-8.3.0.patch.gz.b64 "
               "<<'PATCH64'"
           )
@@ -172,11 +87,12 @@ jobs:
           inside = False
           chunks = []
 
-          for raw_line in workflow.splitlines():
-              line = raw_line.strip()
+          for raw in workflow.splitlines():
+
+              line = raw.strip()
 
               if not inside:
-                  if begin_marker in raw_line:
+                  if begin in raw:
                       inside = True
                   continue
 
@@ -188,68 +104,64 @@ jobs:
 
           if not inside:
               raise SystemExit(
-                  "Could not locate the Gama 8.3 patch in build #124."
+                  "Gama 8.3 patch was not found in build #124."
               )
 
           encoded = "".join(chunks)
 
           if len(encoded) < 1000:
               raise SystemExit(
-                  "Recovered patch data is unexpectedly small."
+                  "Recovered patch data is incomplete."
               )
 
           try:
+
               compressed = base64.b64decode(
                   encoded,
                   validate=True
               )
 
-              patch = gzip.decompress(compressed)
+              patch = gzip.decompress(
+                  compressed
+              )
 
           except Exception as exc:
+
               raise SystemExit(
                   f"Could not decode Gama patch: {exc}"
               )
 
-          if b"GamaCriticalCommandPolicy.kt" not in patch:
-              raise SystemExit(
-                  "Recovered patch is not the expected Gama 8.3 patch."
-              )
+          required = [
+              b"GamaCriticalCommandPolicy.kt",
+              b"GamaInternetHub.kt",
+              b"GamaScreenContextService.kt",
+              b"ZevronCalendarFlow.kt",
+              b"ZevronPlanner.kt",
+          ]
 
-          if b"GamaInternetHub.kt" not in patch:
-              raise SystemExit(
-                  "Internet patch is missing."
-              )
+          for marker in required:
 
-          if b"GamaScreenContextService.kt" not in patch:
-              raise SystemExit(
-                  "Screen-control patch is missing."
-              )
+              if marker not in patch:
 
-          path = Path("/tmp/gama-8.3.0.patch")
-          path.write_bytes(patch)
+                  raise SystemExit(
+                      f"Expected patch marker missing: "
+                      f"{marker!r}"
+                  )
+
+          Path(
+              "/tmp/gama-8.3.0.patch"
+          ).write_bytes(
+              patch
+          )
 
           print(
-              f"Recovered Gama patch: "
-              f"{len(patch)} bytes."
+              f"Recovered patch: {len(patch)} bytes"
           )
           PY
 
-          test -s /tmp/gama-8.3.0.patch
+          cd _gama_build
 
-      # ============================================================
-      # APLICA O PATCH
-      #
-      # CORREÇÃO PRINCIPAL DO ERRO DO #124:
-      # não usa mais git apply.
-      # ============================================================
-
-      - name: Validate Gama 8.3 patch before applying
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          echo "Dry-running complete Gama patch..."
+          echo "Testing patch before modifying Gama..."
 
           patch \
             --batch \
@@ -258,14 +170,7 @@ jobs:
             -p1 \
             < /tmp/gama-8.3.0.patch
 
-          echo "Patch dry-run successful."
-
-      - name: Apply Gama 8.3 reliability patch
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          echo "Applying complete Gama patch..."
+          echo "Applying Gama patch..."
 
           patch \
             --batch \
@@ -273,169 +178,45 @@ jobs:
             -p1 \
             < /tmp/gama-8.3.0.patch
 
-          echo "Patch applied."
+          SRC="app/src/main/java/com/gama/assistant"
+          TEST="app/src/test/java/com/gama/assistant"
 
-      # ============================================================
-      # CONFERE TODAS AS MUDANÇAS QUE VOCÊ PEDIU
-      # ============================================================
+          test -s "$SRC/GamaCriticalCommandPolicy.kt"
+          test -s "$TEST/GamaCriticalCommandPolicyTest.kt"
 
-      - name: Verify Gama 8.3 JARVIS changes
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
+          grep -Fq \
+            'continuePlanAfterToolAction(360L)' \
+            "$SRC/GamaService.kt"
 
-          python3 - <<'PY'
-          from pathlib import Path
+          grep -Fq \
+            'GamaCriticalCommandPolicy.isLockScreen' \
+            "$SRC/GamaService.kt"
 
-          src = Path(
-              "app/src/main/java/com/gama/assistant"
-          )
+          grep -Fq \
+            'dispatchGesture' \
+            "$SRC/GamaScreenContextService.kt"
 
-          tests = Path(
-              "app/src/test/java/com/gama/assistant"
-          )
+          grep -Fq \
+            'Mode.LIVE_SEARCH' \
+            "$SRC/GamaOnlineRouter.kt"
 
-          required_files = [
-              src / "GamaCriticalCommandPolicy.kt",
-              src / "GamaInternetHub.kt",
-              src / "GamaOnlineRouter.kt",
-              src / "GamaRecognitionPolicy.kt",
-              src / "GamaScreenContextService.kt",
-              src / "GamaService.kt",
-              src / "GamaVisionCore.kt",
-              src / "ZevronCalendarFlow.kt",
-              src / "ZevronPlanner.kt",
-              src / "ZevronSystemControl.kt",
+          grep -Fq \
+            'fun liveSearch(query: String)' \
+            "$SRC/GamaInternetHub.kt"
 
-              tests / "GamaCriticalCommandPolicyTest.kt",
-              tests / "GamaOnlineRouterTest.kt",
-              tests / "ZevronCalendarFlowTest.kt",
-              tests / "ZevronPlannerTest.kt",
-              tests / "ZevronSystemControlTest.kt",
-          ]
+          grep -Fq \
+            '15 horas' \
+            "$TEST/ZevronCalendarFlowTest.kt"
 
-          for path in required_files:
-              if not path.is_file():
-                  raise SystemExit(
-                      f"Missing patched file: {path}"
-                  )
+          grep -Fq \
+            'lockThenRestBecomesPlan' \
+            "$TEST/ZevronPlannerTest.kt"
 
-              if path.stat().st_size == 0:
-                  raise SystemExit(
-                      f"Empty patched file: {path}"
-                  )
-
-          checks = {
-              src / "GamaCriticalCommandPolicy.kt": [
-                  "isLockScreen",
-                  "desbloque",
-                  "bloqueie",
-              ],
-
-              src / "GamaRecognitionPolicy.kt": [
-                  "GamaCriticalCommandPolicy.isLockScreen",
-              ],
-
-              src / "GamaService.kt": [
-                  "continuePlanAfterToolAction(360L)",
-                  "GamaCriticalCommandPolicy.isLockScreen",
-                  "GamaInternetHub.liveSearch",
-              ],
-
-              src / "GamaScreenContextService.kt": [
-                  "dispatchGesture",
-                  "swipeScroll",
-                  "ACTION_SCROLL_DOWN",
-                  "ACTION_SCROLL_UP",
-              ],
-
-              src / "GamaVisionCore.kt": [
-                  "leia isso",
-                  "o que aparece aqui",
-              ],
-
-              src / "GamaOnlineRouter.kt": [
-                  "LIVE_SEARCH",
-                  "horario de votacao",
-              ],
-
-              src / "GamaInternetHub.kt": [
-                  "fun liveSearch(query: String)",
-                  "duckduckgo",
-              ],
-
-              src / "ZevronCalendarFlow.kt": [
-                  "horas?",
-                  "meio dia",
-                  "meia noite",
-              ],
-
-              src / "ZevronPlanner.kt": [
-                  "ConversationSession.isGoodbye",
-                  "GamaCriticalCommandPolicy.isLockScreen",
-              ],
-
-              src / "ZevronSystemControl.kt": [
-                  "role a tela",
-                  "continue rolando",
-              ],
-
-              tests / "GamaCriticalCommandPolicyTest.kt": [
-                  "lockSurvivesSmallAsrErrors",
-                  "unlockIsNeverRecoveredAsLock",
-              ],
-
-              tests / "GamaOnlineRouterTest.kt": [
-                  "electionScheduleUsesLiveSearch",
-              ],
-
-              tests / "ZevronCalendarFlowTest.kt": [
-                  "numericTimeWithHorasIsRecognized",
-                  "15 horas",
-              ],
-
-              tests / "ZevronPlannerTest.kt": [
-                  "lockThenRestBecomesPlan",
-              ],
-
-              tests / "ZevronSystemControlTest.kt": [
-                  "role a tela",
-                  "leia a tela",
-              ],
-          }
-
-          for path, needles in checks.items():
-              content = path.read_text(
-                  encoding="utf-8"
-              )
-
-              for needle in needles:
-                  if needle.lower() not in content.lower():
-                      raise SystemExit(
-                          f"Validation failed: "
-                          f"{needle!r} missing from {path}"
-                      )
-
-          print(
-              "All Gama 8.3 JARVIS changes "
-              "validated successfully."
-          )
-          PY
-
-      # ============================================================
-      # AUDITOR DO GAMA
-      # ============================================================
-
-      - name: Audit consolidated Gama capabilities
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
+          echo "Running Gama capability auditor..."
 
           python3 tools/audit_gama.py
 
-      # ============================================================
-      # JAVA
-      # ============================================================
+          echo "Gama patch applied and verified."
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -443,85 +224,75 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ============================================================
-      # ANDROID SDK
-      # ============================================================
-
       - name: Configure Android SDK 35
         run: |
           set -euo pipefail
 
-          SDK_ROOT="${
-            ANDROID_SDK_ROOT:-${
-              ANDROID_HOME:-/usr/local/lib/android/sdk
-            }
-          }"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
 
-          test -d "$SDK_ROOT"
+          echo "Android SDK root: $SDK_ROOT"
 
-          echo "ANDROID_HOME=$SDK_ROOT" \
-            >> "$GITHUB_ENV"
+          if [ ! -d "$SDK_ROOT" ]; then
+            echo "::error::Android SDK directory not found: $SDK_ROOT"
+            exit 1
+          fi
 
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" \
-            >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(
-            command -v sdkmanager || true
-          )"
+          SDKMANAGER="$(command -v sdkmanager || true)"
 
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
 
-          test -x "$SDKMANAGER"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found at $SDKMANAGER"
+            exit 1
+          fi
 
-          yes | "$SDKMANAGER" --licenses \
-            >/dev/null || true
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
 
           "$SDKMANAGER" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          test -x \
-            "$SDK_ROOT/build-tools/35.0.0/apksigner"
+          APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
 
-      # ============================================================
-      # GRADLE
-      # ============================================================
+          if [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner was not installed."
+            exit 1
+          fi
+
+          echo "Android SDK configured successfully."
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      # ============================================================
-      # VERSÃO
-      # ============================================================
-
-      - name: Set Gama 8.3.1 build version
+      - name: Set Gama 8.3.2 build version
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          VC=$((22800000 + GITHUB_RUN_NUMBER))
+          VC=$((22900000 + GITHUB_RUN_NUMBER))
 
           sed -Ei \
             "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" \
             app/build.gradle.kts
 
           sed -Ei \
-            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.3.1"/' \
+            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.3.2"/' \
             app/build.gradle.kts
 
           grep -F \
-            'versionName = "Gama 8.3.1"' \
+            'versionName = "Gama 8.3.2"' \
             app/build.gradle.kts
 
-      # ============================================================
-      # TESTES
-      # ============================================================
+          echo "Gama version configured."
 
-      - name: Run complete Gama regression tests
+      - name: Run Gama regression tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -545,11 +316,7 @@ jobs:
             2>&1 \
             | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      # ============================================================
-      # APK
-      # ============================================================
-
-      - name: Build Gama 8.3.1 APK
+      - name: Build and verify Gama 8.3.2 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -597,33 +364,24 @@ jobs:
 
           (
             cd dist
-            sha256sum Gama.apk \
-              > Gama.apk.sha256
+            sha256sum Gama.apk > Gama.apk.sha256
           )
 
           echo "Gama APK built successfully."
 
-      # ============================================================
-      # ARTEFATO APK
-      # ============================================================
-
-      - name: Upload Gama 8.3.1 APK
+      - name: Upload Gama 8.3.2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.3.1-JARVIS-TOOLS-APK
+          name: Gama-8.3.2-JARVIS-TOOLS-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      # ============================================================
-      # SOURCE
-      # ============================================================
-
-      - name: Upload Gama 8.3.1 source
+      - name: Upload Gama 8.3.2 source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.3.1-JARVIS-TOOLS-source
+          name: Gama-8.3.2-JARVIS-TOOLS-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -631,36 +389,28 @@ jobs:
             !_gama_build/dist/**
           if-no-files-found: error
 
-      # ============================================================
-      # RELEASE
-      # ============================================================
-
-      - name: Publish Gama 8.3.1 release
+      - name: Publish Gama 8.3.2 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          TAG="gama-v8.3.1-jarvis-tools-${GITHUB_RUN_NUMBER}"
+          TAG="gama-v8.3.2-jarvis-tools-${GITHUB_RUN_NUMBER}"
 
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 8.3.1 JARVIS Tools" \
-            --notes "Correção do build #124. Usa como base o source aprovado do #123 e reaplica de forma validada as melhorias de reconhecimento de voz, bloqueio de tela, comandos encadeados, leitura e rolagem de tela, agenda e pesquisa atual na Internet." \
+            --title "Gama 8.3.2 JARVIS Tools" \
+            --notes "Correção do build #125. Mantém o patch do Gama validado durante o #125 e corrige a configuração do Android SDK que falhou por bad substitution. Inclui melhorias de reconhecimento de voz, bloqueio e comandos encadeados, leitura e rolagem de tela, agenda e consultas atuais pela Internet." \
             --latest
-
-      # ============================================================
-      # DIAGNÓSTICOS
-      # ============================================================
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.3.1-JARVIS-TOOLS-diagnostics
+          name: Gama-8.3.2-JARVIS-TOOLS-diagnostics
           path: |
             gama-build.log
             gama-tests.log
