@@ -19,7 +19,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     env:
       GAMA_BASE_RUN_ID: "37091773618"
       GAMA_BASE_ARTIFACT: "Gama-8.2.0-source"
@@ -30,12 +29,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore complete compiled Gama source
+      - name: Restore compiled JARVIS 2000 source from run 120
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           rm -rf _gama_build
           mkdir -p _gama_build
 
@@ -53,141 +51,250 @@ jobs:
           test -s _gama_build/app/src/main/java/com/gama/assistant/LocalBrain.kt
           test -s _gama_build/app/src/main/java/com/gama/assistant/AiSetup.kt
 
-      - name: Verify JARVIS 2000 core
+      - name: Verify compiled JARVIS 2000 base
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          SRC="app/src/main/java/com/gama/assistant"
+
+          grep -Fq 'GAMA2000_LOCAL_VISION_ROUTER' "$SRC/GamaService.kt"
+          grep -Fq 'ACTION_UI_PULSE' "$SRC/GamaService.kt"
+          grep -Fq 'GamaAdaptiveMemory' "$SRC/GamaSuperAssistantCore.kt"
+          grep -Fq 'GamaRecoveryCoordinator.nextDelayMs(' "$SRC/GamaService.kt"
+          grep -Fq 'GamaMissionStore' "$SRC/GamaService.kt"
+          grep -Fq 'GamaProactiveBridge' "$SRC/GamaService.kt"
+          grep -Fq 'GamaAutomationEngine' "$SRC/GamaService.kt"
+          grep -Fq 'interruptSpeechForBargeIn' "$SRC/GamaService.kt"
+          grep -Fq 'LlmInference' "$SRC/LocalBrain.kt"
+          grep -Fq 'implementation("com.google.mediapipe:tasks-genai:0.10.27")' app/build.gradle.kts
+          grep -Fq 'implementation("com.google.mlkit:text-recognition:16.0.1")' app/build.gradle.kts
+
+          echo "Run 120 JARVIS 2000 base verified."
+
+      - name: Fix offline AI installer and 0 MB stall
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           SRC="app/src/main/java/com/gama/assistant"
-
-          grep -Fq \
-            'GAMA2000_LOCAL_VISION_ROUTER' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'ACTION_UI_PULSE' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'GamaAdaptiveMemory' \
-            "$SRC/GamaSuperAssistantCore.kt"
-
-          grep -Fq \
-            'GamaRecoveryCoordinator.nextDelayMs(' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'GamaMissionStore' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'GamaProactiveBridge' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'GamaAutomationEngine' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'interruptSpeechForBargeIn' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'LlmInference' \
-            "$SRC/LocalBrain.kt"
-
-          grep -Fq \
-            'implementation("com.google.mediapipe:tasks-genai:0.10.27")' \
-            app/build.gradle.kts
-
-          grep -Fq \
-            'implementation("com.google.mlkit:text-recognition:16.0.1")' \
-            app/build.gradle.kts
-
-          echo "JARVIS 2000 source verified."
-
-      - name: Harden AI installer
-        run: |
-          set -euo pipefail
-
-          SRC="_gama_build/app/src/main/java/com/gama/assistant"
-          MAIN="$SRC/MainActivity.kt"
           AI="$SRC/AiSetup.kt"
+          MAIN="$SRC/MainActivity.kt"
 
-          test -s "$MAIN"
           test -s "$AI"
+          test -s "$MAIN"
 
           cat > "$SRC/GamaModelInstallPolicy.kt" <<'EOF'
           package com.gama.assistant
 
           object GamaModelInstallPolicy {
+              const val STALL_TIMEOUT_MS = 240_000L
 
-              const val MIN_MODEL_BYTES =
-                  100_000_000L
-
-              const val EXPECTED_DOWNLOAD_BYTES =
-                  500_000_000L
-
-              const val MAX_IMPORT_BYTES =
-                  2_000_000_000L
-
-              const val STALL_TIMEOUT_MS =
-                  240_000L
-
-              fun percent(
+              fun isStalled(
+                  nowMs: Long,
+                  lastProgressMs: Long,
                   downloaded: Long,
-                  total: Long
-              ): Int? {
-
-                  if (
-                      downloaded < 0L ||
-                      total <= 0L
-                  ) {
-                      return null
-                  }
-
-                  return (
-                      downloaded
-                          .coerceAtMost(total) *
-                          100L /
-                          total
-                  )
-                      .toInt()
-                      .coerceIn(
-                          0,
-                          100
-                      )
-              }
-
-              fun stalled(
-                  now: Long,
-                  lastProgress: Long,
-                  downloaded: Long,
-                  previous: Long
+                  previousBytes: Long,
               ): Boolean {
-
-                  if (
-                      lastProgress <= 0L ||
-                      now < lastProgress
-                  ) {
-                      return false
-                  }
-
-                  if (
-                      downloaded >
-                      previous
-                  ) {
-                      return false
-                  }
-
-                  return (
-                      now -
-                      lastProgress
-                  ) >=
-                      STALL_TIMEOUT_MS
+                  if (lastProgressMs <= 0L) return false
+                  if (nowMs < lastProgressMs) return false
+                  if (downloaded > previousBytes) return false
+                  return nowMs - lastProgressMs >= STALL_TIMEOUT_MS
               }
           }
           EOF
+
+          python3 - "$AI" <<'PY'
+          from pathlib import Path
+          import sys
+
+          p = Path(sys.argv[1])
+          s = p.read_text(encoding="utf-8")
+
+          if "import android.net.ConnectivityManager" not in s:
+              s = s.replace(
+                  "import android.net.Uri\n",
+                  "import android.net.Uri\n"
+                  "import android.net.ConnectivityManager\n"
+                  "import android.net.NetworkCapabilities\n"
+                  "import android.os.StatFs\n",
+                  1,
+              )
+
+          s = s.replace(
+              'private const val URL = "https://huggingface.co/nikhil2024/gemma3-1b-it-litert-mirror/resolve/main/gemma3-1b-it-int4.task?download=true"',
+              'private const val URL = "https://huggingface.co/nikhil2024/gemma3-1b-it-litert-mirror/resolve/main/gemma3-1b-it-int4.task"',
+          )
+
+          anchor = """    private fun folder(ctx: Context): File? = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+          """
+
+          helpers = """    private fun folder(ctx: Context): File? = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+
+              private fun hasNetwork(ctx: Context): Boolean {
+                  val cm = ctx.getSystemService(ConnectivityManager::class.java)
+                  val network = cm.activeNetwork ?: return false
+                  val caps = cm.getNetworkCapabilities(network) ?: return false
+                  return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                      caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+              }
+
+              private fun hasSpace(ctx: Context): Boolean {
+                  val dir = folder(ctx) ?: return false
+                  return runCatching {
+                      StatFs(dir.absolutePath).availableBytes >= 750_000_000L
+                  }.getOrDefault(false)
+              }
+          """
+
+          if "private fun hasNetwork" not in s:
+              if anchor not in s:
+                  raise SystemExit("AiSetup folder anchor not found")
+              s = s.replace(anchor, helpers, 1)
+
+          old = """                    val directory = folder(ctx) ?: error("Armazenamento externo indisponível")
+                              File(directory, PART).delete()
+                              val request = DownloadManager.Request(Uri.parse(URL))
+                                  .setTitle("Gama: modelo de conversa offline")
+                                  .setDescription("Instalando Gemma 3 1B")
+                                  .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                  .setDestinationInExternalFilesDir(ctx, Environment.DIRECTORY_DOWNLOADS, PART)
+                              val id = ctx.getSystemService(DownloadManager::class.java).enqueue(request)
+                              prefs.edit().putLong("brain_download_id", id).remove("brain_error").apply()
+                              AssistantRuntime.state("Baixando IA offline")
+          """
+
+          new = """                    val directory = folder(ctx) ?: error("Armazenamento externo indisponível")
+                              if (!hasSpace(ctx)) {
+                                  prefs.edit().putString(
+                                      "brain_error",
+                                      "Espaço insuficiente. Libere pelo menos 750 MB e tente novamente."
+                                  ).apply()
+                                  return@setPositiveButton
+                              }
+                              if (!hasNetwork(ctx)) {
+                                  prefs.edit().putString(
+                                      "brain_error",
+                                      "Sem conexão validada. Você também pode importar o arquivo .task do celular."
+                                  ).apply()
+                                  return@setPositiveButton
+                              }
+                              File(directory, PART).delete()
+                              val request = DownloadManager.Request(Uri.parse(URL))
+                                  .setTitle("Gama: modelo de conversa offline")
+                                  .setDescription("Instalando Gemma 3 1B")
+                                  .setAllowedNetworkTypes(
+                                      DownloadManager.Request.NETWORK_WIFI or
+                                          DownloadManager.Request.NETWORK_MOBILE
+                                  )
+                                  .setAllowedOverMetered(true)
+                                  .setAllowedOverRoaming(false)
+                                  .addRequestHeader("User-Agent", "GAMA/8.2.2 Android")
+                                  .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                  .setDestinationInExternalFilesDir(ctx, Environment.DIRECTORY_DOWNLOADS, PART)
+                              val id = ctx.getSystemService(DownloadManager::class.java).enqueue(request)
+                              val now = System.currentTimeMillis()
+                              prefs.edit()
+                                  .putLong("brain_download_id", id)
+                                  .putLong("brain_download_last_bytes", 0L)
+                                  .putLong("brain_download_last_progress_ms", now)
+                                  .remove("brain_error")
+                                  .apply()
+                              AssistantRuntime.state("Conectando para instalar a IA offline")
+          """
+
+          if old not in s:
+              raise SystemExit("AiSetup download block not found")
+          s = s.replace(old, new, 1)
+
+          old = """                        else -> if (total > 0L) "IA: baixando ${downloaded * 100L / total}% (${downloaded / 1_000_000} MB de ${total / 1_000_000} MB)"
+                                    else "IA: baixando ${downloaded / 1_000_000} MB..."
+          """
+
+          new = """                        else -> if (total > 0L)
+                                      "IA: baixando ${downloaded * 100L / total}% (${downloaded / 1_000_000} MB de ${total / 1_000_000} MB)"
+                                  else if (downloaded > 0L)
+                                      "IA: baixando ${downloaded / 1_000_000} MB..."
+                                  else
+                                      "IA: conectando ao servidor do modelo..."
+          """
+
+          if old not in s:
+              raise SystemExit("AiSetup progress text block not found")
+          s = s.replace(old, new, 1)
+
+          old = """                when (cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
+                              DownloadManager.STATUS_FAILED -> {
+          """
+
+          new = """                val state = cursor.getInt(
+                                  cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+                              )
+                              val downloaded = cursor.getLong(
+                                  cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                              ).coerceAtLeast(0L)
+                              val now = System.currentTimeMillis()
+                              val previous = prefs.getLong("brain_download_last_bytes", 0L)
+                              val lastProgress = prefs.getLong("brain_download_last_progress_ms", now)
+
+                              if (state == DownloadManager.STATUS_PENDING || state == DownloadManager.STATUS_RUNNING) {
+                                  if (downloaded > previous) {
+                                      prefs.edit()
+                                          .putLong("brain_download_last_bytes", downloaded)
+                                          .putLong("brain_download_last_progress_ms", now)
+                                          .apply()
+                                  } else if (
+                                      GamaModelInstallPolicy.isStalled(
+                                          now,
+                                          lastProgress,
+                                          downloaded,
+                                          previous
+                                      )
+                                  ) {
+                                      runCatching {
+                                          ctx.getSystemService(DownloadManager::class.java).remove(id)
+                                      }
+                                      folder(ctx)?.let { File(it, PART).delete() }
+                                      prefs.edit()
+                                          .remove("brain_download_id")
+                                          .remove("brain_download_last_bytes")
+                                          .remove("brain_download_last_progress_ms")
+                                          .putString(
+                                              "brain_error",
+                                              "O download ficou sem progresso por alguns minutos. Tente novamente ou importe o arquivo .task do celular."
+                                          )
+                                          .apply()
+                                      return
+                                  }
+                              }
+
+                              when (state) {
+                                  DownloadManager.STATUS_FAILED -> {
+          """
+
+          if old not in s:
+              raise SystemExit("AiSetup status switch anchor not found")
+          s = s.replace(old, new, 1)
+
+          old = """                if (target.exists()) kotlin.check(target.delete())
+                          kotlin.check(partial.renameTo(target))
+          """
+
+          new = """                val backup = File(ctx.filesDir, "gemma-previous.bak")
+                          backup.delete()
+                          if (target.exists()) kotlin.check(target.renameTo(backup))
+                          if (!partial.renameTo(target)) {
+                              backup.renameTo(target)
+                              error("Não foi possível instalar o modelo importado")
+                          }
+                          backup.delete()
+          """
+
+          if old not in s:
+              raise SystemExit("AiSetup import swap block not found")
+          s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding="utf-8")
+          PY
 
           python3 - "$MAIN" <<'PY'
           from pathlib import Path
@@ -197,151 +304,73 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           old = '        control("Instalar ou reparar IA offline") { AiSetup.download(this) }\n'
-
-          new = '''        control("Instalar ou reparar IA offline") {
-              AiSetup.download(this) { selectModelFile() }
-          }
-          control("Importar IA do celular") { selectModelFile() }
-          '''
-
-          if old in s:
-              s = s.replace(
-                  old,
-                  new,
-                  1
-              )
-
-          s = s.replace(
-              'AiSetup.download(this)',
-              'AiSetup.download(this) { selectModelFile() }'
+          new = (
+              '        control("Instalar ou reparar IA offline") { AiSetup.download(this) }\n'
+              '        control("Importar IA do celular") { selectModelFile() }\n'
           )
 
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
+          if 'control("Importar IA do celular")' not in s:
+              if old not in s:
+                  raise SystemExit("MainActivity AI control anchor not found")
+              s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding="utf-8")
           PY
 
-          python3 - "$AI" <<'PY'
-          from pathlib import Path
-          import sys
+          mkdir -p app/src/test/java/com/gama/assistant
 
-          p = Path(sys.argv[1])
-          s = p.read_text(encoding="utf-8")
-
-          s = s.replace(
-              '"IA: baixando 0 MB..."',
-              '"IA: conectando ao servidor do modelo..."'
-          )
-
-          s = s.replace(
-              '"IA: baixando ${downloaded / 1_000_000} MB..."',
-              '''
-              if (downloaded <= 0L) {
-                  "IA: conexão iniciada; aguardando os primeiros dados..."
-              } else {
-                  "IA: baixando ${downloaded / 1_000_000} MB..."
-              }
-              '''.strip()
-          )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-          PY
-
-          mkdir -p \
-            _gama_build/app/src/test/java/com/gama/assistant
-
-          cat > _gama_build/app/src/test/java/com/gama/assistant/GamaModelInstallPolicyTest.kt <<'EOF'
+          cat > app/src/test/java/com/gama/assistant/GamaModelInstallPolicyTest.kt <<'EOF'
           package com.gama.assistant
 
-          import org.junit.Assert.assertEquals
           import org.junit.Assert.assertFalse
-          import org.junit.Assert.assertNull
           import org.junit.Assert.assertTrue
           import org.junit.Test
 
           class GamaModelInstallPolicyTest {
 
               @Test
-              fun progressWorks() {
-
-                  assertNull(
-                      GamaModelInstallPolicy.percent(
-                          0L,
-                          -1L
-                      )
-                  )
-
-                  assertEquals(
-                      50,
-                      GamaModelInstallPolicy.percent(
-                          250L,
-                          500L
-                      )
-                  )
-
-                  assertEquals(
-                      100,
-                      GamaModelInstallPolicy.percent(
-                          900L,
-                          500L
-                      )
-                  )
-              }
-
-              @Test
-              fun stalledDownloadDetectionWorks() {
-
-                  val now =
-                      1_000_000L
+              fun detectsStalledDownload() {
+                  val now = 1_000_000L
 
                   assertFalse(
-                      GamaModelInstallPolicy.stalled(
+                      GamaModelInstallPolicy.isStalled(
                           now,
                           now - 30_000L,
                           0L,
-                          0L
+                          0L,
                       )
                   )
 
                   assertTrue(
-                      GamaModelInstallPolicy.stalled(
+                      GamaModelInstallPolicy.isStalled(
                           now,
-                          now -
-                              GamaModelInstallPolicy
-                                  .STALL_TIMEOUT_MS,
+                          now - GamaModelInstallPolicy.STALL_TIMEOUT_MS,
                           0L,
-                          0L
+                          0L,
                       )
                   )
 
                   assertFalse(
-                      GamaModelInstallPolicy.stalled(
+                      GamaModelInstallPolicy.isStalled(
                           now,
-                          now -
-                              GamaModelInstallPolicy
-                                  .STALL_TIMEOUT_MS,
-                          100L,
-                          0L
+                          now - GamaModelInstallPolicy.STALL_TIMEOUT_MS,
+                          10L,
+                          0L,
                       )
                   )
               }
           }
           EOF
 
-          grep -Fq \
-            'control("Importar IA do celular")' \
-            "$MAIN"
+          grep -Fq 'control("Importar IA do celular")' "$MAIN"
+          grep -Fq 'IA: conectando ao servidor do modelo...' "$AI"
+          grep -Fq 'GamaModelInstallPolicy.isStalled(' "$AI"
+          grep -Fq 'setAllowedNetworkTypes' "$AI"
+          grep -Fq 'gemma-previous.bak' "$AI"
 
-          test -s \
-            "$SRC/GamaModelInstallPolicy.kt"
+          echo "Offline AI installer hardened."
 
-          echo "AI installer patch applied."
-
-      - name: Audit Gama capabilities
+      - name: Audit consolidated capabilities
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -356,74 +385,40 @@ jobs:
       - name: Android SDK 35
         run: |
           set -euo pipefail
-
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-
           test -d "$SDK_ROOT"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          echo "ANDROID_HOME=$SDK_ROOT" \
-            >> "$GITHUB_ENV"
-
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" \
-            >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(
-            command -v sdkmanager ||
-            true
-          )"
-
-          if [
-            -z "$SDKMANAGER"
-          ]; then
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
 
           test -x "$SDKMANAGER"
-
-          yes |
-            "$SDKMANAGER" \
-              --licenses \
-              >/dev/null ||
-            true
-
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-          test -x \
-            "$SDK_ROOT/build-tools/35.0.0/apksigner"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+          test -x "$SDK_ROOT/build-tools/35.0.0/apksigner"
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 8.2.2 version
+      - name: Set Gama 8.2.2 build version
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
           VC=$((22600000 + GITHUB_RUN_NUMBER))
-
-          sed -Ei \
-            "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" \
-            app/build.gradle.kts
-
-          sed -Ei \
-            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.2.2"/' \
-            app/build.gradle.kts
-
-          grep -F \
-            'versionName = "Gama 8.2.2"' \
-            app/build.gradle.kts
+          sed -Ei "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" app/build.gradle.kts
+          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.2.2"/' app/build.gradle.kts
+          grep -F 'versionName = "Gama 8.2.2"' app/build.gradle.kts
 
       - name: Run regression tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
-          gradle \
-            :app:testDebugUnitTest \
+          gradle :app:testDebugUnitTest \
             --no-daemon \
             --stacktrace \
             --tests 'com.gama.assistant.GamaRecognitionPolicyTest' \
@@ -433,57 +428,38 @@ jobs:
             --tests 'com.gama.assistant.ActionFollowUpTest' \
             --tests 'com.gama.assistant.GamaSpeechNoisePolicyTest' \
             --tests 'com.gama.assistant.GamaModelInstallPolicyTest' \
-            2>&1 |
-            tee "$GITHUB_WORKSPACE/gama-tests.log"
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      - name: Build Gama APK
+      - name: Build and verify Gama 8.2.2 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          if [
-            -x tools/download_models.sh
-          ]; then
+          if [ -x tools/download_models.sh ]; then
             bash tools/download_models.sh
           fi
 
-          gradle \
-            :app:assembleDebug \
+          gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            2>&1 |
-            tee "$GITHUB_WORKSPACE/gama-build.log"
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
 
           mkdir -p dist
 
-          APK="$(
-            find app/build/outputs/apk/debug \
-              -maxdepth 1 \
-              -type f \
-              -name '*.apk' \
-              -print \
-              -quit
-          )"
-
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$APK"
           test -s "$APK"
 
-          cp "$APK" \
-            dist/Gama.apk
+          cp "$APK" dist/Gama.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
             --verbose \
             dist/Gama.apk
 
-          (
-            cd dist
-            sha256sum \
-              Gama.apk \
-              > Gama.apk.sha256
-          )
+          (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
 
-      - name: Upload Gama APK
+      - name: Upload Gama 8.2.2 APK
         uses: actions/upload-artifact@v4
         with:
           name: Gama-8.2.2-JARVIS-2000-APK
@@ -492,7 +468,7 @@ jobs:
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Upload complete source
+      - name: Upload Gama 8.2.2 source
         uses: actions/upload-artifact@v4
         with:
           name: Gama-8.2.2-JARVIS-2000-source
@@ -503,13 +479,12 @@ jobs:
             !_gama_build/dist/**
           if-no-files-found: error
 
-      - name: Publish release
+      - name: Publish Gama 8.2.2 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           TAG="gama-v8.2.2-jarvis-2000-${GITHUB_RUN_NUMBER}"
 
           gh release create "$TAG" \
@@ -517,7 +492,7 @@ jobs:
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Gama 8.2.2 JARVIS 2000" \
-            --notes "JARVIS 2000 core, local AI, voice conversation, Vosk, anti-noise, barge-in, adaptive memory, planner, automation, proactivity, OCR, screen vision, Accessibility and automatic recovery." \
+            --notes "Base direta do source compilado no run #120. Mantém voz contínua, anti-ruído, memória adaptativa, planner, proatividade, recuperação automática, OCR e análise de tela. Corrige o instalador da IA offline para detectar download sem progresso, mostrar conexão corretamente e permitir importação direta do arquivo .task." \
             --latest
 
       - name: Upload diagnostics
