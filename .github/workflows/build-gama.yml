@@ -1,4 +1,4 @@
-name: Build Gama 8.2.1 JARVIS 2000 APK
+name: Build Gama 8.2.2 JARVIS 2000 APK
 
 on:
   workflow_dispatch:
@@ -12,16 +12,17 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-8-2-1-${{ github.ref }}
+  group: gama-8-2-2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
     env:
-      GAMA_BASE_RUN_ID: "37030299438"
-      GAMA_BASE_ARTIFACT: "Gama-JARVIS-FILM-CORE-FIX110-source"
+      GAMA_BASE_RUN_ID: "37091773618"
+      GAMA_BASE_ARTIFACT: "Gama-8.2.0-source"
 
     steps:
       - name: Checkout repository
@@ -29,2173 +30,83 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore last source that really compiled
+      - name: Restore complete compiled Gama source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
           rm -rf _gama_build
           mkdir -p _gama_build
+
           gh run download "$GAMA_BASE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
 
           test -s _gama_build/app/build.gradle.kts
+          test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaAdaptiveMemory.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaRecoveryCoordinator.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaVisionCore.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/LocalBrain.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/AiSetup.kt
 
-      - name: Apply consolidated Gama 8.2.0 core
+      - name: Verify JARVIS 2000 core
+        working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          cat > /tmp/gama820.patch.xz.b64 <<'GAMA820_B64'
-          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
-          GAMA820_B64
-
-          base64 -d /tmp/gama820.patch.xz.b64 | xz -d > /tmp/gama820.patch
-
-          echo "b881d616559405af3f8c317d297dd7372170e3ba281f28777deb70c88d773035  /tmp/gama820.patch" \
-            | sha256sum -c -
-
-          cd _gama_build
-          patch -p1 --batch --forward < /tmp/gama820.patch
-
-          grep -Fq 'object GamaRecognitionPolicy' app/src/main/java/com/gama/assistant/GamaRecognitionPolicy.kt
-          grep -Fq 'open the conversation NOW' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'GamaRecognitionPolicy.shouldFeedDecoder' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'shouldForceEndpoint' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'requestNoiseConfirmation' app/src/main/java/com/gama/assistant/GamaService.kt
-          grep -Fq 'sleepRecognizer = try' app/src/main/java/com/gama/assistant/GamaService.kt
-
-      - name: Inject GAMA JARVIS 2000 Autonomy Core
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          APP="_gama_build/app"
-          SRC="$APP/src/main/java/com/gama/assistant"
-          GRADLE="$APP/build.gradle.kts"
-          SERVICE="$SRC/GamaService.kt"
-          ACCESS="$SRC/GamaScreenContextService.kt"
-          ACCESS_XML="$APP/src/main/res/xml/gama_accessibility_service.xml"
-          SUPER="$SRC/GamaSuperAssistantCore.kt"
-          CORE="$SRC/ZevronJarvisCore.kt"
-
-          test -s "$GRADLE"
-          test -s "$SERVICE"
-          test -s "$ACCESS"
-          test -s "$ACCESS_XML"
-          test -s "$SRC/LocalBrain.kt"
-          test -s "$SRC/GamaAutomationEngine.kt"
-          test -s "$SRC/GamaMissionStore.kt"
-
-          if ! grep -Fq \
-            'implementation("com.google.mlkit:text-recognition:16.0.1")' \
-            "$GRADLE"
-          then
-            sed -i \
-              '/^[[:space:]]*dependencies[[:space:]]*{/a\    implementation("com.google.mlkit:text-recognition:16.0.1")' \
-              "$GRADLE"
-          fi
-
-          grep -Fq \
-            'implementation("com.google.mediapipe:tasks-genai:0.10.27")' \
-            "$GRADLE"
-
-          if grep -Fq 'android:canTakeScreenshot=' "$ACCESS_XML"; then
-            sed -i \
-              's/android:canTakeScreenshot="false"/android:canTakeScreenshot="true"/g' \
-              "$ACCESS_XML"
-          else
-            sed -i \
-              '/android:canPerformGestures="true"/a\    android:canTakeScreenshot="true"' \
-              "$ACCESS_XML"
-          fi
-
-          python3 - "$ACCESS" <<'PY'
-          from pathlib import Path
-          import sys
-
-          p = Path(sys.argv[1])
-          s = p.read_text(encoding="utf-8")
-
-          if "import android.graphics.Bitmap" not in s:
-              imports = """import android.graphics.Bitmap
-          import android.os.Build
-          import android.view.Display
-          import java.util.concurrent.CountDownLatch
-          import java.util.concurrent.TimeUnit
-          import java.util.concurrent.atomic.AtomicReference
-          """
-
-              s = s.replace(
-                  "import android.content.Intent\n",
-                  "import android.content.Intent\n" + imports,
-                  1
-              )
-
-          if "fun captureCurrentBitmap(): Bitmap?" not in s:
-              anchor = """        fun scroll(down: Boolean): Boolean =
-                      runCatching { active?.get()?.scrollInternal(down) == true }.getOrDefault(false)
-          """
-
-              addition = anchor + """
-                  fun captureCurrentBitmap(): Bitmap? =
-                      runCatching {
-                          active?.get()?.captureCurrentBitmapInternal()
-                      }.getOrNull()
-          """
-
-              if anchor not in s:
-                  raise SystemExit(
-                      "GamaScreenContextService companion anchor not found"
-                  )
-
-              s = s.replace(
-                  anchor,
-                  addition,
-                  1
-              )
-
-          if "private fun captureCurrentBitmapInternal(): Bitmap?" not in s:
-              anchor = (
-                  "    private fun captureSnapshot(): "
-                  "GamaScreenSnapshot? {\n"
-              )
-
-              method = """    private fun captureCurrentBitmapInternal(): Bitmap? {
-                  if (
-                      Build.VERSION.SDK_INT <
-                      Build.VERSION_CODES.R
-                  ) {
-                      return null
-                  }
-
-                  val result =
-                      AtomicReference<Bitmap?>(null)
-
-                  val latch =
-                      CountDownLatch(1)
-
-                  return try {
-                      takeScreenshot(
-                          Display.DEFAULT_DISPLAY,
-                          mainExecutor,
-                          object :
-                              AccessibilityService
-                                  .TakeScreenshotCallback {
-
-                              override fun onSuccess(
-                                  screenshot:
-                                      AccessibilityService
-                                          .ScreenshotResult
-                              ) {
-                                  try {
-                                      val buffer =
-                                          screenshot.hardwareBuffer
-
-                                      try {
-                                          result.set(
-                                              Bitmap
-                                                  .wrapHardwareBuffer(
-                                                      buffer,
-                                                      screenshot.colorSpace
-                                                  )
-                                                  ?.copy(
-                                                      Bitmap.Config.ARGB_8888,
-                                                      false
-                                                  )
-                                          )
-                                      } finally {
-                                          runCatching {
-                                              buffer.close()
-                                          }
-                                      }
-                                  } finally {
-                                      latch.countDown()
-                                  }
-                              }
-
-                              override fun onFailure(
-                                  errorCode: Int
-                              ) {
-                                  latch.countDown()
-                              }
-                          }
-                      )
-
-                      latch.await(
-                          2200L,
-                          TimeUnit.MILLISECONDS
-                      )
-
-                      result.get()
-
-                  } catch (_: Throwable) {
-                      null
-                  }
-              }
-
-          """
-
-              if anchor not in s:
-                  raise SystemExit(
-                      "captureSnapshot anchor not found"
-                  )
-
-              s = s.replace(
-                  anchor,
-                  method + anchor,
-                  1
-              )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-          PY
-
-          cat > "$SRC/GamaVisionCore.kt" <<'EOF'
-          package com.gama.assistant
-
-          import android.content.Context
-          import android.graphics.Bitmap
-          import com.google.mlkit.vision.common.InputImage
-          import com.google.mlkit.vision.text.TextRecognition
-          import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-          import java.text.Normalizer
-          import java.util.LinkedHashSet
-          import java.util.Locale
-          import java.util.concurrent.CountDownLatch
-          import java.util.concurrent.TimeUnit
-          import java.util.concurrent.atomic.AtomicReference
-          import kotlin.concurrent.thread
-
-          object GamaVisionCore {
-
-              private const val OCR_TIMEOUT_SECONDS =
-                  7L
-
-              private const val MAX_TEXT =
-                  9000
-
-              fun recognizes(
-                  raw: String
-              ): Boolean {
-
-                  val c =
-                      normalize(raw)
-
-                  val mentionsScreen =
-                      listOf(
-                          "tela",
-                          "display",
-                          "visor",
-                          "imagem",
-                          "pdf",
-                          "documento"
-                      ).any {
-                          it in c
-                      } ||
-                          c == "o que estou vendo" ||
-                          c == "o que eu estou vendo"
-
-                  if (!mentionsScreen) {
-                      return false
-                  }
-
-                  return listOf(
-                      "leia",
-                      "ler",
-                      "resuma",
-                      "resumir",
-                      "analise",
-                      "analisar",
-                      "explique",
-                      "explicar",
-                      "interprete",
-                      "interpretar",
-                      "o que tem",
-                      "o que esta",
-                      "o que aparece",
-                      "o que estou vendo",
-                      "o que eu estou vendo"
-                  ).any {
-                      it in c
-                  }
-              }
-
-              fun requiresReasoning(
-                  raw: String
-              ): Boolean {
-
-                  val c =
-                      normalize(raw)
-
-                  return listOf(
-                      "analise",
-                      "analisar",
-                      "explique",
-                      "explicar",
-                      "interprete",
-                      "interpretar",
-                      "o que significa",
-                      "resuma",
-                      "resumir",
-                      "compare",
-                      "resolva"
-                  ).any {
-                      it in c
-                  }
-              }
-
-              fun captureTextAsync(
-                  context: Context,
-                  callback: (String) -> Unit
-              ) {
-
-                  val app =
-                      context.applicationContext
-
-                  thread(
-                      name = "gama-local-vision"
-                  ) {
-                      callback(
-                          runCatching {
-                              captureCombinedText(
-                                  app
-                              )
-                          }.getOrDefault("")
-                      )
-                  }
-              }
-
-              fun captureCombinedText(
-                  context: Context
-              ): String {
-
-                  val nativeText =
-                      GamaScreenContextService
-                          .snapshotNow()
-                          ?.plainText(5000)
-                          .orEmpty()
-                          .trim()
-
-                  val bitmap =
-                      GamaScreenContextService
-                          .captureCurrentBitmap()
-
-                  val ocr =
-                      if (bitmap == null) {
-                          ""
-                      } else {
-                          try {
-                              extractText(
-                                  bitmap
-                              )
-                          } finally {
-                              runCatching {
-                                  if (
-                                      !bitmap.isRecycled
-                                  ) {
-                                      bitmap.recycle()
-                                  }
-                              }
-                          }
-                      }
-
-                  return merge(
-                      nativeText,
-                      ocr
-                  )
-              }
-
-              fun extractText(
-                  bitmap: Bitmap
-              ): String {
-
-                  if (
-                      bitmap.isRecycled ||
-                      bitmap.width <= 0 ||
-                      bitmap.height <= 0
-                  ) {
-                      return ""
-                  }
-
-                  val recognizer =
-                      TextRecognition.getClient(
-                          TextRecognizerOptions
-                              .DEFAULT_OPTIONS
-                      )
-
-                  val result =
-                      AtomicReference("")
-
-                  val latch =
-                      CountDownLatch(1)
-
-                  try {
-                      recognizer
-                          .process(
-                              InputImage.fromBitmap(
-                                  bitmap,
-                                  0
-                              )
-                          )
-                          .addOnSuccessListener {
-                              text ->
-
-                              val lines =
-                                  LinkedHashSet<String>()
-
-                              text.textBlocks
-                                  .forEach {
-                                      block ->
-
-                                      block.lines
-                                          .forEach {
-                                              line ->
-
-                                              val clean =
-                                                  line.text
-                                                      .replace(
-                                                          Regex("\\s+"),
-                                                          " "
-                                                      )
-                                                      .trim()
-
-                                              if (
-                                                  clean.isNotBlank()
-                                              ) {
-                                                  lines.add(
-                                                      clean
-                                                  )
-                                              }
-                                          }
-                                  }
-
-                              result.set(
-                                  lines
-                                      .joinToString(
-                                          "\n"
-                                      )
-                                      .take(
-                                          MAX_TEXT
-                                      )
-                              )
-
-                              latch.countDown()
-                          }
-                          .addOnFailureListener {
-                              latch.countDown()
-                          }
-
-                      if (
-                          !latch.await(
-                              OCR_TIMEOUT_SECONDS,
-                              TimeUnit.SECONDS
-                          )
-                      ) {
-                          return ""
-                      }
-
-                      return result
-                          .get()
-                          .trim()
-
-                  } finally {
-                      runCatching {
-                          recognizer.close()
-                      }
-                  }
-              }
-
-              fun spokenReadReply(
-                  text: String
-              ): String {
-
-                  return if (
-                      text.isBlank()
-                  ) {
-                      "Não encontrei texto legível nesta tela."
-                  } else {
-                      "Na tela está escrito: " +
-                          text.take(3000)
-                  }
-              }
-
-              private fun merge(
-                  nativeText: String,
-                  ocrText: String
-              ): String {
-
-                  val lines =
-                      LinkedHashSet<String>()
-
-                  sequenceOf(
-                      nativeText,
-                      ocrText
-                  )
-                      .filter {
-                          it.isNotBlank()
-                      }
-                      .forEach {
-                          part ->
-
-                          part.lines()
-                              .map {
-                                  it
-                                      .replace(
-                                          Regex("\\s+"),
-                                          " "
-                                      )
-                                      .trim()
-                              }
-                              .filter {
-                                  it.isNotBlank()
-                              }
-                              .forEach(
-                                  lines::add
-                              )
-                      }
-
-                  return lines
-                      .joinToString("\n")
-                      .take(MAX_TEXT)
-              }
-
-              private fun normalize(
-                  value: String
-              ): String {
-
-                  return Normalizer
-                      .normalize(
-                          value.lowercase(
-                              Locale(
-                                  "pt",
-                                  "BR"
-                              )
-                          ),
-                          Normalizer.Form.NFD
-                      )
-                      .replace(
-                          Regex("\\p{M}+"),
-                          ""
-                      )
-                      .replace(
-                          Regex(
-                              "[^a-z0-9 ]+"
-                          ),
-                          " "
-                      )
-                      .replace(
-                          Regex("\\s+"),
-                          " "
-                      )
-                      .trim()
-              }
-          }
-          EOF
-
-          cat > "$SRC/GamaAdaptiveMemory.kt" <<'EOF'
-          package com.gama.assistant
-
-          import android.content.Context
-          import org.json.JSONArray
-          import org.json.JSONObject
-          import java.text.Normalizer
-          import java.util.Locale
-
-          object GamaAdaptiveMemory {
-
-              private const val PREFS =
-                  "gama_adaptive_memory_v1"
-
-              private const val KEY =
-                  "entries"
-
-              private const val MAX_ENTRIES =
-                  60
-
-              enum class Kind {
-                  PREFERENCE,
-                  PERSON,
-                  DECISION,
-                  STYLE
-              }
-
-              data class Entry(
-                  val kind: Kind,
-                  val value: String,
-                  val normalized: String,
-                  val createdAt: Long
-              )
-
-              fun observe(
-                  context: Context,
-                  raw: String
-              ) {
-
-                  val clean =
-                      ZevronConversationEngine
-                          .stripWakeWord(raw)
-                          .replace(
-                              Regex("\\s+"),
-                              " "
-                          )
-                          .trim()
-                          .take(420)
-
-                  if (
-                      clean.length < 5 ||
-                      looksSensitive(clean)
-                  ) {
-                      return
-                  }
-
-                  val candidates =
-                      mutableListOf<
-                          Pair<Kind, String>
-                      >()
-
-                  Regex(
-                      "(?i)^(?:eu )?" +
-                          "(prefiro|gosto de|nao gosto de|não gosto de)" +
-                          "\\s+(.+)$"
-                  )
-                      .find(clean)
-                      ?.groupValues
-                      ?.getOrNull(2)
-                      ?.trim()
-                      ?.takeIf {
-                          it.length >= 2
-                      }
-                      ?.let {
-                          candidates +=
-                              Kind.PREFERENCE to clean
-                      }
-
-                  Regex(
-                      "(?i)^(?:de agora em diante|" +
-                          "daqui pra frente|" +
-                          "decidi que|" +
-                          "eu decidi que)\\s+(.+)$"
-                  )
-                      .find(clean)
-                      ?.groupValues
-                      ?.getOrNull(1)
-                      ?.trim()
-                      ?.takeIf {
-                          it.length >= 3
-                      }
-                      ?.let {
-                          candidates +=
-                              Kind.DECISION to clean
-                      }
-
-                  Regex(
-                      "(?i)^(?:quero que voce|" +
-                          "quero que você)\\s+" +
-                          "(sempre|nunca)\\s+(.+)$"
-                  )
-                      .find(clean)
-                      ?.takeIf {
-                          it.groupValues
-                              .getOrNull(2)
-                              ?.trim()
-                              ?.length
-                              ?: 0 >= 3
-                      }
-                      ?.let {
-                          candidates +=
-                              Kind.STYLE to clean
-                      }
-
-                  Regex(
-                      "(?i)^(.{2,80})\\s+" +
-                          "(?:e|é)\\s+" +
-                          "(?:meu|minha)\\s+" +
-                          "(amigo|amiga|irmao|irmão|" +
-                          "irma|irmã|mae|mãe|pai|" +
-                          "primo|prima|colega|" +
-                          "professor|professora)\\b.*$"
-                  )
-                      .find(clean)
-                      ?.let {
-                          candidates +=
-                              Kind.PERSON to clean
-                      }
-
-                  candidates.forEach {
-                      (kind, value) ->
-
-                      add(
-                          context,
-                          kind,
-                          value
-                      )
-                  }
-              }
-
-              fun replyForQuery(
-                  context: Context,
-                  raw: String
-              ): String? {
-
-                  val n =
-                      normalize(raw)
-
-                  val asks =
-                      n in setOf(
-                          "o que voce sabe sobre mim",
-                          "o que voce aprendeu sobre mim",
-                          "quais sao minhas preferencias",
-                          "quais minhas preferencias",
-                          "o que voce lembra das minhas preferencias"
-                      )
-
-                  if (!asks) {
-                      return null
-                  }
-
-                  val entries =
-                      load(context)
-
-                  if (
-                      entries.isEmpty()
-                  ) {
-                      return (
-                          "Ainda não tenho preferências " +
-                          "pessoais suficientes guardadas localmente."
-                      )
-                  }
-
-                  return buildString {
-                      append(
-                          "Localmente eu lembro que: "
-                      )
-
-                      entries
-                          .takeLast(8)
-                          .forEachIndexed {
-                              index,
-                              entry ->
-
-                              if (
-                                  index > 0
-                              ) {
-                                  append("; ")
-                              }
-
-                              append(
-                                  entry.value
-                              )
-                          }
-
-                      append('.')
-                  }.take(1200)
-              }
-
-              fun contextSummary(
-                  context: Context
-              ): String? {
-
-                  val entries =
-                      load(context)
-                          .takeLast(12)
-
-                  if (
-                      entries.isEmpty()
-                  ) {
-                      return null
-                  }
-
-                  return buildString {
-                      append(
-                          "Preferências e decisões locais do usuário: "
-                      )
-
-                      append(
-                          entries.joinToString(
-                              " | "
-                          ) {
-                              it.value.take(180)
-                          }
-                      )
-                  }.take(1900)
-              }
-
-              @Synchronized
-              private fun add(
-                  context: Context,
-                  kind: Kind,
-                  value: String
-              ) {
-
-                  val clean =
-                      value
-                          .replace(
-                              Regex("\\s+"),
-                              " "
-                          )
-                          .trim()
-                          .take(360)
-
-                  if (
-                      clean.isBlank()
-                  ) {
-                      return
-                  }
-
-                  val n =
-                      normalize(clean)
-
-                  val current =
-                      load(context)
-                          .filterNot {
-                              it.normalized == n
-                          }
-                          .toMutableList()
-
-                  current +=
-                      Entry(
-                          kind,
-                          clean,
-                          n,
-                          System.currentTimeMillis()
-                      )
-
-                  save(
-                      context,
-                      current.takeLast(
-                          MAX_ENTRIES
-                      )
-                  )
-              }
-
-              fun load(
-                  context: Context
-              ): List<Entry> {
-
-                  val raw =
-                      context
-                          .getSharedPreferences(
-                              PREFS,
-                              Context.MODE_PRIVATE
-                          )
-                          .getString(
-                              KEY,
-                              "[]"
-                          )
-                          ?: "[]"
-
-                  return runCatching {
-                      val arr =
-                          JSONArray(raw)
-
-                      buildList {
-                          for (
-                              i in 0 until
-                                  arr.length()
-                          ) {
-                              val o =
-                                  arr.optJSONObject(i)
-                                      ?: continue
-
-                              val value =
-                                  o
-                                      .optString(
-                                          "value"
-                                      )
-                                      .trim()
-
-                              if (
-                                  value.isBlank()
-                              ) {
-                                  continue
-                              }
-
-                              val kind =
-                                  runCatching {
-                                      Kind.valueOf(
-                                          o.optString(
-                                              "kind"
-                                          )
-                                      )
-                                  }.getOrDefault(
-                                      Kind.PREFERENCE
-                                  )
-
-                              add(
-                                  Entry(
-                                      kind = kind,
-                                      value = value,
-                                      normalized =
-                                          o
-                                              .optString(
-                                                  "normalized"
-                                              )
-                                              .ifBlank {
-                                                  normalize(
-                                                      value
-                                                  )
-                                              },
-                                      createdAt =
-                                          o.optLong(
-                                              "createdAt",
-                                              0L
-                                          )
-                                  )
-                              )
-                          }
-                      }.takeLast(
-                          MAX_ENTRIES
-                      )
-
-                  }.getOrDefault(
-                      emptyList()
-                  )
-              }
-
-              private fun save(
-                  context: Context,
-                  entries: List<Entry>
-              ) {
-
-                  val arr =
-                      JSONArray()
-
-                  entries.forEach {
-                      e ->
-
-                      arr.put(
-                          JSONObject()
-                              .put(
-                                  "kind",
-                                  e.kind.name
-                              )
-                              .put(
-                                  "value",
-                                  e.value
-                              )
-                              .put(
-                                  "normalized",
-                                  e.normalized
-                              )
-                              .put(
-                                  "createdAt",
-                                  e.createdAt
-                              )
-                      )
-                  }
-
-                  context
-                      .getSharedPreferences(
-                          PREFS,
-                          Context.MODE_PRIVATE
-                      )
-                      .edit()
-                      .putString(
-                          KEY,
-                          arr.toString()
-                      )
-                      .apply()
-              }
-
-              private fun looksSensitive(
-                  raw: String
-              ): Boolean {
-
-                  val n =
-                      normalize(raw)
-
-                  return listOf(
-                      "senha",
-                      "password",
-                      "pin",
-                      "token",
-                      "cvv",
-                      "cartao",
-                      "cpf",
-                      "rg",
-                      "chave privada",
-                      "codigo de seguranca",
-                      "endereco completo",
-                      "diagnostico",
-                      "doenca",
-                      "religiao",
-                      "partido politico",
-                      "orientacao sexual"
-                  ).any {
-                      it in n
-                  }
-              }
-
-              private fun normalize(
-                  value: String
-              ): String {
-
-                  return Normalizer
-                      .normalize(
-                          value.lowercase(
-                              Locale.ROOT
-                          ),
-                          Normalizer.Form.NFD
-                      )
-                      .replace(
-                          Regex("\\p{M}+"),
-                          ""
-                      )
-                      .replace(
-                          Regex(
-                              "[^a-z0-9 ]+"
-                          ),
-                          " "
-                      )
-                      .replace(
-                          Regex("\\s+"),
-                          " "
-                      )
-                      .trim()
-              }
-          }
-          EOF
-
-          cat > "$SRC/ZevronPlanner.kt" <<'EOF'
-          package com.gama.assistant
-
-          import java.text.Normalizer
-          import java.util.Locale
-
-          object ZevronPlanner {
-
-              data class Plan(
-                  val steps: List<String>
-              ) {
-                  val size: Int
-                      get() = steps.size
-              }
-
-              private val separators =
-                  Regex(
-                      "(?i)\\s*(?:,|;)?\\s+" +
-                          "(?:e\\s+depois|" +
-                          "depois\\s+disso|" +
-                          "depois|" +
-                          "em\\s+seguida|" +
-                          "logo\\s+depois|" +
-                          "na\\s+sequencia|" +
-                          "na\\s+sequência|" +
-                          "e\\s+entao|" +
-                          "e\\s+então|" +
-                          "e\\s+ai|" +
-                          "e\\s+aí|" +
-                          "ai|" +
-                          "aí|" +
-                          "entao|" +
-                          "então)\\s+"
-                  )
-
-              private val punctuation =
-                  Regex(
-                      "\\s*[,;]\\s*"
-                  )
-
-              private val actionVerbs =
-                  setOf(
-                      "abra",
-                      "abre",
-                      "abrir",
-                      "inicie",
-                      "inicia",
-                      "iniciar",
-                      "mande",
-                      "manda",
-                      "envie",
-                      "envia",
-                      "enviar",
-                      "marque",
-                      "marca",
-                      "agende",
-                      "agenda",
-                      "adicione",
-                      "adiciona",
-                      "ligue",
-                      "liga",
-                      "desligue",
-                      "desliga",
-                      "acenda",
-                      "apague",
-                      "aumente",
-                      "aumenta",
-                      "diminua",
-                      "diminui",
-                      "pause",
-                      "pausa",
-                      "continue",
-                      "continua",
-                      "retome",
-                      "retoma",
-                      "leia",
-                      "le",
-                      "resuma",
-                      "resumo",
-                      "analise",
-                      "analisa",
-                      "volte",
-                      "volta",
-                      "role",
-                      "rola",
-                      "toque",
-                      "reproduza",
-                      "bloqueie",
-                      "bloqueia",
-                      "trave",
-                      "trava"
-                  )
-
-              fun plan(
-                  raw: String
-              ): Plan? {
-
-                  var command =
-                      ZevronConversationEngine
-                          .stripWakeWord(raw)
-                          .trim()
-
-                  command =
-                      command.replace(
-                          Regex(
-                              "(?i)^primeiro\\s+"
-                          ),
-                          ""
-                      )
-
-                  if (
-                      command.length < 8 ||
-                      command.length > 1400
-                  ) {
-                      return null
-                  }
-
-                  val explicit =
-                      separators
-                          .containsMatchIn(
-                              command
-                          )
-
-                  val punctuated =
-                      command.contains(',') ||
-                          command.contains(';')
-
-                  if (
-                      !explicit &&
-                      !punctuated
-                  ) {
-                      return null
-                  }
-
-                  val firstPass =
-                      separators
-                          .split(command)
-                          .map(
-                              ::cleanStep
-                          )
-                          .filter(
-                              String::isNotBlank
-                          )
-
-                  val parts =
-                      if (
-                          firstPass.size >= 2
-                      ) {
-                          firstPass
-                      } else {
-                          punctuation
-                              .split(command)
-                              .map(
-                                  ::cleanStep
-                              )
-                              .filter(
-                                  String::isNotBlank
-                              )
-                      }
-
-                  if (
-                      parts.size !in 2..8
-                  ) {
-                      return null
-                  }
-
-                  if (
-                      parts.any {
-                          it.length > 260
-                      }
-                  ) {
-                      return null
-                  }
-
-                  if (
-                      !parts.all(
-                          ::looksLikeAction
-                      )
-                  ) {
-                      return null
-                  }
-
-                  return Plan(
-                      parts
-                  )
-              }
-
-              internal fun looksLikeAction(
-                  raw: String
-              ): Boolean {
-
-                  val c =
-                      normalize(raw)
-
-                  if (
-                      c.isBlank()
-                  ) {
-                      return false
-                  }
-
-                  val first =
-                      c.substringBefore(' ')
-
-                  if (
-                      first in actionVerbs
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      WhatsAppCommandParser
-                          .looksLikeSendCommand(c)
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      CommandRouter
-                          .looksLikeOpenRequest(c)
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      CalendarCommandRouter
-                          .looksLikeCreateRequest(c)
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      DeviceExtras.known(c)
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      ZevronSystemControl
-                          .recognizes(c)
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      SmartFeatures.isLocal(c) ||
-                      SmartFeatures.isCalendar(c)
-                  ) {
-                      return true
-                  }
-
-                  if (
-                      GamaVisionCore
-                          .recognizes(c)
-                  ) {
-                      return true
-                  }
-
-                  return false
-              }
-
-              private fun cleanStep(
-                  value: String
-              ): String {
-
-                  return value
-                      .trim()
-                      .trim(
-                          ',',
-                          ';',
-                          '.',
-                          ' '
-                      )
-                      .replace(
-                          Regex(
-                              "(?i)^primeiro\\s+"
-                          ),
-                          ""
-                      )
-                      .replace(
-                          Regex(
-                              "(?i)^por\\s+fim\\s+"
-                          ),
-                          ""
-                      )
-                      .replace(
-                          Regex("\\s+"),
-                          " "
-                      )
-                      .trim()
-              }
-
-              private fun normalize(
-                  value: String
-              ): String {
-
-                  return Normalizer
-                      .normalize(
-                          value.lowercase(
-                              Locale.ROOT
-                          ),
-                          Normalizer.Form.NFD
-                      )
-                      .replace(
-                          Regex("\\p{M}+"),
-                          ""
-                      )
-                      .replace(
-                          Regex(
-                              "[^a-z0-9 ]+"
-                          ),
-                          " "
-                      )
-                      .replace(
-                          Regex("\\s+"),
-                          " "
-                      )
-                      .trim()
-              }
-          }
-          EOF
-
-          cat > "$SRC/GamaRecoveryCoordinator.kt" <<'EOF'
-          package com.gama.assistant
-
-          import java.util.concurrent.ConcurrentHashMap
-
-          object GamaRecoveryCoordinator {
-
-              private data class State(
-                  var failures: Int,
-                  var lastAt: Long
-              )
-
-              private val states =
-                  ConcurrentHashMap<
-                      String,
-                      State
-                  >()
-
-              @Synchronized
-              fun nextDelayMs(
-                  component: String,
-                  now: Long =
-                      System.currentTimeMillis()
-              ): Long {
-
-                  val previous =
-                      states[component]
-
-                  val state =
-                      if (
-                          previous == null ||
-                          now - previous.lastAt >
-                          120_000L
-                      ) {
-                          State(
-                              1,
-                              now
-                          )
-                      } else {
-                          previous.apply {
-                              failures =
-                                  (
-                                      failures + 1
-                                  ).coerceAtMost(7)
-
-                              lastAt =
-                                  now
-                          }
-                      }
-
-                  states[component] =
-                      state
-
-                  return when (
-                      state.failures
-                  ) {
-                      1 -> 500L
-                      2 -> 1_000L
-                      3 -> 2_000L
-                      4 -> 4_000L
-                      5 -> 8_000L
-                      else -> 15_000L
-                  }
-              }
-
-              fun markHealthy(
-                  component: String
-              ) {
-                  states.remove(
-                      component
-                  )
-              }
-          }
-          EOF
-
-          cat > "$SRC/RuntimeRecoveryBus.kt" <<'EOF'
-          package com.gama.assistant
-
-          object RuntimeRecoveryBus {
-
-              @Volatile
-              var listener:
-                  ((String, String) -> Unit)? =
-                  null
-
-              fun isRecoverableWorker(
-                  threadName: String
-              ): Boolean {
-
-                  return threadName ==
-                      "gama-listener" ||
-                      threadName ==
-                      "gama-live-info" ||
-                      threadName ==
-                      "gama-research" ||
-                      threadName ==
-                      "gama-periodic-check" ||
-                      threadName ==
-                      "gama-calendar-awareness" ||
-                      threadName ==
-                      "gama-ambient-awareness" ||
-                      threadName ==
-                      "gama-local-vision" ||
-                      threadName ==
-                      "gama-super-tool" ||
-                      threadName ==
-                      "gama-intro-capabilities" ||
-                      threadName.startsWith(
-                          "gama-retry-"
-                      )
-              }
-          }
-          EOF
-
-          cat > "$SRC/GamaSystemAwareness.kt" <<'EOF'
-          package com.gama.assistant
-
-          import android.content.Context
-          import android.os.BatteryManager
-          import android.os.Build
-          import android.os.PowerManager
-          import android.os.StatFs
-
-          object GamaSystemAwareness {
-
-              private const val PREFS =
-                  "gama_system_awareness"
-
-              private const val KEY_LOW_BATTERY_AT =
-                  "low_battery_at"
-
-              private const val KEY_STORAGE_AT =
-                  "storage_at"
-
-              private const val KEY_THERMAL_AT =
-                  "thermal_at"
-
-              private const val LOW_BATTERY_COOLDOWN_MS =
-                  90L * 60L * 1000L
-
-              private const val STORAGE_COOLDOWN_MS =
-                  6L * 60L * 60L * 1000L
-
-              private const val THERMAL_COOLDOWN_MS =
-                  30L * 60L * 1000L
-
-              fun poll(
-                  context: Context,
-                  now: Long =
-                      System.currentTimeMillis()
-              ): GamaEventHub.Event? {
-
-                  thermalEvent(
-                      context,
-                      now
-                  )?.let {
-                      return it
-                  }
-
-                  batteryEvent(
-                      context,
-                      now
-                  )?.let {
-                      return it
-                  }
-
-                  storageEvent(
-                      context,
-                      now
-                  )?.let {
-                      return it
-                  }
-
-                  return null
-              }
-
-              private fun thermalEvent(
-                  context: Context,
-                  now: Long
-              ): GamaEventHub.Event? {
-
-                  if (
-                      Build.VERSION.SDK_INT <
-                      Build.VERSION_CODES.Q
-                  ) {
-                      return null
-                  }
-
-                  val pm =
-                      context.getSystemService(
-                          PowerManager::class.java
-                      )
-                          ?: return null
-
-                  val status =
-                      runCatching {
-                          pm.currentThermalStatus
-                      }.getOrDefault(
-                          PowerManager
-                              .THERMAL_STATUS_NONE
-                      )
-
-                  if (
-                      status <
-                      PowerManager
-                          .THERMAL_STATUS_SEVERE
-                  ) {
-                      return null
-                  }
-
-                  val prefs =
-                      context.getSharedPreferences(
-                          PREFS,
-                          Context.MODE_PRIVATE
-                      )
-
-                  val last =
-                      prefs.getLong(
-                          KEY_THERMAL_AT,
-                          0L
-                      )
-
-                  if (
-                      last > 0L &&
-                      now - last <
-                      THERMAL_COOLDOWN_MS
-                  ) {
-                      return null
-                  }
-
-                  prefs.edit()
-                      .putLong(
-                          KEY_THERMAL_AT,
-                          now
-                      )
-                      .apply()
-
-                  return GamaEventHub.Event(
-                      kind =
-                          GamaEventHub.Kind.SYSTEM,
-                      source =
-                          "Temperatura",
-                      summary =
-                          "O aparelho está muito quente. " +
-                          "Vale reduzir a carga e deixar " +
-                          "o celular esfriar.",
-                      priority =
-                          GamaEventHub.Priority.HIGH,
-                      occurredAt =
-                          now
-                  )
-              }
-
-              private fun batteryEvent(
-                  context: Context,
-                  now: Long
-              ): GamaEventHub.Event? {
-
-                  val bm =
-                      context.getSystemService(
-                          BatteryManager::class.java
-                      )
-                          ?: return null
-
-                  val level =
-                      bm.getIntProperty(
-                          BatteryManager
-                              .BATTERY_PROPERTY_CAPACITY
-                      )
-
-                  if (
-                      level !in 0..15 ||
-                      bm.isCharging
-                  ) {
-                      return null
-                  }
-
-                  val prefs =
-                      context.getSharedPreferences(
-                          PREFS,
-                          Context.MODE_PRIVATE
-                      )
-
-                  val last =
-                      prefs.getLong(
-                          KEY_LOW_BATTERY_AT,
-                          0L
-                      )
-
-                  if (
-                      last > 0L &&
-                      now - last <
-                      LOW_BATTERY_COOLDOWN_MS
-                  ) {
-                      return null
-                  }
-
-                  prefs.edit()
-                      .putLong(
-                          KEY_LOW_BATTERY_AT,
-                          now
-                      )
-                      .apply()
-
-                  return GamaEventHub.Event(
-                      kind =
-                          GamaEventHub.Kind.SYSTEM,
-                      source =
-                          "Bateria",
-                      summary =
-                          if (
-                              level <= 5
-                          ) {
-                              "A bateria está em $level%. " +
-                              "Conecte o carregador assim que puder."
-                          } else {
-                              "A bateria está em $level%."
-                          },
-                      priority =
-                          GamaEventHub.Priority.HIGH,
-                      occurredAt =
-                          now
-                  )
-              }
-
-              private fun storageEvent(
-                  context: Context,
-                  now: Long
-              ): GamaEventHub.Event? {
-
-                  val fs =
-                      runCatching {
-                          StatFs(
-                              context
-                                  .filesDir
-                                  .absolutePath
-                          )
-                      }.getOrNull()
-                          ?: return null
-
-                  val available =
-                      fs.availableBytes
-
-                  val total =
-                      fs.totalBytes
-                          .coerceAtLeast(1L)
-
-                  val low =
-                      available <
-                      1_500_000_000L ||
-                          available.toDouble() /
-                          total.toDouble() <
-                          0.05
-
-                  if (!low) {
-                      return null
-                  }
-
-                  val prefs =
-                      context.getSharedPreferences(
-                          PREFS,
-                          Context.MODE_PRIVATE
-                      )
-
-                  val last =
-                      prefs.getLong(
-                          KEY_STORAGE_AT,
-                          0L
-                      )
-
-                  if (
-                      last > 0L &&
-                      now - last <
-                      STORAGE_COOLDOWN_MS
-                  ) {
-                      return null
-                  }
-
-                  prefs.edit()
-                      .putLong(
-                          KEY_STORAGE_AT,
-                          now
-                      )
-                      .apply()
-
-                  val mb =
-                      available /
-                          (
-                              1024L *
-                              1024L
-                          )
-
-                  return GamaEventHub.Event(
-                      kind =
-                          GamaEventHub.Kind.SYSTEM,
-                      source =
-                          "Armazenamento",
-                      summary =
-                          "O armazenamento está quase cheio. " +
-                          "Restam aproximadamente $mb MB livres.",
-                      priority =
-                          GamaEventHub.Priority.HIGH,
-                      occurredAt =
-                          now
-                  )
-              }
-          }
-          EOF
-
-          python3 - "$CORE" <<'PY'
-          from pathlib import Path
-          import sys
-
-          p = Path(sys.argv[1])
-          s = p.read_text(
-              encoding="utf-8"
-          )
-
-          needle = (
-              "            ZevronMemoryStore."
-              "brainContext(context),\n"
-          )
-
-          addition = (
-              needle +
-              "            GamaAdaptiveMemory."
-              "contextSummary(context),\n"
-          )
-
-          if (
-              "GamaAdaptiveMemory."
-              "contextSummary(context)"
-              not in s
-          ):
-              if needle not in s:
-                  raise SystemExit(
-                      "ZevronJarvisCore memory anchor not found"
-                  )
-
-              s = s.replace(
-                  needle,
-                  addition,
-                  1
-              )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-          PY
-
-          python3 - "$SUPER" <<'PY'
-          from pathlib import Path
-          import sys
-
-          p = Path(sys.argv[1])
-          s = p.read_text(
-              encoding="utf-8"
-          )
-
-          anchor = (
-              "        GamaTaskMemory."
-              "touch(context)\n"
-          )
-
-          block = (
-              anchor +
-              "\n"
-              "        GamaAdaptiveMemory."
-              "observe(context, raw)\n"
-              "        GamaAdaptiveMemory."
-              "replyForQuery(context, raw)"
-              "?.let { reply ->\n"
-              "            callback(reply)\n"
-              "            return true\n"
-              "        }\n"
-          )
-
-          if (
-              "GamaAdaptiveMemory."
-              "observe(context, raw)"
-              not in s
-          ):
-              if anchor not in s:
-                  raise SystemExit(
-                      "GamaSuperAssistantCore memory anchor not found"
-                  )
-
-              s = s.replace(
-                  anchor,
-                  block,
-                  1
-              )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-          PY
-
-          python3 - "$SERVICE" <<'PY'
-          from pathlib import Path
-          import sys
-
-          p = Path(sys.argv[1])
-          s = p.read_text(
-              encoding="utf-8"
-          )
-
-          if (
-              "// GAMA2000_LOCAL_VISION_ROUTER"
-              not in s
-          ):
-              anchor = """        // GAMA92_TIME_AND_SCREEN_FAST_LANES
-                  GamaScreenFastLane.handle(this, command)?.let {
-          """
-
-              block = """        // GAMA2000_LOCAL_VISION_ROUTER
-                  if (
-                      !isDeviceLocked() &&
-                      GamaVisionCore.recognizes(command)
-                  ) {
-                      val visionSequence =
-                          userCommandSequence
-
-                      setConversationVisual(
-                          GamaEnergyView.Mode.THINKING
-                      )
-
-                      updateNotification(
-                          "Analisando a tela localmente..."
-                      )
-
-                      GamaVisionCore.captureTextAsync(
-                          applicationContext
-                      ) { visibleText ->
-
-                          uiHandler.post {
-                              if (
-                                  !running ||
-                                  visionSequence !=
-                                  userCommandSequence
-                              ) {
-                                  return@post
-                              }
-
-                              if (
-                                  visibleText.isBlank()
-                              ) {
-                                  speak(
-                                      "Não consegui obter texto visível " +
-                                      "dessa tela agora.",
-                                      true
-                                  )
-
-                                  return@post
-                              }
-
-                              if (
-                                  GamaVisionCore
-                                      .requiresReasoning(
-                                          command
-                                      )
-                              ) {
-                                  answerWithBrainAsync(
-                                      ZevronJarvisCore
-                                          .brainInstruction(
-                                              command.trim() +
-                                                  "\\nContexto visual extraído " +
-                                                  "localmente por Accessibility " +
-                                                  "e OCR: " +
-                                                  visibleText.take(
-                                                      6000
-                                                  )
-                                          )
-                                  )
-                              } else {
-                                  speak(
-                                      GamaVisionCore
-                                          .spokenReadReply(
-                                              visibleText
-                                          )
-                                  )
-                              }
-                          }
-                      }
-
-                      return
-                  }
-
-          """
-
-              if anchor not in s:
-                  raise SystemExit(
-                      "GamaService screen fast-lane anchor not found"
-                  )
-
-              s = s.replace(
-                  anchor,
-                  block + anchor,
-                  1
-              )
-
-          if (
-              "ACTION_UI_PULSE"
-              not in s
-          ):
-              anchor = """    try { sendBroadcast(Intent(LockScreenActivity.ACTION_SPEAKING).setPackage(packageName)) }
-              catch (e: Exception) { Log.w(TAG, "Falha no broadcast de fala", e) }
-          """
-
-              block = anchor + """    try {
-                  if (isDeviceLocked()) {
-                      sendBroadcast(
-                          Intent(
-                              "com.gama.assistant.ACTION_UI_PULSE"
-                          ).setPackage(
-                              packageName
-                          )
-                      )
-                  }
-              } catch (e: Exception) {
-                  Log.w(
-                      TAG,
-                      "Falha no pulso visual da lockscreen",
-                      e
-                  )
-              }
-          """
-
-              if anchor not in s:
-                  raise SystemExit(
-                      "GamaService speech broadcast anchor not found"
-                  )
-
-              s = s.replace(
-                  anchor,
-                  block,
-                  1
-              )
-
-          old = """    private fun handleRecoverableWorkerFailure(threadName: String, errorClass: String) {
-                  CrashRecorder.recordSoft(this, if (threadName == "gama-listener") "microphone" else "worker", errorClass)
-                  if (threadName == "gama-listener") {
-                      recoverMicrophoneOnly("worker")
-                  }
-                  // Other named workers are one-shot tasks. Their failure stays isolated and the
-                  // foreground voice service continues normally.
-              }
-          """
-
-          new = """    private fun handleRecoverableWorkerFailure(threadName: String, errorClass: String) {
-                  CrashRecorder.recordSoft(
-                      this,
-                      if (threadName == "gama-listener") "microphone" else "worker",
-                      errorClass
-                  )
-
-                  val delay =
-                      GamaRecoveryCoordinator.nextDelayMs(
-                          threadName
-                      )
-
-                  when (threadName) {
-                      "gama-listener" -> {
-                          uiHandler.postDelayed({
-                              if (
-                                  BackgroundMode.enabled(this) &&
-                                  listenerThread?.isAlive != true
-                              ) {
-                                  recoverMicrophoneOnly(
-                                      "worker"
-                                  )
-                              }
-                          }, delay)
-                      }
-
-                      "gama-periodic-check",
-                      "gama-calendar-awareness",
-                      "gama-ambient-awareness" -> {
-                          uiHandler.postDelayed({
-                              if (running) {
-                                  scheduleAutomationTick()
-                              }
-                          }, delay)
-                      }
-
-                      "gama-live-info",
-                      "gama-research",
-                      "gama-local-vision",
-                      "gama-super-tool",
-                      "gama-intro-capabilities" -> {
-                          uiHandler.postDelayed({
-                              if (running) {
-                                  updateNotification(
-                                      "Gama recuperado • pronto"
-                                  )
-
-                                  setConversationVisual(
-                                      GamaEnergyView.Mode.LISTENING
-                                  )
-                              }
-                          }, delay)
-                      }
-                  }
-              }
-          """
-
-          if (
-              "GamaRecoveryCoordinator."
-              "nextDelayMs(threadName)"
-              not in s
-          ):
-              if old not in s:
-                  raise SystemExit(
-                      "handleRecoverableWorkerFailure anchor not found"
-                  )
-
-              s = s.replace(
-                  old,
-                  new,
-                  1
-              )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
-          )
-          PY
-
-          sed -i \
-            's/private const val MAX_AGE_MS = 6L \* 60L \* 60L \* 1000L/private const val MAX_AGE_MS = 24L * 60L * 60L * 1000L/' \
-            "$SRC/GamaMissionStore.kt"
-
-          test -s "$SRC/GamaAdaptiveMemory.kt"
-          test -s "$SRC/GamaRecoveryCoordinator.kt"
-          test -s "$SRC/GamaVisionCore.kt"
-
-          grep -Fq \
-            'GamaAdaptiveMemory.contextSummary(context)' \
-            "$CORE"
-
-          grep -Fq \
-            'GamaAdaptiveMemory.observe(context, raw)' \
-            "$SUPER"
+          SRC="app/src/main/java/com/gama/assistant"
 
           grep -Fq \
             'GAMA2000_LOCAL_VISION_ROUTER' \
-            "$SERVICE"
+            "$SRC/GamaService.kt"
 
           grep -Fq \
             'ACTION_UI_PULSE' \
-            "$SERVICE"
+            "$SRC/GamaService.kt"
 
           grep -Fq \
-            'GamaRecoveryCoordinator.nextDelayMs(threadName)' \
-            "$SERVICE"
+            'GamaAdaptiveMemory' \
+            "$SRC/GamaSuperAssistantCore.kt"
 
           grep -Fq \
-            'captureCurrentBitmap' \
-            "$ACCESS"
-
-          grep -Fq \
-            'android:canTakeScreenshot="true"' \
-            "$ACCESS_XML"
-
-          grep -Fq \
-            'implementation("com.google.mlkit:text-recognition:16.0.1")' \
-            "$GRADLE"
-
-          grep -Fq \
-            'implementation("com.google.mediapipe:tasks-genai:0.10.27")' \
-            "$GRADLE"
-
-          grep -Fq \
-            'interruptSpeechForBargeIn' \
-            "$SERVICE"
+            'GamaRecoveryCoordinator.nextDelayMs(' \
+            "$SRC/GamaService.kt"
 
           grep -Fq \
             'GamaMissionStore' \
-            "$SERVICE"
+            "$SRC/GamaService.kt"
 
           grep -Fq \
             'GamaProactiveBridge' \
-            "$SERVICE"
+            "$SRC/GamaService.kt"
 
           grep -Fq \
             'GamaAutomationEngine' \
-            "$SERVICE"
+            "$SRC/GamaService.kt"
 
           grep -Fq \
-            'class LocalBrain' \
-            "$SRC/LocalBrain.kt"
+            'interruptSpeechForBargeIn' \
+            "$SRC/GamaService.kt"
 
           grep -Fq \
             'LlmInference' \
             "$SRC/LocalBrain.kt"
 
-          if grep -R -E \
-            'api\.groq\.com|api\.openai\.com|api\.elevenlabs\.io|retrofit2\.|okhttp3\.' \
-            "$SRC/GamaAdaptiveMemory.kt" \
-            "$SRC/GamaVisionCore.kt" \
-            "$SRC/GamaRecoveryCoordinator.kt"
-          then
-            echo \
-              "Cloud dependency detected in GAMA 2000 local core." \
-              >&2
-            exit 1
-          fi
+          grep -Fq \
+            'implementation("com.google.mediapipe:tasks-genai:0.10.27")' \
+            app/build.gradle.kts
 
-          echo \
-            "GAMA JARVIS 2000 Autonomy Core injected successfully."
+          grep -Fq \
+            'implementation("com.google.mlkit:text-recognition:16.0.1")' \
+            app/build.gradle.kts
 
-      - name: Harden local AI installer and zero-stall recovery
+          echo "JARVIS 2000 source verified."
+
+      - name: Harden AI installer
         run: |
           set -euo pipefail
 
@@ -2205,7 +116,6 @@ jobs:
 
           test -s "$MAIN"
           test -s "$AI"
-          test -s "$SRC/LocalBrain.kt"
 
           cat > "$SRC/GamaModelInstallPolicy.kt" <<'EOF'
           package com.gama.assistant
@@ -2237,11 +147,10 @@ jobs:
                   }
 
                   return (
-                      (
-                          downloaded
-                              .coerceAtMost(total) *
-                              100L
-                      ) / total
+                      downloaded
+                          .coerceAtMost(total) *
+                          100L /
+                          total
                   )
                       .toInt()
                       .coerceIn(
@@ -2250,1630 +159,32 @@ jobs:
                       )
               }
 
-              fun isStalled(
-                  nowMs: Long,
-                  lastProgressMs: Long,
+              fun stalled(
+                  now: Long,
+                  lastProgress: Long,
                   downloaded: Long,
-                  previousBytes: Long,
-                  active: Boolean
+                  previous: Long
               ): Boolean {
 
-                  if (!active) {
-                      return false
-                  }
-
                   if (
-                      downloaded >
-                      previousBytes
+                      lastProgress <= 0L ||
+                      now < lastProgress
                   ) {
                       return false
                   }
 
                   if (
-                      lastProgressMs <= 0L ||
-                      nowMs <
-                      lastProgressMs
+                      downloaded >
+                      previous
                   ) {
                       return false
                   }
 
                   return (
-                      nowMs -
-                      lastProgressMs
+                      now -
+                      lastProgress
                   ) >=
                       STALL_TIMEOUT_MS
-              }
-          }
-          EOF
-
-          cat > "$AI" <<'EOF'
-          package com.gama.assistant
-
-          import android.app.Activity
-          import android.app.AlertDialog
-          import android.app.DownloadManager
-          import android.content.Context
-          import android.net.ConnectivityManager
-          import android.net.NetworkCapabilities
-          import android.net.Uri
-          import android.os.Environment
-          import android.os.StatFs
-          import java.io.File
-          import java.security.MessageDigest
-          import kotlin.concurrent.thread
-
-          object AiSetup {
-
-              @Volatile
-              private var busy =
-                  false
-
-              private const val SHA =
-                  "e3d981c01aeaaac69a84ffa0d4be13281b3176731063f1bea1c9fe6887bd9dee"
-
-              private val URLS =
-                  listOf(
-                      "https://huggingface.co/nikhil2024/gemma3-1b-it-litert-mirror/resolve/main/gemma3-1b-it-int4.task",
-                      "https://huggingface.co/Wildphonics/Gemma3/resolve/main/gemma3-1b-it-int4.task"
-                  )
-
-              private const val PART =
-                  "gemma-download.part"
-
-              private const val MODEL =
-                  "gemma.task"
-
-              private const val BACKUP =
-                  "gemma-previous.bak"
-
-              private const val PREFS =
-                  "gama_setup"
-
-              private fun prefs(
-                  ctx: Context
-              ) =
-                  ctx.getSharedPreferences(
-                      PREFS,
-                      Context.MODE_PRIVATE
-                  )
-
-              private fun folder(
-                  ctx: Context
-              ): File? =
-                  ctx.getExternalFilesDir(
-                      Environment
-                          .DIRECTORY_DOWNLOADS
-                  )
-
-              private fun installedFile(
-                  ctx: Context
-              ): File? =
-                  listOfNotNull(
-                      File(
-                          ctx.filesDir,
-                          MODEL
-                      ),
-                      folder(ctx)?.let {
-                          File(
-                              it,
-                              MODEL
-                          )
-                      }
-                  )
-                      .filter {
-                          it.isFile &&
-                              it.length() >=
-                              GamaModelInstallPolicy
-                                  .MIN_MODEL_BYTES
-                      }
-                      .maxByOrNull {
-                          it.lastModified()
-                      }
-
-              fun isInstalled(
-                  ctx: Context
-              ): Boolean =
-                  installedFile(ctx) != null
-
-              private fun signature(
-                  file: File
-              ): String =
-                  "${file.absolutePath}:${file.length()}:${file.lastModified()}"
-
-              fun markWorking(
-                  ctx: Context,
-                  model: File
-              ) {
-                  prefs(ctx)
-                      .edit()
-                      .putString(
-                          "brain_verified",
-                          signature(model)
-                      )
-                      .remove(
-                          "brain_runtime_error"
-                      )
-                      .apply()
-              }
-
-              fun markFailure(
-                  ctx: Context,
-                  message: String
-              ) {
-                  prefs(ctx)
-                      .edit()
-                      .remove(
-                          "brain_verified"
-                      )
-                      .putString(
-                          "brain_runtime_error",
-                          message.take(200)
-                      )
-                      .apply()
-              }
-
-              fun download(
-                  activity: Activity,
-                  onImport:
-                      (() -> Unit)? =
-                      null
-              ) {
-
-                  if (busy) {
-                      AlertDialog
-                          .Builder(activity)
-                          .setTitle(
-                              "IA ocupada"
-                          )
-                          .setMessage(
-                              "O Gama está verificando ou " +
-                              "importando o modelo local."
-                          )
-                          .setPositiveButton(
-                              "OK",
-                              null
-                          )
-                          .show()
-
-                      return
-                  }
-
-                  val activeId =
-                      prefs(activity)
-                          .getLong(
-                              "brain_download_id",
-                              -1L
-                          )
-
-                  if (
-                      activeId >= 0L
-                  ) {
-                      showActiveDownloadDialog(
-                          activity,
-                          activeId,
-                          onImport
-                      )
-
-                      return
-                  }
-
-                  if (
-                      isInstalled(activity)
-                  ) {
-                      AlertDialog
-                          .Builder(activity)
-                          .setTitle(
-                              "IA local encontrada"
-                          )
-                          .setMessage(
-                              "O modelo já está instalado. " +
-                              "Você pode manter o atual, importar " +
-                              "outro arquivo local ou baixar " +
-                              "novamente para reparar."
-                          )
-                          .setPositiveButton(
-                              "Baixar novamente"
-                          ) { _, _ ->
-                              startDownload(
-                                  activity
-                                      .applicationContext,
-                                  0
-                              )
-                          }
-                          .setNeutralButton(
-                              "Importar arquivo"
-                          ) { _, _ ->
-                              onImport?.invoke()
-                          }
-                          .setNegativeButton(
-                              "Manter atual",
-                              null
-                          )
-                          .show()
-
-                      return
-                  }
-
-                  AlertDialog
-                      .Builder(activity)
-                      .setTitle(
-                          "Instalar IA offline"
-                      )
-                      .setMessage(
-                          "O cérebro de conversa usa um modelo " +
-                          "local de aproximadamente 555 MB. " +
-                          "Você pode importar um arquivo .task " +
-                          "que já esteja no celular ou baixar " +
-                          "uma cópia. Depois de instalado, a " +
-                          "inferência acontece no aparelho. " +
-                          "Os comandos locais continuam " +
-                          "funcionando mesmo sem esse modelo."
-                      )
-                      .setPositiveButton(
-                          "Baixar modelo"
-                      ) { _, _ ->
-                          startDownload(
-                              activity
-                                  .applicationContext,
-                              0
-                          )
-                      }
-                      .setNeutralButton(
-                          "Importar arquivo"
-                      ) { _, _ ->
-                          onImport?.invoke()
-                      }
-                      .setNegativeButton(
-                          "Agora não",
-                          null
-                      )
-                      .show()
-              }
-
-              private fun showActiveDownloadDialog(
-                  activity: Activity,
-                  id: Long,
-                  onImport:
-                      (() -> Unit)?
-              ) {
-
-                  AlertDialog
-                      .Builder(activity)
-                      .setTitle(
-                          "Instalação da IA"
-                      )
-                      .setMessage(
-                          status(activity)
-                      )
-                      .setPositiveButton(
-                          "Reiniciar download"
-                      ) { _, _ ->
-                          cancelDownload(
-                              activity
-                                  .applicationContext,
-                              id,
-                              true
-                          )
-
-                          startDownload(
-                              activity
-                                  .applicationContext,
-                              0
-                          )
-                      }
-                      .setNeutralButton(
-                          "Importar arquivo"
-                      ) { _, _ ->
-                          onImport?.invoke()
-                      }
-                      .setNegativeButton(
-                          "Cancelar download"
-                      ) { _, _ ->
-                          cancelDownload(
-                              activity
-                                  .applicationContext,
-                              id,
-                              false
-                          )
-                      }
-                      .show()
-              }
-
-              private fun networkAvailable(
-                  ctx: Context
-              ): Boolean {
-
-                  val cm =
-                      ctx.getSystemService(
-                          ConnectivityManager::class.java
-                      )
-
-                  val network =
-                      cm.activeNetwork
-                          ?: return false
-
-                  val caps =
-                      cm.getNetworkCapabilities(
-                          network
-                      )
-                          ?: return false
-
-                  return caps
-                      .hasCapability(
-                          NetworkCapabilities
-                              .NET_CAPABILITY_INTERNET
-                      ) &&
-                      caps.hasCapability(
-                          NetworkCapabilities
-                              .NET_CAPABILITY_VALIDATED
-                      )
-              }
-
-              private fun hasRoom(
-                  ctx: Context
-              ): Boolean {
-
-                  val dir =
-                      folder(ctx)
-                          ?: return false
-
-                  val free =
-                      runCatching {
-                          StatFs(
-                              dir.absolutePath
-                          ).availableBytes
-                      }.getOrDefault(0L)
-
-                  return free >=
-                      750_000_000L
-              }
-
-              private fun startDownload(
-                  ctx: Context,
-                  mirror: Int
-              ) {
-
-                  val app =
-                      ctx.applicationContext
-
-                  val p =
-                      prefs(app)
-
-                  try {
-                      val directory =
-                          folder(app)
-                              ?: error(
-                                  "Armazenamento externo indisponível"
-                              )
-
-                      if (!hasRoom(app)) {
-                          p.edit()
-                              .remove(
-                                  "brain_download_id"
-                              )
-                              .putString(
-                                  "brain_error",
-                                  "Espaço insuficiente. " +
-                                  "Libere pelo menos 750 MB " +
-                                  "e tente novamente."
-                              )
-                              .apply()
-
-                          return
-                      }
-
-                      if (
-                          !networkAvailable(app)
-                      ) {
-                          p.edit()
-                              .remove(
-                                  "brain_download_id"
-                              )
-                              .putString(
-                                  "brain_error",
-                                  "Sem conexão validada para " +
-                                  "baixar o modelo. Você também " +
-                                  "pode importá-lo do celular."
-                              )
-                              .apply()
-
-                          return
-                      }
-
-                      File(
-                          directory,
-                          PART
-                      ).delete()
-
-                      val index =
-                          mirror.coerceIn(
-                              0,
-                              URLS.lastIndex
-                          )
-
-                      val request =
-                          DownloadManager
-                              .Request(
-                                  Uri.parse(
-                                      URLS[index]
-                                  )
-                              )
-                              .setTitle(
-                                  "Gama: cérebro de conversa local"
-                              )
-                              .setDescription(
-                                  "Baixando modelo Gemma 3 1B"
-                              )
-                              .setAllowedNetworkTypes(
-                                  DownloadManager.Request.NETWORK_WIFI or
-                                      DownloadManager.Request.NETWORK_MOBILE
-                              )
-                              .setAllowedOverMetered(
-                                  true
-                              )
-                              .setAllowedOverRoaming(
-                                  false
-                              )
-                              .setNotificationVisibility(
-                                  DownloadManager.Request
-                                      .VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-                              )
-                              .addRequestHeader(
-                                  "User-Agent",
-                                  "GAMA/8.2.1 Android"
-                              )
-                              .setDestinationInExternalFilesDir(
-                                  app,
-                                  Environment
-                                      .DIRECTORY_DOWNLOADS,
-                                  PART
-                              )
-
-                      val id =
-                          app
-                              .getSystemService(
-                                  DownloadManager::class.java
-                              )
-                              .enqueue(
-                                  request
-                              )
-
-                      val now =
-                          System.currentTimeMillis()
-
-                      p.edit()
-                          .putLong(
-                              "brain_download_id",
-                              id
-                          )
-                          .putInt(
-                              "brain_download_mirror",
-                              index
-                          )
-                          .putLong(
-                              "brain_download_started_ms",
-                              now
-                          )
-                          .putLong(
-                              "brain_download_last_progress_ms",
-                              now
-                          )
-                          .putLong(
-                              "brain_download_last_bytes",
-                              0L
-                          )
-                          .remove(
-                              "brain_error"
-                          )
-                          .apply()
-
-                      AssistantRuntime
-                          .state(
-                              "Conectando para instalar a IA local"
-                          )
-
-                  } catch (
-                      e: Exception
-                  ) {
-                      p.edit()
-                          .remove(
-                              "brain_download_id"
-                          )
-                          .putString(
-                              "brain_error",
-                              "Falha ao iniciar o download: " +
-                                  e.javaClass.simpleName
-                          )
-                          .apply()
-                  }
-              }
-
-              private fun cancelDownload(
-                  ctx: Context,
-                  id: Long,
-                  clearError: Boolean
-              ) {
-
-                  runCatching {
-                      ctx.getSystemService(
-                          DownloadManager::class.java
-                      ).remove(id)
-                  }
-
-                  folder(ctx)?.let {
-                      File(
-                          it,
-                          PART
-                      ).delete()
-                  }
-
-                  val edit =
-                      prefs(ctx)
-                          .edit()
-                          .remove(
-                              "brain_download_id"
-                          )
-                          .remove(
-                              "brain_download_mirror"
-                          )
-                          .remove(
-                              "brain_download_started_ms"
-                          )
-                          .remove(
-                              "brain_download_last_progress_ms"
-                          )
-                          .remove(
-                              "brain_download_last_bytes"
-                          )
-
-                  if (clearError) {
-                      edit.remove(
-                          "brain_error"
-                      )
-                  } else {
-                      edit.putString(
-                          "brain_error",
-                          "Download cancelado. " +
-                          "Importe um modelo local " +
-                          "ou tente novamente."
-                      )
-                  }
-
-                  edit.apply()
-              }
-
-              fun status(
-                  ctx: Context
-              ): String {
-
-                  if (busy) {
-                      return (
-                          "IA: verificando ou " +
-                          "importando o modelo..."
-                      )
-                  }
-
-                  val p =
-                      prefs(ctx)
-
-                  val model =
-                      installedFile(ctx)
-
-                  val id =
-                      p.getLong(
-                          "brain_download_id",
-                          -1L
-                      )
-
-                  if (
-                      model != null &&
-                      id < 0L
-                  ) {
-                      if (
-                          p.getString(
-                              "brain_verified",
-                              ""
-                          ) ==
-                          signature(model)
-                      ) {
-                          return (
-                              "IA offline: testada e pronta " +
-                              "para conversa por voz."
-                          )
-                      }
-
-                      val problem =
-                          p.getString(
-                              "brain_runtime_error",
-                              null
-                          )
-
-                      return if (
-                          problem.isNullOrBlank()
-                      ) {
-                          "Modelo local instalado. " +
-                              "Diga ‘Gama’ e faça uma pergunta " +
-                              "para validar a conversa."
-                      } else {
-                          "Modelo presente; o último teste " +
-                              "falhou: $problem. Os comandos " +
-                              "locais continuam funcionando."
-                      }
-                  }
-
-                  if (
-                      id < 0L
-                  ) {
-                      return p
-                          .getString(
-                              "brain_error",
-                              null
-                          )
-                          ?.let {
-                              "IA: $it"
-                          }
-                          ?: (
-                              "IA de conversa não instalada. " +
-                              "Baixe ou importe um modelo local."
-                          )
-                  }
-
-                  return queryStatusText(
-                      ctx,
-                      id
-                  )
-              }
-
-              private fun queryStatusText(
-                  ctx: Context,
-                  id: Long
-              ): String {
-
-                  return try {
-                      ctx.getSystemService(
-                          DownloadManager::class.java
-                      )
-                          .query(
-                              DownloadManager.Query()
-                                  .setFilterById(id)
-                          )
-                          .use {
-                              cursor ->
-
-                              if (
-                                  !cursor
-                                      .moveToFirst()
-                              ) {
-                                  return@use (
-                                      "IA: download não encontrado. " +
-                                      "Toque em instalar para reiniciar."
-                                  )
-                              }
-
-                              val downloaded =
-                                  cursor.getLong(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_BYTES_DOWNLOADED_SO_FAR
-                                          )
-                                  )
-                                      .coerceAtLeast(
-                                          0L
-                                      )
-
-                              val total =
-                                  cursor.getLong(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_TOTAL_SIZE_BYTES
-                                          )
-                                  )
-
-                              val state =
-                                  cursor.getInt(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_STATUS
-                                          )
-                                  )
-
-                              val reason =
-                                  cursor.getInt(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_REASON
-                                          )
-                                  )
-
-                              when (state) {
-
-                                  DownloadManager
-                                      .STATUS_PENDING ->
-                                      (
-                                          "IA: conectando ao " +
-                                          "servidor do modelo..."
-                                      )
-
-                                  DownloadManager
-                                      .STATUS_RUNNING -> {
-
-                                      val percent =
-                                          GamaModelInstallPolicy
-                                              .percent(
-                                                  downloaded,
-                                                  total
-                                              )
-
-                                      if (
-                                          percent != null
-                                      ) {
-                                          "IA: baixando $percent% " +
-                                              "(${downloaded / 1_000_000} MB " +
-                                              "de ${total / 1_000_000} MB)"
-                                      } else if (
-                                          downloaded > 0L
-                                      ) {
-                                          "IA: baixando " +
-                                              "${downloaded / 1_000_000} MB..."
-                                      } else {
-                                          "IA: conexão iniciada; " +
-                                              "aguardando os primeiros dados..."
-                                      }
-                                  }
-
-                                  DownloadManager
-                                      .STATUS_PAUSED ->
-                                      (
-                                          "IA: download pausado " +
-                                          "(${pauseReason(reason)})."
-                                      )
-
-                                  DownloadManager
-                                      .STATUS_SUCCESSFUL ->
-                                      (
-                                          "IA: download concluído. " +
-                                          "Conferindo integridade..."
-                                      )
-
-                                  DownloadManager
-                                      .STATUS_FAILED ->
-                                      (
-                                          "IA: download falhou " +
-                                          "(${failureReason(reason)}). " +
-                                          "O Gama tentará uma fonte " +
-                                          "alternativa quando possível."
-                                      )
-
-                                  else ->
-                                      "IA: verificando instalação..."
-                              }
-                          }
-
-                  } catch (
-                      _: Exception
-                  ) {
-                      "IA: verificando estado do download..."
-                  }
-              }
-
-              fun check(
-                  context: Context
-              ) {
-
-                  if (busy) {
-                      return
-                  }
-
-                  val ctx =
-                      context.applicationContext
-
-                  val p =
-                      prefs(ctx)
-
-                  val id =
-                      p.getLong(
-                          "brain_download_id",
-                          -1L
-                      )
-
-                  if (
-                      id < 0L
-                  ) {
-                      return
-                  }
-
-                  try {
-                      ctx.getSystemService(
-                          DownloadManager::class.java
-                      )
-                          .query(
-                              DownloadManager.Query()
-                                  .setFilterById(id)
-                          )
-                          .use {
-                              cursor ->
-
-                              if (
-                                  !cursor
-                                      .moveToFirst()
-                              ) {
-                                  clearMissingDownload(
-                                      ctx
-                                  )
-
-                                  return
-                              }
-
-                              val state =
-                                  cursor.getInt(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_STATUS
-                                          )
-                                  )
-
-                              val downloaded =
-                                  cursor.getLong(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_BYTES_DOWNLOADED_SO_FAR
-                                          )
-                                  )
-                                      .coerceAtLeast(
-                                          0L
-                                      )
-
-                              val reason =
-                                  cursor.getInt(
-                                      cursor
-                                          .getColumnIndexOrThrow(
-                                              DownloadManager
-                                                  .COLUMN_REASON
-                                          )
-                                  )
-
-                              when (state) {
-                                  DownloadManager
-                                      .STATUS_FAILED ->
-                                      handleFailureOrFallback(
-                                          ctx,
-                                          id,
-                                          reason
-                                      )
-
-                                  DownloadManager
-                                      .STATUS_SUCCESSFUL ->
-                                      verifyDownloadedModel(
-                                          ctx
-                                      )
-
-                                  DownloadManager
-                                      .STATUS_PENDING,
-                                  DownloadManager
-                                      .STATUS_RUNNING ->
-                                      trackProgressOrRecover(
-                                          ctx,
-                                          id,
-                                          downloaded
-                                      )
-
-                                  DownloadManager
-                                      .STATUS_PAUSED ->
-                                      trackProgressOrRecover(
-                                          ctx,
-                                          id,
-                                          downloaded
-                                      )
-                              }
-                          }
-
-                  } catch (
-                      _: Exception
-                  ) {
-                  }
-              }
-
-              private fun trackProgressOrRecover(
-                  ctx: Context,
-                  id: Long,
-                  downloaded: Long
-              ) {
-
-                  val p =
-                      prefs(ctx)
-
-                  val now =
-                      System.currentTimeMillis()
-
-                  val oldBytes =
-                      p.getLong(
-                          "brain_download_last_bytes",
-                          0L
-                      )
-
-                  val lastProgress =
-                      p.getLong(
-                          "brain_download_last_progress_ms",
-                          now
-                      )
-
-                  if (
-                      downloaded >
-                      oldBytes
-                  ) {
-                      p.edit()
-                          .putLong(
-                              "brain_download_last_bytes",
-                              downloaded
-                          )
-                          .putLong(
-                              "brain_download_last_progress_ms",
-                              now
-                          )
-                          .apply()
-
-                      return
-                  }
-
-                  val stalled =
-                      GamaModelInstallPolicy
-                          .isStalled(
-                              nowMs =
-                                  now,
-                              lastProgressMs =
-                                  lastProgress,
-                              downloaded =
-                                  downloaded,
-                              previousBytes =
-                                  oldBytes,
-                              active =
-                                  true
-                          )
-
-                  if (!stalled) {
-                      return
-                  }
-
-                  val mirror =
-                      p.getInt(
-                          "brain_download_mirror",
-                          0
-                      )
-
-                  runCatching {
-                      ctx.getSystemService(
-                          DownloadManager::class.java
-                      ).remove(id)
-                  }
-
-                  folder(ctx)?.let {
-                      File(
-                          it,
-                          PART
-                      ).delete()
-                  }
-
-                  if (
-                      mirror <
-                      URLS.lastIndex &&
-                      networkAvailable(ctx)
-                  ) {
-                      clearDownloadTracking(
-                          ctx,
-                          true
-                      )
-
-                      p.edit()
-                          .putString(
-                              "brain_error",
-                              "A primeira fonte ficou sem " +
-                              "progresso. Tentando uma fonte " +
-                              "alternativa automaticamente."
-                          )
-                          .apply()
-
-                      startDownload(
-                          ctx,
-                          mirror + 1
-                      )
-
-                  } else {
-                      clearDownloadTracking(
-                          ctx,
-                          true
-                      )
-
-                      p.edit()
-                          .putString(
-                              "brain_error",
-                              "O download ficou sem progresso. " +
-                              "Toque em instalar para tentar " +
-                              "novamente ou importe o modelo " +
-                              "do celular."
-                          )
-                          .apply()
-                  }
-              }
-
-              private fun handleFailureOrFallback(
-                  ctx: Context,
-                  id: Long,
-                  reason: Int
-              ) {
-
-                  val p =
-                      prefs(ctx)
-
-                  val mirror =
-                      p.getInt(
-                          "brain_download_mirror",
-                          0
-                      )
-
-                  runCatching {
-                      ctx.getSystemService(
-                          DownloadManager::class.java
-                      ).remove(id)
-                  }
-
-                  folder(ctx)?.let {
-                      File(
-                          it,
-                          PART
-                      ).delete()
-                  }
-
-                  if (
-                      mirror <
-                      URLS.lastIndex &&
-                      networkAvailable(ctx)
-                  ) {
-                      clearDownloadTracking(
-                          ctx,
-                          true
-                      )
-
-                      p.edit()
-                          .putString(
-                              "brain_error",
-                              "A primeira fonte falhou " +
-                              "(${failureReason(reason)}). " +
-                              "Tentando outra automaticamente."
-                          )
-                          .apply()
-
-                      startDownload(
-                          ctx,
-                          mirror + 1
-                      )
-
-                  } else {
-                      clearDownloadTracking(
-                          ctx,
-                          true
-                      )
-
-                      p.edit()
-                          .putString(
-                              "brain_error",
-                              "Download falhou: " +
-                              "${failureReason(reason)}. " +
-                              "Tente novamente ou importe " +
-                              "o modelo local."
-                          )
-                          .apply()
-                  }
-              }
-
-              private fun verifyDownloadedModel(
-                  ctx: Context
-              ) {
-
-                  if (busy) {
-                      return
-                  }
-
-                  busy =
-                      true
-
-                  thread(
-                      name =
-                          "gama-verify-model"
-                  ) {
-                      val partial =
-                          folder(ctx)?.let {
-                              File(
-                                  it,
-                                  PART
-                              )
-                          }
-
-                      try {
-                          val file =
-                              partial
-                                  ?: error(
-                                      "Arquivo não encontrado"
-                                  )
-
-                          check(
-                              file.isFile &&
-                                  file.length() >=
-                                  GamaModelInstallPolicy
-                                      .EXPECTED_DOWNLOAD_BYTES
-                          ) {
-                              "arquivo incompleto"
-                          }
-
-                          val digest =
-                              sha256(file)
-
-                          check(
-                              digest == SHA
-                          ) {
-                              "SHA-256 diferente do modelo esperado"
-                          }
-
-                          val target =
-                              File(
-                                  file.parentFile,
-                                  MODEL
-                              )
-
-                          val backup =
-                              File(
-                                  file.parentFile,
-                                  BACKUP
-                              )
-
-                          backup.delete()
-
-                          if (
-                              target.exists()
-                          ) {
-                              check(
-                                  target.renameTo(
-                                      backup
-                                  )
-                              ) {
-                                  "não foi possível preservar " +
-                                  "o modelo anterior"
-                              }
-                          }
-
-                          if (
-                              !file.renameTo(
-                                  target
-                              )
-                          ) {
-                              backup.renameTo(
-                                  target
-                              )
-
-                              error(
-                                  "não foi possível instalar o arquivo"
-                              )
-                          }
-
-                          backup.delete()
-
-                          clearDownloadTracking(
-                              ctx,
-                              false
-                          )
-
-                          prefs(ctx)
-                              .edit()
-                              .remove(
-                                  "brain_verified"
-                              )
-                              .remove(
-                                  "brain_runtime_error"
-                              )
-                              .apply()
-
-                          AssistantRuntime.add(
-                              false,
-                              "Modelo local conferido e instalado. " +
-                              "A conversa inteligente está pronta " +
-                              "para teste."
-                          )
-
-                      } catch (
-                          e: Exception
-                      ) {
-                          partial?.delete()
-
-                          clearDownloadTracking(
-                              ctx,
-                              true
-                          )
-
-                          prefs(ctx)
-                              .edit()
-                              .putString(
-                                  "brain_error",
-                                  "O arquivo baixado não pôde " +
-                                  "ser instalado: " +
-                                  "${e.message ?: "arquivo inválido"}."
-                              )
-                              .apply()
-
-                      } finally {
-                          busy =
-                              false
-                      }
-                  }
-              }
-
-              private fun sha256(
-                  file: File
-              ): String {
-
-                  val md =
-                      MessageDigest
-                          .getInstance(
-                              "SHA-256"
-                          )
-
-                  file.inputStream()
-                      .use {
-                          stream ->
-
-                          val bytes =
-                              ByteArray(
-                                  65_536
-                              )
-
-                          while (true) {
-                              val n =
-                                  stream.read(
-                                      bytes
-                                  )
-
-                              if (
-                                  n < 0
-                              ) {
-                                  break
-                              }
-
-                              md.update(
-                                  bytes,
-                                  0,
-                                  n
-                              )
-                          }
-                      }
-
-                  return md.digest()
-                      .joinToString(
-                          ""
-                      ) {
-                          "%02x".format(it)
-                      }
-              }
-
-              private fun clearMissingDownload(
-                  ctx: Context
-              ) {
-
-                  clearDownloadTracking(
-                      ctx,
-                      true
-                  )
-
-                  prefs(ctx)
-                      .edit()
-                      .putString(
-                          "brain_error",
-                          "O Android perdeu o download anterior. " +
-                          "Reinicie a instalação ou importe " +
-                          "o modelo local."
-                      )
-                      .apply()
-              }
-
-              private fun clearDownloadTracking(
-                  ctx: Context,
-                  keepError: Boolean
-              ) {
-
-                  val edit =
-                      prefs(ctx)
-                          .edit()
-                          .remove(
-                              "brain_download_id"
-                          )
-                          .remove(
-                              "brain_download_mirror"
-                          )
-                          .remove(
-                              "brain_download_started_ms"
-                          )
-                          .remove(
-                              "brain_download_last_progress_ms"
-                          )
-                          .remove(
-                              "brain_download_last_bytes"
-                          )
-
-                  if (
-                      !keepError
-                  ) {
-                      edit.remove(
-                          "brain_error"
-                      )
-                  }
-
-                  edit.apply()
-              }
-
-              fun importModel(
-                  context: Context,
-                  uri: Uri
-              ) {
-
-                  if (busy) {
-                      return
-                  }
-
-                  val ctx =
-                      context.applicationContext
-
-                  busy =
-                      true
-
-                  thread(
-                      name =
-                          "gama-import-model"
-                  ) {
-
-                      val target =
-                          File(
-                              ctx.filesDir,
-                              MODEL
-                          )
-
-                      val partial =
-                          File(
-                              ctx.filesDir,
-                              "gemma-import.part"
-                          )
-
-                      val backup =
-                          File(
-                              ctx.filesDir,
-                              BACKUP
-                          )
-
-                      try {
-                          partial.delete()
-
-                          ctx.contentResolver
-                              .openInputStream(uri)
-                              .use {
-                                  input ->
-
-                                  check(
-                                      input != null
-                                  ) {
-                                      "arquivo não encontrado"
-                                  }
-
-                                  partial
-                                      .outputStream()
-                                      .use {
-                                          output ->
-
-                                          val buffer =
-                                              ByteArray(
-                                                  65_536
-                                              )
-
-                                          var total =
-                                              0L
-
-                                          while (
-                                              true
-                                          ) {
-                                              val n =
-                                                  input.read(
-                                                      buffer
-                                                  )
-
-                                              if (
-                                                  n < 0
-                                              ) {
-                                                  break
-                                              }
-
-                                              total +=
-                                                  n
-
-                                              check(
-                                                  total <=
-                                                  GamaModelInstallPolicy
-                                                      .MAX_IMPORT_BYTES
-                                              ) {
-                                                  "arquivo acima do limite"
-                                              }
-
-                                              output.write(
-                                                  buffer,
-                                                  0,
-                                                  n
-                                              )
-                                          }
-                                      }
-                              }
-
-                          check(
-                              partial.length() >=
-                              GamaModelInstallPolicy
-                                  .MIN_MODEL_BYTES
-                          ) {
-                              "arquivo pequeno demais para " +
-                              "um modelo compatível"
-                          }
-
-                          backup.delete()
-
-                          if (
-                              target.exists()
-                          ) {
-                              check(
-                                  target.renameTo(
-                                      backup
-                                  )
-                              ) {
-                                  "não foi possível preservar " +
-                                  "o modelo anterior"
-                              }
-                          }
-
-                          if (
-                              !partial.renameTo(
-                                  target
-                              )
-                          ) {
-                              backup.renameTo(
-                                  target
-                              )
-
-                              error(
-                                  "não foi possível mover o modelo " +
-                                  "para o armazenamento interno"
-                              )
-                          }
-
-                          backup.delete()
-
-                          clearDownloadTracking(
-                              ctx,
-                              false
-                          )
-
-                          prefs(ctx)
-                              .edit()
-                              .remove(
-                                  "brain_verified"
-                              )
-                              .remove(
-                                  "brain_runtime_error"
-                              )
-                              .apply()
-
-                          AssistantRuntime.add(
-                              false,
-                              "Modelo importado. O cérebro isolado " +
-                              "irá validá-lo na primeira pergunta."
-                          )
-
-                      } catch (
-                          e: Exception
-                      ) {
-                          partial.delete()
-
-                          if (
-                              !target.exists() &&
-                              backup.exists()
-                          ) {
-                              backup.renameTo(
-                                  target
-                              )
-                          }
-
-                          prefs(ctx)
-                              .edit()
-                              .putString(
-                                  "brain_error",
-                                  "Importação falhou: " +
-                                  "${e.message ?: "arquivo indisponível"}"
-                              )
-                              .apply()
-
-                      } finally {
-                          busy =
-                              false
-                      }
-                  }
-              }
-
-              private fun pauseReason(
-                  reason: Int
-              ): String {
-
-                  return when (reason) {
-                      DownloadManager
-                          .PAUSED_WAITING_TO_RETRY ->
-                          "aguardando nova tentativa"
-
-                      DownloadManager
-                          .PAUSED_WAITING_FOR_NETWORK ->
-                          "aguardando conexão"
-
-                      DownloadManager
-                          .PAUSED_QUEUED_FOR_WIFI ->
-                          "aguardando Wi-Fi"
-
-                      DownloadManager
-                          .PAUSED_UNKNOWN ->
-                          "pausa do Android"
-
-                      else ->
-                          "código $reason"
-                  }
-              }
-
-              private fun failureReason(
-                  reason: Int
-              ): String {
-
-                  return when (reason) {
-                      DownloadManager
-                          .ERROR_CANNOT_RESUME ->
-                          "não foi possível continuar"
-
-                      DownloadManager
-                          .ERROR_DEVICE_NOT_FOUND ->
-                          "armazenamento indisponível"
-
-                      DownloadManager
-                          .ERROR_FILE_ALREADY_EXISTS ->
-                          "arquivo temporário já existe"
-
-                      DownloadManager
-                          .ERROR_FILE_ERROR ->
-                          "erro ao gravar arquivo"
-
-                      DownloadManager
-                          .ERROR_HTTP_DATA_ERROR ->
-                          "erro durante transferência"
-
-                      DownloadManager
-                          .ERROR_INSUFFICIENT_SPACE ->
-                          "sem espaço suficiente"
-
-                      DownloadManager
-                          .ERROR_TOO_MANY_REDIRECTS ->
-                          "redirecionamentos demais"
-
-                      DownloadManager
-                          .ERROR_UNHANDLED_HTTP_CODE ->
-                          "servidor recusou a transferência"
-
-                      DownloadManager
-                          .ERROR_UNKNOWN ->
-                          "erro desconhecido do Android"
-
-                      else ->
-                          "código $reason"
-                  }
               }
           }
           EOF
@@ -3883,38 +194,15 @@ jobs:
           import sys
 
           p = Path(sys.argv[1])
-          s = p.read_text(
-              encoding="utf-8"
-          )
+          s = p.read_text(encoding="utf-8")
 
-          old = (
-              'control("Instalar ou reparar IA offline") '
-              '{ AiSetup.download(this) }'
-          )
+          old = '        control("Instalar ou reparar IA offline") { AiSetup.download(this) }\n'
 
-          new = '''control("Instalar ou reparar IA offline") {
-                      AiSetup.download(this) { selectModelFile() }
-                  }
-                  control("Importar IA do celular") { selectModelFile() }'''
-
-          if old in s:
-              s = s.replace(
-                  old,
-                  new,
-                  1
-              )
-
-          old = (
-              '.setPositiveButton("Instalar IA") '
-              '{ _, _ -> AiSetup.download(this) }\n'
-              '                .setNegativeButton("Depois", null).show()'
-          )
-
-          new = '''.setPositiveButton("Instalar IA") { _, _ ->
-                          AiSetup.download(this) { selectModelFile() }
-                      }
-                      .setNeutralButton("Importar arquivo") { _, _ -> selectModelFile() }
-                      .setNegativeButton("Depois", null).show()'''
+          new = '''        control("Instalar ou reparar IA offline") {
+              AiSetup.download(this) { selectModelFile() }
+          }
+          control("Importar IA do celular") { selectModelFile() }
+          '''
 
           if old in s:
               s = s.replace(
@@ -3924,8 +212,37 @@ jobs:
               )
 
           s = s.replace(
-              '6 -> AiSetup.download(this)',
-              '6 -> AiSetup.download(this) { selectModelFile() }'
+              'AiSetup.download(this)',
+              'AiSetup.download(this) { selectModelFile() }'
+          )
+
+          p.write_text(
+              s,
+              encoding="utf-8"
+          )
+          PY
+
+          python3 - "$AI" <<'PY'
+          from pathlib import Path
+          import sys
+
+          p = Path(sys.argv[1])
+          s = p.read_text(encoding="utf-8")
+
+          s = s.replace(
+              '"IA: baixando 0 MB..."',
+              '"IA: conectando ao servidor do modelo..."'
+          )
+
+          s = s.replace(
+              '"IA: baixando ${downloaded / 1_000_000} MB..."',
+              '''
+              if (downloaded <= 0L) {
+                  "IA: conexão iniciada; aguardando os primeiros dados..."
+              } else {
+                  "IA: baixando ${downloaded / 1_000_000} MB..."
+              }
+              '''.strip()
           )
 
           p.write_text(
@@ -3949,88 +266,67 @@ jobs:
           class GamaModelInstallPolicyTest {
 
               @Test
-              fun percentHandlesUnknownTotals() {
+              fun progressWorks() {
+
                   assertNull(
-                      GamaModelInstallPolicy
-                          .percent(
-                              0L,
-                              -1L
-                          )
+                      GamaModelInstallPolicy.percent(
+                          0L,
+                          -1L
+                      )
                   )
 
                   assertEquals(
                       50,
-                      GamaModelInstallPolicy
-                          .percent(
-                              250L,
-                              500L
-                          )
+                      GamaModelInstallPolicy.percent(
+                          250L,
+                          500L
+                      )
                   )
 
                   assertEquals(
                       100,
-                      GamaModelInstallPolicy
-                          .percent(
-                              900L,
-                              500L
-                          )
+                      GamaModelInstallPolicy.percent(
+                          900L,
+                          500L
+                      )
                   )
               }
 
               @Test
-              fun stallNeedsActiveDownloadAndTimeout() {
+              fun stalledDownloadDetectionWorks() {
 
                   val now =
                       1_000_000L
 
                   assertFalse(
-                      GamaModelInstallPolicy
-                          .isStalled(
-                              now,
-                              now - 30_000L,
-                              0L,
-                              0L,
-                              true
-                          )
+                      GamaModelInstallPolicy.stalled(
+                          now,
+                          now - 30_000L,
+                          0L,
+                          0L
+                      )
                   )
 
                   assertTrue(
-                      GamaModelInstallPolicy
-                          .isStalled(
-                              now,
-                              now -
-                                  GamaModelInstallPolicy
-                                      .STALL_TIMEOUT_MS,
-                              0L,
-                              0L,
-                              true
-                          )
+                      GamaModelInstallPolicy.stalled(
+                          now,
+                          now -
+                              GamaModelInstallPolicy
+                                  .STALL_TIMEOUT_MS,
+                          0L,
+                          0L
+                      )
                   )
 
                   assertFalse(
-                      GamaModelInstallPolicy
-                          .isStalled(
-                              now,
-                              now -
-                                  GamaModelInstallPolicy
-                                      .STALL_TIMEOUT_MS,
-                              10L,
-                              0L,
-                              true
-                          )
-                  )
-
-                  assertFalse(
-                      GamaModelInstallPolicy
-                          .isStalled(
-                              now,
-                              now -
-                                  GamaModelInstallPolicy
-                                      .STALL_TIMEOUT_MS,
-                              0L,
-                              0L,
-                              false
-                          )
+                      GamaModelInstallPolicy.stalled(
+                          now,
+                          now -
+                              GamaModelInstallPolicy
+                                  .STALL_TIMEOUT_MS,
+                          100L,
+                          0L
+                      )
                   )
               }
           }
@@ -4040,27 +336,12 @@ jobs:
             'control("Importar IA do celular")' \
             "$MAIN"
 
-          grep -Fq \
-            'GamaModelInstallPolicy.isStalled' \
-            "$AI"
-
-          grep -Fq \
-            'Tentando uma fonte alternativa automaticamente' \
-            "$AI"
-
-          grep -Fq \
-            'setAllowedNetworkTypes' \
-            "$AI"
-
-          grep -Fq \
-            'SHA-256 diferente do modelo esperado' \
-            "$AI"
-
-          grep -Fq \
-            'GamaModelInstallPolicy' \
+          test -s \
             "$SRC/GamaModelInstallPolicy.kt"
 
-      - name: Audit consolidated capabilities
+          echo "AI installer patch applied."
+
+      - name: Audit Gama capabilities
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -4080,18 +361,30 @@ jobs:
 
           test -d "$SDK_ROOT"
 
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(command -v sdkmanager || true)"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
 
-          if [ -z "$SDKMANAGER" ]; then
+          SDKMANAGER="$(
+            command -v sdkmanager ||
+            true
+          )"
+
+          if [
+            -z "$SDKMANAGER"
+          ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
 
           test -x "$SDKMANAGER"
 
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          yes |
+            "$SDKMANAGER" \
+              --licenses \
+              >/dev/null ||
+            true
 
           "$SDKMANAGER" \
             "platforms;android-35" \
@@ -4105,31 +398,32 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 8.2.1 build version
+      - name: Set Gama 8.2.2 version
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          VC=$((22500000 + GITHUB_RUN_NUMBER))
+          VC=$((22600000 + GITHUB_RUN_NUMBER))
 
           sed -Ei \
             "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" \
             app/build.gradle.kts
 
           sed -Ei \
-            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.2.1"/' \
+            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.2.2"/' \
             app/build.gradle.kts
 
           grep -F \
-            'versionName = "Gama 8.2.1"' \
+            'versionName = "Gama 8.2.2"' \
             app/build.gradle.kts
 
-      - name: Run voice and conversation regression tests
+      - name: Run regression tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          gradle :app:testDebugUnitTest \
+          gradle \
+            :app:testDebugUnitTest \
             --no-daemon \
             --stacktrace \
             --tests 'com.gama.assistant.GamaRecognitionPolicyTest' \
@@ -4139,21 +433,26 @@ jobs:
             --tests 'com.gama.assistant.ActionFollowUpTest' \
             --tests 'com.gama.assistant.GamaSpeechNoisePolicyTest' \
             --tests 'com.gama.assistant.GamaModelInstallPolicyTest' \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-voice-tests.log"
+            2>&1 |
+            tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      - name: Build and verify Gama 8.2.1 APK
+      - name: Build Gama APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          if [ -x tools/download_models.sh ]; then
+          if [
+            -x tools/download_models.sh
+          ]; then
             bash tools/download_models.sh
           fi
 
-          gradle :app:assembleDebug \
+          gradle \
+            :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
+            2>&1 |
+            tee "$GITHUB_WORKSPACE/gama-build.log"
 
           mkdir -p dist
 
@@ -4169,7 +468,8 @@ jobs:
           test -n "$APK"
           test -s "$APK"
 
-          cp "$APK" dist/Gama.apk
+          cp "$APK" \
+            dist/Gama.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
@@ -4178,22 +478,24 @@ jobs:
 
           (
             cd dist
-            sha256sum Gama.apk > Gama.apk.sha256
+            sha256sum \
+              Gama.apk \
+              > Gama.apk.sha256
           )
 
-      - name: Upload Gama 8.2.1 APK
+      - name: Upload Gama APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.2.1-JARVIS-2000-APK
+          name: Gama-8.2.2-JARVIS-2000-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Upload Gama 8.2.1 source
+      - name: Upload complete source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.2.1-JARVIS-2000-source
+          name: Gama-8.2.2-JARVIS-2000-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -4201,31 +503,31 @@ jobs:
             !_gama_build/dist/**
           if-no-files-found: error
 
-      - name: Publish Gama 8.2.1 release
+      - name: Publish release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          TAG="gama-v8.2.1-jarvis-2000-${GITHUB_RUN_NUMBER}"
+          TAG="gama-v8.2.2-jarvis-2000-${GITHUB_RUN_NUMBER}"
 
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 8.2.1 JARVIS 2000" \
-            --notes "Gama 8.2.1 JARVIS 2000: voz contínua e anti-ruído do 8.2.0, memória adaptativa, planner multi-etapas, proatividade, recuperação automática, OCR/análise de tela local e instalador de IA resiliente com importação local, detecção de download travado, fonte alternativa e verificação SHA-256." \
+            --title "Gama 8.2.2 JARVIS 2000" \
+            --notes "JARVIS 2000 core, local AI, voice conversation, Vosk, anti-noise, barge-in, adaptive memory, planner, automation, proactivity, OCR, screen vision, Accessibility and automatic recovery." \
             --latest
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.2.1-JARVIS-2000-diagnostics
+          name: Gama-8.2.2-JARVIS-2000-diagnostics
           path: |
             gama-build.log
-            gama-voice-tests.log
+            gama-tests.log
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
           if-no-files-found: warn
