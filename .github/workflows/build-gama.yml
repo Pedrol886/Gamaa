@@ -1,4 +1,4 @@
-name: Build Gama 8.3.0 JARVIS Tools APK
+name: Build Gama 8.3.1 JARVIS Tools APK
 
 on:
   workflow_dispatch:
@@ -12,28 +12,46 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-8-3-0-${{ github.ref }}
+  group: gama-8-3-1-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
     env:
+      # Source aprovado: build #123
       GAMA_BASE_RUN_ID: "37119165969"
       GAMA_BASE_ARTIFACT: "Gama-8.2.2-JARVIS-2000-source"
 
+      # Commit do build #124.
+      # O patch 8.3.0 já está embutido naquele workflow.
+      GAMA_PATCH_COMMIT: "3578948ddae7c94a76602bac5ab08d0dd4478f4f"
+
     steps:
-      - name: Checkout repository
+
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Restore verified Gama 8.2.2 source
+      # ============================================================
+      # RESTAURA A BASE QUE JÁ COMPILOU
+      # ============================================================
+
+      - name: Restore verified Gama source from build 123
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          echo "Restoring verified Gama source..."
+
           rm -rf _gama_build
           mkdir -p _gama_build
 
@@ -42,71 +60,382 @@ jobs:
             --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
 
+          echo "Checking restored project..."
+
+          test -s _gama_build/settings.gradle.kts
+          test -s _gama_build/build.gradle.kts
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaAdaptiveMemory.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaRecoveryCoordinator.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaVisionCore.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/LocalBrain.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/AiSetup.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaModelInstallPolicy.kt
 
-      - name: Verify 8.2.2 base
+          SRC="_gama_build/app/src/main/java/com/gama/assistant"
+
+          test -s "$SRC/GamaService.kt"
+          test -s "$SRC/MainActivity.kt"
+          test -s "$SRC/LocalBrain.kt"
+          test -s "$SRC/AiSetup.kt"
+          test -s "$SRC/GamaModelInstallPolicy.kt"
+          test -s "$SRC/GamaVisionCore.kt"
+          test -s "$SRC/GamaAdaptiveMemory.kt"
+          test -s "$SRC/GamaRecoveryCoordinator.kt"
+          test -s "$SRC/GamaSuperAssistantCore.kt"
+          test -s "$SRC/GamaAutomationEngine.kt"
+          test -s "$SRC/GamaInternetHub.kt"
+          test -s "$SRC/GamaOnlineRouter.kt"
+          test -s "$SRC/GamaScreenContextService.kt"
+          test -s "$SRC/ZevronPlanner.kt"
+          test -s "$SRC/ZevronCalendarFlow.kt"
+          test -s "$SRC/ZevronSystemControl.kt"
+
+          echo "Verified Gama 8.2.2 source restored."
+
+      # ============================================================
+      # CONFERE SE PEGAMOS MESMO A BASE CERTA
+      # ============================================================
+
+      - name: Verify build 123 JARVIS base
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
           SRC="app/src/main/java/com/gama/assistant"
 
-          grep -Fq 'GAMA2000_LOCAL_VISION_ROUTER' "$SRC/GamaService.kt"
-          grep -Fq 'ACTION_UI_PULSE' "$SRC/GamaService.kt"
-          grep -Fq 'GamaAdaptiveMemory' "$SRC/GamaSuperAssistantCore.kt"
-          grep -Fq 'GamaRecoveryCoordinator.nextDelayMs(' "$SRC/GamaService.kt"
-          grep -Fq 'GamaMissionStore' "$SRC/GamaService.kt"
-          grep -Fq 'GamaProactiveBridge' "$SRC/GamaService.kt"
-          grep -Fq 'GamaAutomationEngine' "$SRC/GamaService.kt"
-          grep -Fq 'interruptSpeechForBargeIn' "$SRC/GamaService.kt"
-          grep -Fq 'GamaModelInstallPolicy.isStalled(' "$SRC/AiSetup.kt"
-          grep -Fq 'control("Importar IA do celular")' "$SRC/MainActivity.kt"
-          grep -Fq 'LlmInference' "$SRC/LocalBrain.kt"
-          grep -Fq 'implementation("com.google.mediapipe:tasks-genai:0.10.27")' app/build.gradle.kts
-          grep -Fq 'implementation("com.google.mlkit:text-recognition:16.0.1")' app/build.gradle.kts
+          required_checks=(
+            "GAMA2000_LOCAL_VISION_ROUTER|$SRC/GamaService.kt"
+            "ACTION_UI_PULSE|$SRC/GamaService.kt"
+            "GamaAdaptiveMemory|$SRC/GamaSuperAssistantCore.kt"
+            "GamaRecoveryCoordinator.nextDelayMs(|$SRC/GamaService.kt"
+            "GamaMissionStore|$SRC/GamaService.kt"
+            "GamaProactiveBridge|$SRC/GamaService.kt"
+            "GamaAutomationEngine|$SRC/GamaService.kt"
+            "interruptSpeechForBargeIn|$SRC/GamaService.kt"
+            "GamaModelInstallPolicy.isStalled(|$SRC/AiSetup.kt"
+            "control(\"Importar IA do celular\")|$SRC/MainActivity.kt"
+            "LlmInference|$SRC/LocalBrain.kt"
+          )
 
-          echo "Gama 8.2.2 base verified."
+          for entry in "${required_checks[@]}"; do
+            needle="${entry%%|*}"
+            file="${entry#*|}"
 
-      - name: Apply Gama 8.3.0 JARVIS reliability patch
+            if ! grep -Fq "$needle" "$file"; then
+              echo "::error::Base validation failed."
+              echo "::error::Missing '$needle' in $file"
+              exit 1
+            fi
+          done
+
+          grep -Fq \
+            'implementation("com.google.mediapipe:tasks-genai:0.10.27")' \
+            app/build.gradle.kts
+
+          grep -Fq \
+            'implementation("com.google.mlkit:text-recognition:16.0.1")' \
+            app/build.gradle.kts
+
+          echo "Build 123 JARVIS base verified."
+
+      # ============================================================
+      # RECUPERA O PATCH QUE JÁ ESTAVA NO #124
+      #
+      # Assim você não precisa colar aquele Base64 enorme outra vez.
+      # ============================================================
+
+      - name: Recover Gama 8.3 patch from build 124 commit
+        run: |
+          set -euo pipefail
+
+          echo "Reading patch from commit:"
+          echo "$GAMA_PATCH_COMMIT"
+
+          git cat-file -e "${GAMA_PATCH_COMMIT}^{commit}"
+
+          git show \
+            "${GAMA_PATCH_COMMIT}:.github/workflows/build-gama.yml" \
+            > /tmp/gama-build-124.yml
+
+          test -s /tmp/gama-build-124.yml
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import gzip
+
+          workflow = Path("/tmp/gama-build-124.yml").read_text(
+              encoding="utf-8"
+          )
+
+          begin_marker = (
+              "cat > /tmp/gama-8.3.0.patch.gz.b64 "
+              "<<'PATCH64'"
+          )
+
+          inside = False
+          chunks = []
+
+          for raw_line in workflow.splitlines():
+              line = raw_line.strip()
+
+              if not inside:
+                  if begin_marker in raw_line:
+                      inside = True
+                  continue
+
+              if line == "PATCH64":
+                  break
+
+              if line:
+                  chunks.append(line)
+
+          if not inside:
+              raise SystemExit(
+                  "Could not locate the Gama 8.3 patch in build #124."
+              )
+
+          encoded = "".join(chunks)
+
+          if len(encoded) < 1000:
+              raise SystemExit(
+                  "Recovered patch data is unexpectedly small."
+              )
+
+          try:
+              compressed = base64.b64decode(
+                  encoded,
+                  validate=True
+              )
+
+              patch = gzip.decompress(compressed)
+
+          except Exception as exc:
+              raise SystemExit(
+                  f"Could not decode Gama patch: {exc}"
+              )
+
+          if b"GamaCriticalCommandPolicy.kt" not in patch:
+              raise SystemExit(
+                  "Recovered patch is not the expected Gama 8.3 patch."
+              )
+
+          if b"GamaInternetHub.kt" not in patch:
+              raise SystemExit(
+                  "Internet patch is missing."
+              )
+
+          if b"GamaScreenContextService.kt" not in patch:
+              raise SystemExit(
+                  "Screen-control patch is missing."
+              )
+
+          path = Path("/tmp/gama-8.3.0.patch")
+          path.write_bytes(patch)
+
+          print(
+              f"Recovered Gama patch: "
+              f"{len(patch)} bytes."
+          )
+          PY
+
+          test -s /tmp/gama-8.3.0.patch
+
+      # ============================================================
+      # APLICA O PATCH
+      #
+      # CORREÇÃO PRINCIPAL DO ERRO DO #124:
+      # não usa mais git apply.
+      # ============================================================
+
+      - name: Validate Gama 8.3 patch before applying
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          cat > /tmp/gama-8.3.0.patch.gz.b64 <<'PATCH64'
-          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
-          PATCH64
+          echo "Dry-running complete Gama patch..."
 
-          base64 --decode /tmp/gama-8.3.0.patch.gz.b64 | gzip -dc > /tmp/gama-8.3.0.patch
-          git apply --check /tmp/gama-8.3.0.patch
-          git apply /tmp/gama-8.3.0.patch
+          patch \
+            --batch \
+            --forward \
+            --dry-run \
+            -p1 \
+            < /tmp/gama-8.3.0.patch
 
-          SRC="app/src/main/java/com/gama/assistant"
-          TEST="app/src/test/java/com/gama/assistant"
+          echo "Patch dry-run successful."
 
-          test -s "$SRC/GamaCriticalCommandPolicy.kt"
-          test -s "$TEST/GamaCriticalCommandPolicyTest.kt"
-          grep -Fq 'continuePlanAfterToolAction(360L)' "$SRC/GamaService.kt"
-          grep -Fq 'GamaCriticalCommandPolicy.isLockScreen' "$SRC/GamaService.kt"
-          grep -Fq 'dispatchGesture' "$SRC/GamaScreenContextService.kt"
-          grep -Fq 'Mode.LIVE_SEARCH' "$SRC/GamaOnlineRouter.kt"
-          grep -Fq 'fun liveSearch(query: String)' "$SRC/GamaInternetHub.kt"
-          grep -Fq '15 horas' "$TEST/ZevronCalendarFlowTest.kt"
-          grep -Fq 'lockThenRestBecomesPlan' "$TEST/ZevronPlannerTest.kt"
-
-          echo "Gama 8.3.0 reliability patch applied."
-
-      - name: Audit consolidated capabilities
+      - name: Apply Gama 8.3 reliability patch
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
+          echo "Applying complete Gama patch..."
+
+          patch \
+            --batch \
+            --forward \
+            -p1 \
+            < /tmp/gama-8.3.0.patch
+
+          echo "Patch applied."
+
+      # ============================================================
+      # CONFERE TODAS AS MUDANÇAS QUE VOCÊ PEDIU
+      # ============================================================
+
+      - name: Verify Gama 8.3 JARVIS changes
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          src = Path(
+              "app/src/main/java/com/gama/assistant"
+          )
+
+          tests = Path(
+              "app/src/test/java/com/gama/assistant"
+          )
+
+          required_files = [
+              src / "GamaCriticalCommandPolicy.kt",
+              src / "GamaInternetHub.kt",
+              src / "GamaOnlineRouter.kt",
+              src / "GamaRecognitionPolicy.kt",
+              src / "GamaScreenContextService.kt",
+              src / "GamaService.kt",
+              src / "GamaVisionCore.kt",
+              src / "ZevronCalendarFlow.kt",
+              src / "ZevronPlanner.kt",
+              src / "ZevronSystemControl.kt",
+
+              tests / "GamaCriticalCommandPolicyTest.kt",
+              tests / "GamaOnlineRouterTest.kt",
+              tests / "ZevronCalendarFlowTest.kt",
+              tests / "ZevronPlannerTest.kt",
+              tests / "ZevronSystemControlTest.kt",
+          ]
+
+          for path in required_files:
+              if not path.is_file():
+                  raise SystemExit(
+                      f"Missing patched file: {path}"
+                  )
+
+              if path.stat().st_size == 0:
+                  raise SystemExit(
+                      f"Empty patched file: {path}"
+                  )
+
+          checks = {
+              src / "GamaCriticalCommandPolicy.kt": [
+                  "isLockScreen",
+                  "desbloque",
+                  "bloqueie",
+              ],
+
+              src / "GamaRecognitionPolicy.kt": [
+                  "GamaCriticalCommandPolicy.isLockScreen",
+              ],
+
+              src / "GamaService.kt": [
+                  "continuePlanAfterToolAction(360L)",
+                  "GamaCriticalCommandPolicy.isLockScreen",
+                  "GamaInternetHub.liveSearch",
+              ],
+
+              src / "GamaScreenContextService.kt": [
+                  "dispatchGesture",
+                  "swipeScroll",
+                  "ACTION_SCROLL_DOWN",
+                  "ACTION_SCROLL_UP",
+              ],
+
+              src / "GamaVisionCore.kt": [
+                  "leia isso",
+                  "o que aparece aqui",
+              ],
+
+              src / "GamaOnlineRouter.kt": [
+                  "LIVE_SEARCH",
+                  "horario de votacao",
+              ],
+
+              src / "GamaInternetHub.kt": [
+                  "fun liveSearch(query: String)",
+                  "duckduckgo",
+              ],
+
+              src / "ZevronCalendarFlow.kt": [
+                  "horas?",
+                  "meio dia",
+                  "meia noite",
+              ],
+
+              src / "ZevronPlanner.kt": [
+                  "ConversationSession.isGoodbye",
+                  "GamaCriticalCommandPolicy.isLockScreen",
+              ],
+
+              src / "ZevronSystemControl.kt": [
+                  "role a tela",
+                  "continue rolando",
+              ],
+
+              tests / "GamaCriticalCommandPolicyTest.kt": [
+                  "lockSurvivesSmallAsrErrors",
+                  "unlockIsNeverRecoveredAsLock",
+              ],
+
+              tests / "GamaOnlineRouterTest.kt": [
+                  "electionScheduleUsesLiveSearch",
+              ],
+
+              tests / "ZevronCalendarFlowTest.kt": [
+                  "numericTimeWithHorasIsRecognized",
+                  "15 horas",
+              ],
+
+              tests / "ZevronPlannerTest.kt": [
+                  "lockThenRestBecomesPlan",
+              ],
+
+              tests / "ZevronSystemControlTest.kt": [
+                  "role a tela",
+                  "leia a tela",
+              ],
+          }
+
+          for path, needles in checks.items():
+              content = path.read_text(
+                  encoding="utf-8"
+              )
+
+              for needle in needles:
+                  if needle.lower() not in content.lower():
+                      raise SystemExit(
+                          f"Validation failed: "
+                          f"{needle!r} missing from {path}"
+                      )
+
+          print(
+              "All Gama 8.3 JARVIS changes "
+              "validated successfully."
+          )
+          PY
+
+      # ============================================================
+      # AUDITOR DO GAMA
+      # ============================================================
+
+      - name: Audit consolidated Gama capabilities
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
           python3 tools/audit_gama.py
+
+      # ============================================================
+      # JAVA
+      # ============================================================
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -114,42 +443,89 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK 35
+      # ============================================================
+      # ANDROID SDK
+      # ============================================================
+
+      - name: Configure Android SDK 35
         run: |
           set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          test -d "$SDK_ROOT"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(command -v sdkmanager || true)"
+          SDK_ROOT="${
+            ANDROID_SDK_ROOT:-${
+              ANDROID_HOME:-/usr/local/lib/android/sdk
+            }
+          }"
+
+          test -d "$SDK_ROOT"
+
+          echo "ANDROID_HOME=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
+
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
+
+          SDKMANAGER="$(
+            command -v sdkmanager || true
+          )"
+
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
 
           test -x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-          test -x "$SDK_ROOT/build-tools/35.0.0/apksigner"
+
+          yes | "$SDKMANAGER" --licenses \
+            >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+          test -x \
+            "$SDK_ROOT/build-tools/35.0.0/apksigner"
+
+      # ============================================================
+      # GRADLE
+      # ============================================================
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 8.3.0 build version
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          VC=$((22700000 + GITHUB_RUN_NUMBER))
-          sed -Ei "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" app/build.gradle.kts
-          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.3.0"/' app/build.gradle.kts
-          grep -F 'versionName = "Gama 8.3.0"' app/build.gradle.kts
+      # ============================================================
+      # VERSÃO
+      # ============================================================
 
-      - name: Run regression tests
+      - name: Set Gama 8.3.1 build version
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
+          VC=$((22800000 + GITHUB_RUN_NUMBER))
+
+          sed -Ei \
+            "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" \
+            app/build.gradle.kts
+
+          sed -Ei \
+            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.3.1"/' \
+            app/build.gradle.kts
+
+          grep -F \
+            'versionName = "Gama 8.3.1"' \
+            app/build.gradle.kts
+
+      # ============================================================
+      # TESTES
+      # ============================================================
+
+      - name: Run complete Gama regression tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
           gradle :app:testDebugUnitTest \
             --no-daemon \
             --stacktrace \
@@ -166,9 +542,14 @@ jobs:
             --tests 'com.gama.assistant.ZevronSystemControlTest' \
             --tests 'com.gama.assistant.GamaOnlineRouterTest' \
             --tests 'com.gama.assistant.FreshnessPolicyTest' \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      - name: Build and verify Gama 8.3.0 APK
+      # ============================================================
+      # APK
+      # ============================================================
+
+      - name: Build Gama 8.3.1 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -180,34 +561,69 @@ jobs:
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-build.log"
 
           mkdir -p dist
-          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          test -n "$APK"
-          test -s "$APK"
-          cp "$APK" dist/Gama.apk
+
+          APK="$(
+            find \
+              app/build/outputs/apk/debug \
+              -maxdepth 1 \
+              -type f \
+              -name '*.apk' \
+              -print \
+              -quit
+          )"
+
+          if [ -z "$APK" ]; then
+            echo "::error::Gradle finished but no APK was found."
+            exit 1
+          fi
+
+          if [ ! -s "$APK" ]; then
+            echo "::error::Generated APK is empty."
+            exit 1
+          fi
+
+          cp \
+            "$APK" \
+            dist/Gama.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
             --verbose \
             dist/Gama.apk
 
-          (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
+          (
+            cd dist
+            sha256sum Gama.apk \
+              > Gama.apk.sha256
+          )
 
-      - name: Upload Gama 8.3.0 APK
+          echo "Gama APK built successfully."
+
+      # ============================================================
+      # ARTEFATO APK
+      # ============================================================
+
+      - name: Upload Gama 8.3.1 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.3.0-JARVIS-TOOLS-APK
+          name: Gama-8.3.1-JARVIS-TOOLS-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Upload Gama 8.3.0 source
+      # ============================================================
+      # SOURCE
+      # ============================================================
+
+      - name: Upload Gama 8.3.1 source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.3.0-JARVIS-TOOLS-source
+          name: Gama-8.3.1-JARVIS-TOOLS-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -215,27 +631,36 @@ jobs:
             !_gama_build/dist/**
           if-no-files-found: error
 
-      - name: Publish Gama 8.3.0 release
+      # ============================================================
+      # RELEASE
+      # ============================================================
+
+      - name: Publish Gama 8.3.1 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v8.3.0-jarvis-tools-${GITHUB_RUN_NUMBER}"
+
+          TAG="gama-v8.3.1-jarvis-tools-${GITHUB_RUN_NUMBER}"
 
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 8.3.0 JARVIS Tools" \
-            --notes "Evolução sobre o source aprovado do run #123. Melhora reconhecimento do comando de bloqueio, executa sequências como bloquear e depois descansar, reforça rolagem por acessibilidade com gesto de fallback, permite OCR/leitura real da tela, entende horários naturais de agenda como 15 horas e consulta a Internet para perguntas atuais que exigem fonte fresca. Mantém IA offline, memória, conversa contínua, proatividade, automações e recuperação automática." \
+            --title "Gama 8.3.1 JARVIS Tools" \
+            --notes "Correção do build #124. Usa como base o source aprovado do #123 e reaplica de forma validada as melhorias de reconhecimento de voz, bloqueio de tela, comandos encadeados, leitura e rolagem de tela, agenda e pesquisa atual na Internet." \
             --latest
+
+      # ============================================================
+      # DIAGNÓSTICOS
+      # ============================================================
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.3.0-JARVIS-TOOLS-diagnostics
+          name: Gama-8.3.1-JARVIS-TOOLS-diagnostics
           path: |
             gama-build.log
             gama-tests.log
