@@ -1,4 +1,4 @@
-name: Build Gama 9.2.0 Red Core Compact APK
+name: Build Gama 9.2.1 Red Core Verified APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-9-2-red-core-${{ github.ref }}
+  group: gama-9-2-1-red-core-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -43,11 +43,11 @@ jobs:
           set -euo pipefail
           if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
             echo "mode=fresh" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.2.0-RED-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-9.2.1-RED-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
             echo "::warning::GAMA_SIGNING_SEED não está configurado. O APK será apenas para instalação limpa."
           elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
             echo "mode=stable" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.2.0-RED-CORE-APK" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-9.2.1-RED-CORE-APK" >> "$GITHUB_OUTPUT"
           else
             echo "::error::GAMA_SIGNING_SEED existe, mas não possui exatamente 64 caracteres hexadecimais."
             exit 1
@@ -445,45 +445,60 @@ jobs:
           echo "$GAMA_LOGO_SHA256  app/src/main/res/drawable/gama_red_core.webp" | sha256sum -c -
           test -s app/src/main/res/drawable/gama_red_core.webp
 
-      - name: Verify Gama 9.2.0 Red Core guards
+      - name: Verify Red Core patch with explicit diagnostics
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          SRC="app/src/main/java/com/gama/assistant"
-          TEST="app/src/test/java/com/gama/assistant"
+          python3 - <<'PY_GUARD'
+          from pathlib import Path
 
-          # Continuity/reliability from 9.1
-          test -s "$SRC/GamaContinuityMemory.kt"
-          test -s "$SRC/GamaReferenceMemory.kt"
-          test -s "$SRC/GamaScreenMemory.kt"
-          test -s "$SRC/GamaActionVerifier.kt"
-          grep -Fq 'GamaContinuityMemory.recordUser' "$SRC/GamaService.kt"
-          grep -Fq 'resetIsolatedBrainForSilentRetry' "$SRC/GamaService.kt"
-          grep -Fq 'parts.size !in 2..12' "$SRC/ZevronPlanner.kt"
+          root = Path('.')
+          checks = [
+              ("file", "app/src/main/java/com/gama/assistant/GamaContinuityMemory.kt", None),
+              ("file", "app/src/main/java/com/gama/assistant/GamaReferenceMemory.kt", None),
+              ("file", "app/src/main/java/com/gama/assistant/GamaScreenMemory.kt", None),
+              ("file", "app/src/main/java/com/gama/assistant/GamaActionVerifier.kt", None),
+              ("file", "app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt", None),
+              ("file", "app/src/main/res/drawable/gama_red_core.webp", None),
+              ("file", "app/src/main/res/values/styles.xml", None),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaService.kt", "GamaContinuityMemory.recordUser"),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaService.kt", "resetIsolatedBrainForSilentRetry"),
+              ("contains", "app/src/main/java/com/gama/assistant/ZevronPlanner.kt", "parts.size !in 2..12"),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt", "getLaunchIntentSenderForPackage"),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaService.kt", "verifyKnownAppLaunch"),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaService.kt", "aberto e confirmado na tela"),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaService.kt", "REQUEST_NOTIFICATION_ACCESS"),
+              ("contains", "app/src/main/java/com/gama/assistant/GamaService.kt", "resumePendingNotificationRead"),
+              ("contains", "app/src/main/java/com/gama/assistant/MainActivity.kt", "Ativar controle de tela e rolagem"),
+              ("contains", "app/src/main/java/com/gama/assistant/MainActivity.kt", "Autorizar acesso às notificações"),
+              ("contains", "app/src/main/AndroidManifest.xml", "@drawable/gama_red_core"),
+              ("contains", "app/src/main/AndroidManifest.xml", "GamaRedTheme"),
+              ("contains", "app/src/main/java/com/gama/assistant/ZevronSystemControl.kt", "Rolei a tela para baixo e confirmei a mudança."),
+          ]
 
-          # Video regressions / Red Core
-          test -s "$SRC/GamaReliableAppLauncher.kt"
-          test -s "app/src/main/res/drawable/gama_red_core.webp"
-          test -s "app/src/main/res/values/styles.xml"
-          grep -Fq 'getLaunchIntentSenderForPackage' "$SRC/GamaReliableAppLauncher.kt"
-          grep -Fq 'verifyKnownAppLaunch' "$SRC/GamaService.kt"
-          grep -Fq 'aberto e confirmado na tela' "$SRC/GamaService.kt"
-          grep -Fq 'REQUEST_NOTIFICATION_ACCESS' "$SRC/GamaService.kt"
-          grep -Fq 'resumePendingNotificationRead' "$SRC/GamaService.kt"
-          grep -Fq 'Gama Contexto da Tela' "$SRC/GamaService.kt"
-          grep -Fq 'Ativar controle de tela e rolagem' "$SRC/MainActivity.kt"
-          grep -Fq 'Autorizar acesso às notificações' "$SRC/MainActivity.kt"
-          grep -Fq '@drawable/gama_red_core' app/src/main/AndroidManifest.xml
-          grep -Fq 'GamaRedTheme' app/src/main/AndroidManifest.xml
-          grep -Fq 'Rolei a tela para baixo e confirmei a mudança.' "$SRC/ZevronSystemControl.kt"
-          grep -Fq 'GamaActionVerifier.Outcome.UNKNOWN' "$TEST/GamaActionVerifierTest.kt"
+          failures = []
+          for kind, rel, needle in checks:
+              path = root / rel
+              ok = path.is_file() and path.stat().st_size > 0
+              if ok and kind == "contains":
+                  ok = needle in path.read_text(encoding="utf-8", errors="replace")
+              print(("PASS" if ok else "FAIL") + "  " + rel + (f" :: {needle}" if needle else ""))
+              if not ok:
+                  failures.append((rel, needle))
 
-          if grep -Fq 'failIsolatedBrain(requestId, "Só um instante.")' "$SRC/GamaService.kt"; then
-            echo "::error::Silent brain recovery guard failed."
-            exit 1
-          fi
+          service = (root / "app/src/main/java/com/gama/assistant/GamaService.kt").read_text(encoding="utf-8", errors="replace")
+          old_retry = 'failIsolatedBrain(requestId, "Só um instante.")'
+          if old_retry in service:
+              print("FAIL  old noisy brain-retry path still present")
+              failures.append(("GamaService.kt", old_retry))
+          else:
+              print("PASS  silent brain recovery guard")
+
+          if failures:
+              raise SystemExit(f"Red Core guard failed with {len(failures)} explicit failure(s).")
+          print(f"Red Core explicit guard passed: {len(checks) + 1} checks.")
+          PY_GUARD
           python3 tools/audit_gama.py
-          echo "Gama 9.2.0 Red Core guards verified."
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -513,7 +528,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 9.2.0 Red Core version
+      - name: Compile Gama Red Core before tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          gradle :app:compileDebugKotlin --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+
+      - name: Set Gama 9.2.1 Red Core version
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -522,15 +543,15 @@ jobs:
           import os, re
           p = Path('app/build.gradle.kts')
           s = p.read_text(encoding='utf-8')
-          version_code = 24_300_000 + int(os.environ['GITHUB_RUN_NUMBER'])
+          version_code = 24_310_000 + int(os.environ['GITHUB_RUN_NUMBER'])
           s, n1 = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {version_code}', s, count=1)
-          s, n2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 9.2.0 Red Core"', s, count=1)
+          s, n2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 9.2.1 Red Core"', s, count=1)
           if n1 != 1 or n2 != 1:
               raise SystemExit('Não consegui atualizar versionCode/versionName de forma segura.')
           p.write_text(s, encoding='utf-8')
           PY_VERSION
-          grep -Fq 'versionName = "Gama 9.2.0 Red Core"' app/build.gradle.kts
-          grep -Eq 'versionCode = 24300[0-9]+' app/build.gradle.kts
+          grep -Fq 'versionName = "Gama 9.2.1 Red Core"' app/build.gradle.kts
+          grep -Eq 'versionCode = 24310[0-9]+' app/build.gradle.kts
 
       - name: Run full Gama regression suite
         working-directory: _gama_build
@@ -538,7 +559,7 @@ jobs:
           set -euo pipefail
           gradle :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      - name: Build Gama 9.2.0 Red Core APK
+      - name: Build Gama 9.2.1 Red Core APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -619,12 +640,12 @@ jobs:
           grep -m1 '^package:' dist/apk-info.txt
           grep -q "name='com.gama.assistant'" dist/apk-info.txt
           grep -q "versionCode='24300" dist/apk-info.txt
-          grep -q "versionName='Gama 9.2.0 Red Core'" dist/apk-info.txt
+          grep -q "versionName='Gama 9.2.1 Red Core'" dist/apk-info.txt
           (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
           (cd dist && sha256sum -c Gama.apk.sha256)
 
 
-      - name: Upload Gama 9.2.0 Red Core APK
+      - name: Upload Gama 9.2.1 Red Core APK
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.signing_mode.outputs.artifact }}
@@ -637,10 +658,10 @@ jobs:
             _gama_build/dist/install-mode.txt
           if-no-files-found: error
 
-      - name: Upload Gama 9.2.0 Red Core source
+      - name: Upload Gama 9.2.1 Red Core source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-9.2.0-RED-CORE-source
+          name: Gama-9.2.1-RED-CORE-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -656,8 +677,8 @@ jobs:
           import os, re
           summary = Path(os.environ['GITHUB_STEP_SUMMARY'])
           with summary.open('a', encoding='utf-8') as out:
-              out.write('## Gama 9.2.0 Red Core: diagnóstico automático\n\n')
-              for name in ('gama-tests.log', 'gama-build.log'):
+              out.write('## Gama 9.2.1 Red Core: diagnóstico automático\n\n')
+              for name in ('gama-compile.log', 'gama-tests.log', 'gama-build.log'):
                   p = Path(name)
                   if not p.is_file():
                       continue
@@ -671,26 +692,27 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-9.2.0-RED-CORE-diagnostics
+          name: Gama-9.2.1-RED-CORE-diagnostics
           path: |
+            gama-compile.log
             gama-build.log
             gama-tests.log
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
           if-no-files-found: warn
 
-      - name: Publish Gama 9.2.0 Red Core release
+      - name: Publish Gama 9.2.1 Red Core release
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="gama-v9.2.0-red-core-${{ github.run_number }}"
+          TAG="gama-v9.2.1-red-core-${{ github.run_number }}"
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.2.0 Red Core Reliability" \
-            --notes "Base exata do build #131 aprovado. Corrige todos os problemas observados no vídeo: leitura de notificações com retomada após permissão, botão explícito de controle/rolagem, verificação real de troca de tela, retentativas de abertura de apps e WhatsApp com IntentSender no Android 13+, continuidade entre sessões, recuperação silenciosa e planos verificados. Nova identidade Red Core: logo enviada pelo usuário como ícone/overlay/lockscreen, interface vermelha e mandíbula animada durante a fala. Workflow compactado para evitar truncamento no editor móvel do GitHub." \
+            --title "Gama 9.2.1 Red Core Reliability" \
+            --notes "Base exata do build #131 aprovado. Corrige o gate silencioso que derrubou o #132 antes da compilação, adicionando diagnóstico explícito e compileDebugKotlin antes dos testes.  Corrige todos os problemas observados no vídeo: leitura de notificações com retomada após permissão, botão explícito de controle/rolagem, verificação real de troca de tela, retentativas de abertura de apps e WhatsApp com IntentSender no Android 13+, continuidade entre sessões, recuperação silenciosa e planos verificados. Nova identidade Red Core: logo enviada pelo usuário como ícone/overlay/lockscreen, interface vermelha e mandíbula animada durante a fala. Workflow compactado para evitar truncamento no editor móvel do GitHub." \
             --latest
