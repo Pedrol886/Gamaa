@@ -1,4 +1,4 @@
-name: Build Gama 8.4.0 JARVIS Anti-Phantom APK
+name: Build Gama 9.0.0 JARVIS Supervisor APK
 
 on:
   workflow_dispatch:
@@ -12,17 +12,17 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-8-4-0-${{ github.ref }}
+  group: gama-9-0-0-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    timeout-minutes: 75
     env:
       GAMA_BASE_RUN_ID: "37128415732"
       GAMA_BASE_ARTIFACT: "Gama-8.3.3-JARVIS-TOOLS-source"
+      GAMA_PATCH_SHA256: "8b791bd630e92e424d35bf114626ebbf1eb189129044812e428b531082d0740f"
 
     steps:
       - name: Checkout repository
@@ -30,12 +30,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore successful Gama 8.3.3 source
+      - name: Restore verified Gama source from build 127
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           rm -rf _gama_build
           mkdir -p _gama_build
 
@@ -44,699 +43,219 @@ jobs:
             --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
 
+          SRC="_gama_build/app/src/main/java/com/gama/assistant"
+          TEST="_gama_build/app/src/test/java/com/gama/assistant"
+
+          test -s _gama_build/settings.gradle.kts
+          test -s _gama_build/build.gradle.kts
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
-
-          SRC="_gama_build/app/src/main/java/com/gama/assistant"
-
           test -s "$SRC/GamaService.kt"
           test -s "$SRC/ConversationSession.kt"
           test -s "$SRC/GamaRecognitionPolicy.kt"
           test -s "$SRC/GamaProactivePolicy.kt"
           test -s "$SRC/GamaNotificationListener.kt"
-          test -s "$SRC/GamaVisionCore.kt"
           test -s "$SRC/GamaScreenContextService.kt"
-          test -s "$SRC/GamaInternetHub.kt"
+          test -s "$SRC/ZevronAppTool.kt"
           test -s "$SRC/LocalBrain.kt"
+          test -s "$TEST/ZevronPlannerTest.kt"
 
-          echo "Gama 8.3.3 source restored from successful build #127."
+          grep -Fq 'GAMA2000_LOCAL_VISION_ROUTER' "$SRC/GamaService.kt"
+          grep -Fq 'continuePlanAfterToolAction' "$SRC/GamaService.kt"
+          grep -Fq 'GamaAdaptiveMemory' "$SRC/GamaSuperAssistantCore.kt"
+          grep -Fq 'GamaAutomationEngine' "$SRC/GamaService.kt"
+          grep -Fq 'interruptSpeechForBargeIn' "$SRC/GamaService.kt"
+          grep -Fq 'fun liveSearch(query: String)' "$SRC/GamaInternetHub.kt"
+          grep -Fq 'dispatchGesture' "$SRC/GamaScreenContextService.kt"
 
-      - name: Apply Gama 8.4.0 anti-phantom hotfix
+          echo "Gama source from successful build #127 verified."
+
+      - name: Verify bundled offline models
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           from pathlib import Path
+          import hashlib
 
-          root = Path(".")
-          src = root / "app/src/main/java/com/gama/assistant"
-          tests = root / "app/src/test/java/com/gama/assistant"
-
-          # =========================================================
-          # 1. GOODBYE POLICY
-          # =========================================================
-
-          path = src / "ConversationSession.kt"
-          text = path.read_text(encoding="utf-8")
-
-          start_marker = (
-              "        /** Only a deliberate goodbye closes "
-              "the continuous session. */"
-          )
-
-          end_marker = "        private fun stripAssistant"
-
-          if start_marker not in text:
-              raise SystemExit(
-                  "ConversationSession goodbye block not found."
-              )
-
-          start = text.index(start_marker)
-          end = text.index(end_marker, start)
-
-          replacement = '''        /** Only an explicit, deliberate goodbye closes the continuous session. */
-          fun isGoodbye(command: String): Boolean {
-              val c = stripAssistant(normalize(command))
-              return c in setOf(
-                  "tchau",
-                  "ate mais",
-                  "pode descansar",
-                  "pode descansa",
-                  "voce pode descansar",
-                  "pode ir descansar",
-                  "vai descansar",
-                  "va descansar",
-                  "pare de ouvir",
-                  "pode parar de ouvir",
-                  "encerrar conversa",
-                  "encerre a conversa",
-                  "encerra a conversa",
-                  "pode parar por agora",
-                  "pode encerrar por agora"
-              )
+          root = Path('app/src/main/assets')
+          strict = {
+              'model/Gr.fst': 'd81023936f5557c06930802b1db4880f56d6ac51b16ed4e5060ceba06895442c',
+              'model/HCLr.fst': '8b45be1fa72913d61e37ac0b411177803848f4cda7728f74139b39acd1c0cf36',
+              'model/final.mdl': '3e10e43ec01cf8d968bcc24c626a2eae2bfa77863bee82f36a554854afa1f147',
           }
 
-          '''
-
-          text = text[:start] + replacement + text[end:]
-          path.write_text(text, encoding="utf-8")
-
-          # =========================================================
-          # 2. SPEECH RECOGNITION POLICY
-          # =========================================================
-
-          path = src / "GamaRecognitionPolicy.kt"
-          text = path.read_text(encoding="utf-8")
-
-          old = '''            "sim", "nao", "pode", "confirmo", "pare", "cancele", "cancelar",
-                      "continue", "continua", "tchau", "descansa", "descanse",
-                      "pode descansar", "pode descansa"
-          '''
-
-          new = '''            "sim", "nao", "pode", "confirmo", "pare", "cancele", "cancelar",
-                      "continue", "continua", "tchau"
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Recognition short-control block not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          old = '''        if (text.isBlank()) return false
-                  if (GamaCriticalCommandPolicy.isLockScreen(text)) return true
-                  return commandSpeechStarted || recentVoiceEvidence || isShortControl(text)
-          '''
-
-          new = '''        if (text.isBlank()) return false
-                  if (GamaCriticalCommandPolicy.isLockScreen(text)) return true
-
-                  if (ConversationSession.isGoodbye(text)) {
-                      return commandSpeechStarted && recentVoiceEvidence
-                  }
-
-                  return commandSpeechStarted || recentVoiceEvidence || isShortControl(text)
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Recognition acceptance block not found."
-              )
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-          # =========================================================
-          # 3. PROACTIVE POLICY
-          #
-          # Repeated normal messages do not magically become urgent.
-          # =========================================================
-
-          path = src / "GamaProactivePolicy.kt"
-          text = path.read_text(encoding="utf-8")
-
-          old = '''        if (urgentTerms.any { normalize(it) in n }) return GamaEventHub.Priority.HIGH
-                  if (recentSameSender >= 1) return GamaEventHub.Priority.HIGH
-                  return GamaEventHub.Priority.NORMAL
-          '''
-
-          new = '''        if (urgentTerms.any { normalize(it) in n }) {
-                      return GamaEventHub.Priority.HIGH
-                  }
-
-                  return GamaEventHub.Priority.NORMAL
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Proactive priority block not found."
-              )
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-          # =========================================================
-          # 4. GAMA SERVICE
-          # =========================================================
-
-          path = src / "GamaService.kt"
-          text = path.read_text(encoding="utf-8")
-
-          # ---------------------------------------------------------
-          # Strict sleep grammar
-          # ---------------------------------------------------------
-
-          old = '''                    "[\\"pode descansar\\", \\"descanse\\", \\"descansa\\", \\"pode ir descansar\\", \\"vai descansar\\", \\"va descansar\\", \\"pare de ouvir\\", \\"pode parar de ouvir\\", \\"pode parar por agora\\", \\"encerrar conversa\\", \\"tchau\\", \\"ate mais\\", \\"[unk]\\"]"
-          '''
-
-          new = '''                    "[\\"pode descansar\\", \\"pode descansa\\", \\"voce pode descansar\\", \\"pode ir descansar\\", \\"vai descansar\\", \\"va descansar\\", \\"pare de ouvir\\", \\"pode parar de ouvir\\", \\"pode parar por agora\\", \\"encerrar conversa\\", \\"encerre a conversa\\", \\"tchau\\", \\"ate mais\\", \\"[unk]\\"]"
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Sleep recognizer grammar not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          # ---------------------------------------------------------
-          # Dedicated sleep recognizer
-          #
-          # Never closes on partial recognition anymore.
-          # ---------------------------------------------------------
-
-          old = '''                // Highest-priority conversation exit path. It runs before the
-                  // normal decoder/confidence gates, so "pode descansar" cannot
-                  // become a generic retry even in wind or crowd noise.
-                  val dedicatedSleep = sleepRecognizer
-                  if (conversation.active && transcription == null &&
-                      !ownerEnrollmentMode && !ownerRetryPending && dedicatedSleep != null) {
-                      val sleepEndpoint = dedicatedSleep.acceptWaveForm(buffer, read)
-                      var sleepText = ""
-                      if (sleepEndpoint) {
-                          sleepText = try { JSONObject(dedicatedSleep.result).optString("text") } catch (_: Exception) { "" }
-                      } else if (now - lastDedicatedSleepPartialAt >= 100L) {
-                          lastDedicatedSleepPartialAt = now
-                          sleepText = try { JSONObject(dedicatedSleep.partialResult).optString("partial") } catch (_: Exception) { "" }
-                      }
-                      val normalizedSleep = norm(sleepText)
-                      val restStem = normalizedSleep.split(" ").any {
-                          it.startsWith("descans") || it.startsWith("descanc") || it.startsWith("descenc")
-                      }
-                      val strongRestPhrase = restStem ||
-                          normalizedSleep.contains("pare de ouvir") ||
-                          normalizedSleep.contains("encerrar conversa")
-                      val acousticOk = !audioMetrics.windLikely &&
-                          (audioMetrics.speechLikely || audioMetrics.snrDb >= 2.0)
-                      if (ConversationSession.isGoodbye(sleepText) && (strongRestPhrase || acousticOk)) {
-                          dedicatedSleep.reset()
-                          wakeRecognizer?.reset()
-                          rec.reset()
-                          decoderActive = false
-                          lastPartial = ""
-                          preRoll = ByteArray(0)
-                          wakePreRoll = ByteArray(0)
-                          closeConversationForGoodbye()
-                          continue
-                      }
-                      if (sleepEndpoint) dedicatedSleep.reset()
-                  } else {
-                      dedicatedSleep?.reset()
-                  }
-          '''
-
-          new = '''                // Sleep is deliberately conservative.
-                  // A partial/background match can NEVER close the conversation.
-                  val dedicatedSleep = sleepRecognizer
-
-                  if (
-                      conversation.active &&
-                      transcription == null &&
-                      !ownerEnrollmentMode &&
-                      !ownerRetryPending &&
-                      dedicatedSleep != null
-                  ) {
-                      val sleepEndpoint =
-                          dedicatedSleep.acceptWaveForm(buffer, read)
-
-                      if (sleepEndpoint) {
-
-                          val sleepText = try {
-                              JSONObject(
-                                  dedicatedSleep.result
-                              ).optString("text")
-                          } catch (_: Exception) {
-                              ""
-                          }
-
-                          val acousticOk =
-                              GamaRecognitionPolicy.hasVoiceEvidence(
-                                  audioMetrics
-                              ) || audioMetrics.speechLikely
-
-                          if (
-                              acousticOk &&
-                              ConversationSession.isGoodbye(
-                                  sleepText
-                              )
-                          ) {
-                              dedicatedSleep.reset()
-                              wakeRecognizer?.reset()
-                              rec.reset()
-
-                              decoderActive = false
-                              lastPartial = ""
-
-                              preRoll = ByteArray(0)
-                              wakePreRoll = ByteArray(0)
-
-                              closeConversationForGoodbye()
-                              continue
-                          }
-
-                          dedicatedSleep.reset()
-                      }
-                  } else {
-                      dedicatedSleep?.reset()
-                  }
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Dedicated sleep block not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          # ---------------------------------------------------------
-          # Idle assistant is SILENT.
-          #
-          # Important events can be remembered, but they do not
-          # suddenly become speech when nobody called Gama.
-          # ---------------------------------------------------------
-
-          old = '''    private fun handleProactiveEvent(event: GamaEventHub.Event) {
-                  if (!running || event.priority != GamaEventHub.Priority.HIGH) return
-                  val now = SystemClock.elapsedRealtime()
-          '''
-
-          new = '''    private fun handleProactiveEvent(event: GamaEventHub.Event) {
-                  if (
-                      !running ||
-                      event.priority != GamaEventHub.Priority.HIGH
-                  ) return
-
-                  if (!conversation.active) {
-                      updateNotification(
-                          "Atividade importante registrada • diga Gama para conversar"
-                      )
-                      return
-                  }
-
-                  val wallAge =
-                      System.currentTimeMillis() - event.occurredAt
-
-                  if (wallAge !in 0L..20_000L) {
-                      return
-                  }
-
-                  val now = SystemClock.elapsedRealtime()
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Proactive event block not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          # ---------------------------------------------------------
-          # Never drain old proactive speech while idle.
-          # ---------------------------------------------------------
-
-          old = '''        if (proactiveEvents.isNotEmpty()) {
-                      scheduleProactiveDrain(1_200L)
-                  }
-          '''
-
-          new = '''        if (
-                      conversation.active &&
-                      proactiveEvents.isNotEmpty()
-                  ) {
-                      scheduleProactiveDrain(1_200L)
-                  } else if (!conversation.active) {
-                      proactiveEvents.clear()
-                  }
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Proactive drain block not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          # ---------------------------------------------------------
-          # Wake word must have actual speech evidence.
-          # ---------------------------------------------------------
-
-          old = '''                    if (VoicePolicy.hasWake(wakeText)) {
-                          dedicatedWake.reset()
-          '''
-
-          new = '''                    val wakeHasSpeech =
-                          GamaRecognitionPolicy.hasVoiceEvidence(
-                              audioMetrics
-                          ) || audioMetrics.speechLikely
-
-                      if (
-                          VoicePolicy.hasWake(wakeText) &&
-                          wakeHasSpeech
-                      ) {
-                          dedicatedWake.reset()
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Dedicated wake acceptance block not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          path.write_text(text, encoding="utf-8")
-
-          # =========================================================
-          # 5. NOTIFICATION DEDUPLICATION
-          # =========================================================
-
-          path = src / "GamaNotificationListener.kt"
-          text = path.read_text(encoding="utf-8")
-
-          anchor = '''    private fun captureSituationEvent(sbn: StatusBarNotification?) {
-          '''
-
-          if anchor not in text:
-              raise SystemExit(
-                  "Notification situation anchor not found."
-              )
-
-          helper = r'''
-              private fun shouldPublishSituationEvent(
-                  sbn: StatusBarNotification,
-                  source: String,
-                  body: String
-              ): Boolean {
-
-                  val now = System.currentTimeMillis()
-
-                  val postedAt =
-                      sbn.postTime.takeIf { it > 0L } ?: now
-
-                  // A notification older than this is context,
-                  // not something that should create a new event.
-                  if (now - postedAt > 90_000L) {
-                      return false
-                  }
-
-                  val signature = listOf(
-                      sbn.packageName,
-                      sbn.key,
-                      source.trim(),
-                      body
-                          .replace(Regex("\\s+"), " ")
-                          .trim()
-                          .take(220)
-                  ).joinToString("|")
-
-                  val prefs =
-                      getSharedPreferences(
-                          "gama_proactive_dedupe",
-                          Context.MODE_PRIVATE
-                      )
-
-                  val previous =
-                      prefs.getString(
-                          "signature",
-                          null
-                      )
-
-                  val previousAt =
-                      prefs.getLong(
-                          "at",
-                          0L
-                      )
-
-                  if (
-                      signature == previous &&
-                      now - previousAt <
-                      5L * 60L * 1000L
-                  ) {
-                      return false
-                  }
-
-                  prefs.edit()
-                      .putString(
-                          "signature",
-                          signature
-                      )
-                      .putLong(
-                          "at",
-                          now
-                      )
-                      .apply()
-
-                  return true
-              }
-
-          '''
-
-          text = text.replace(
-              anchor,
-              helper + anchor,
-              1
-          )
-
-          old = '''        if (title.isBlank() && body.isBlank()) return
-                  val source = title.ifBlank { "Mensagem" }.take(100)
-                  val recent = GamaEventHub.recentFromSource(this, source, 2L * 60L * 1000L)
-          '''
-
-          new = '''        if (title.isBlank() && body.isBlank()) return
-
-                  val source =
-                      title.ifBlank { "Mensagem" }
-                          .take(100)
-
-                  if (
-                      !shouldPublishSituationEvent(
-                          sbn,
-                          source,
-                          body
-                      )
-                  ) {
-                      return
-                  }
-
-                  val recent =
-                      GamaEventHub.recentFromSource(
-                          this,
-                          source,
-                          2L * 60L * 1000L
-                      )
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Notification event publication block not found."
-              )
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-          # =========================================================
-          # 6. REGRESSION TESTS
-          # =========================================================
-
-          path = tests / "ConversationSessionTest.kt"
-          text = path.read_text(encoding="utf-8")
-
-          old = '''            "Tchau", "Gama, pode descansar", "pode descansar agora senhor",
-                      "você pode descansar por enquanto", "encerrar conversa", "Pare de ouvir",
-                      "pode descansa", "pode descanca", "descansa"
-          '''
-
-          new = '''            "Tchau",
-                      "Gama, pode descansar",
-                      "você pode descansar",
-                      "encerrar conversa",
-                      "Pare de ouvir",
-                      "pode descansa"
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "ConversationSession positive test block not found."
-              )
-
-          text = text.replace(old, new, 1)
-
-          old = '''        listOf("e depois?", "posso parar para pensar?", "quais os benefícios de descansar?", "me fale mais", "parar a música", "como encerrar conversa?", "o que significa pare de ouvir?").forEach {
-          '''
-
-          new = '''        listOf(
-                      "e depois?",
-                      "posso parar para pensar?",
-                      "quais os benefícios de descansar?",
-                      "me fale mais",
-                      "parar a música",
-                      "como encerrar conversa?",
-                      "o que significa pare de ouvir?",
-                      "descansa",
-                      "descansar",
-                      "pode descansar agora senhor"
-                  ).forEach {
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "ConversationSession negative test block not found."
-              )
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-          path = tests / "GamaRecognitionPolicyTest.kt"
-          text = path.read_text(encoding="utf-8")
-
-          old = '''    @Test fun shortConversationControlsAreAcceptedWithoutVadEvidence() {
-                  assertTrue(GamaRecognitionPolicy.shouldAcceptSessionFinal("sim", false, false))
-                  assertTrue(GamaRecognitionPolicy.shouldAcceptSessionFinal("pode descansar", false, false))
-                  assertFalse(GamaRecognitionPolicy.shouldAcceptSessionFinal("ruido qualquer", false, false))
-              }
-          '''
-
-          new = '''    @Test fun shortConversationControlsAreAcceptedWithoutVadEvidence() {
-                  assertTrue(
-                      GamaRecognitionPolicy.shouldAcceptSessionFinal(
-                          "sim",
-                          false,
-                          false
-                      )
-                  )
-
-                  assertFalse(
-                      GamaRecognitionPolicy.shouldAcceptSessionFinal(
-                          "pode descansar",
-                          false,
-                          false
-                      )
-                  )
-
-                  assertTrue(
-                      GamaRecognitionPolicy.shouldAcceptSessionFinal(
-                          "pode descansar",
-                          true,
-                          true
-                      )
-                  )
-
-                  assertFalse(
-                      GamaRecognitionPolicy.shouldAcceptSessionFinal(
-                          "ruido qualquer",
-                          false,
-                          false
-                      )
-                  )
-              }
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Recognition regression test not found."
-              )
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-          path = tests / "GamaProactivePolicyTest.kt"
-          text = path.read_text(encoding="utf-8")
-
-          old = '''    @Test fun repeatedContactAttemptBecomesHighPriority() {
-                  assertEquals(GamaEventHub.Priority.HIGH, GamaProactivePolicy.messagePriority("Você está aí?", 1))
-              }
-          '''
-
-          new = '''    @Test fun repeatedContactDoesNotBecomeUrgentByItself() {
-                  assertEquals(
-                      GamaEventHub.Priority.NORMAL,
-                      GamaProactivePolicy.messagePriority(
-                          "Você está aí?",
-                          1
-                      )
-                  )
-              }
-          '''
-
-          if old not in text:
-              raise SystemExit(
-                  "Proactive regression test not found."
-              )
-
-          text = text.replace(old, new, 1)
-          path.write_text(text, encoding="utf-8")
-
-          print("Gama 8.4.0 anti-phantom patch applied.")
+          for name, expected in strict.items():
+              path = root / name
+              if not path.is_file():
+                  raise SystemExit(f'Missing offline model: {name}')
+              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'Offline model checksum mismatch: {name}')
+
+          speaker = [p for p in (root / 'spk-model').rglob('*') if p.is_file() and p.stat().st_size > 0]
+          if len(speaker) < 3:
+              raise SystemExit('Speaker model is incomplete')
+
+          print(f'Offline ASR and speaker models verified: {len(speaker)} speaker files.')
           PY
 
-      - name: Verify anti-phantom protections
+      - name: Apply verified Gama 9 Supervisor patch
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
+          cat > /tmp/gama9.patch.gz.b64 <<'PATCH64'
+          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
+          AA==
+          PATCH64
+
+          tr -d '[:space:]' < /tmp/gama9.patch.gz.b64 | base64 --decode > /tmp/gama9.patch.gz
+          gzip -t /tmp/gama9.patch.gz
+          gzip -dc /tmp/gama9.patch.gz > /tmp/gama9.patch
+
+          echo "$GAMA_PATCH_SHA256  /tmp/gama9.patch" | sha256sum -c -
+          test "$(wc -c < /tmp/gama9.patch)" -eq 41313
+
+          patch --batch --forward --dry-run -p1 < /tmp/gama9.patch
+          patch --batch --forward -p1 < /tmp/gama9.patch
+
+          echo "Gama 9 Supervisor patch applied."
+
+      - name: Audit Gama 9 architecture
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
           SRC="app/src/main/java/com/gama/assistant"
           TEST="app/src/test/java/com/gama/assistant"
 
-          grep -Fq \
-            'Only an explicit, deliberate goodbye' \
-            "$SRC/ConversationSession.kt"
+          test -s "$SRC/GamaSupervisor.kt"
+          test -s "$SRC/GamaAppRegistry.kt"
+          test -s "$TEST/GamaSupervisorTest.kt"
+          test -s "$TEST/GamaAppRegistryTest.kt"
 
-          grep -Fq \
-            'return commandSpeechStarted && recentVoiceEvidence' \
-            "$SRC/GamaRecognitionPolicy.kt"
+          grep -Fq 'GAMA900_SUPERVISOR_SLEEP' "$SRC/GamaService.kt"
+          grep -Fq 'GamaSupervisor.acceptWake' "$SRC/GamaService.kt"
+          grep -Fq 'GamaSupervisor.acceptGoodbye' "$SRC/GamaService.kt"
+          grep -Fq 'openKnownAppFastLane' "$SRC/GamaService.kt"
+          grep -Fq 'Opening WhatsApp never enters the WhatsApp messaging parser' "$SRC/GamaService.kt"
+          grep -Fq 'gama_proactive_dedupe' "$SRC/GamaNotificationListener.kt"
+          grep -Fq 'currentPackageName' "$SRC/GamaScreenContextService.kt"
+          grep -Fq 'preciso descansar amanhã' "$TEST/ConversationSessionTest.kt"
+          grep -Fq 'whatsappAliasesResolveToOneCanonicalApp' "$TEST/GamaAppRegistryTest.kt"
 
-          grep -Fq \
-            'Atividade importante registrada' \
-            "$SRC/GamaService.kt"
+          if grep -Fq 'c in setOf("descansa", "descansar", "descanca", "descance")' "$SRC/ConversationSession.kt"; then
+            echo "::error::Unsafe fuzzy rest shortcut survived the patch."
+            exit 1
+          fi
 
-          grep -Fq \
-            'wallAge !in 0L..20_000L' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'wakeHasSpeech' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'shouldPublishSituationEvent' \
-            "$SRC/GamaNotificationListener.kt"
-
-          grep -Fq \
-            'gama_proactive_dedupe' \
-            "$SRC/GamaNotificationListener.kt"
-
-          grep -Fq \
-            'repeatedContactDoesNotBecomeUrgentByItself' \
-            "$TEST/GamaProactivePolicyTest.kt"
-
-          grep -Fq \
-            '"descansar"' \
-            "$TEST/ConversationSessionTest.kt"
-
-          python3 tools/audit_gama.py
-
-          echo "Anti-phantom protections verified."
+          python3 tools/audit_gama.py | tee "$GITHUB_WORKSPACE/gama-audit.log"
+          echo "Gama 9 architecture audit passed."
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -747,144 +266,88 @@ jobs:
       - name: Configure Android SDK 35
         run: |
           set -euo pipefail
-
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-
           test -d "$SDK_ROOT"
 
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
           SDKMANAGER="$(command -v sdkmanager || true)"
-
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
-
           test -x "$SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-          test -x \
-            "$SDK_ROOT/build-tools/35.0.0/apksigner"
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+          test -x "$SDK_ROOT/build-tools/35.0.0/apksigner"
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 8.4.0 version
+      - name: Set Gama 9.0.0 version
         working-directory: _gama_build
         run: |
           set -euo pipefail
+          VC=$((24000000 + GITHUB_RUN_NUMBER))
+          sed -Ei "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" app/build.gradle.kts
+          sed -Ei 's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 9.0.0"/' app/build.gradle.kts
+          grep -F 'versionName = "Gama 9.0.0"' app/build.gradle.kts
 
-          VC=$((23100000 + GITHUB_RUN_NUMBER))
-
-          sed -Ei \
-            "s/versionCode[[:space:]]*=[[:space:]]*[0-9]+/versionCode = $VC/" \
-            app/build.gradle.kts
-
-          sed -Ei \
-            's/versionName[[:space:]]*=[[:space:]]*"[^"]*"/versionName = "Gama 8.4.0"/' \
-            app/build.gradle.kts
-
-          grep -F \
-            'versionName = "Gama 8.4.0"' \
-            app/build.gradle.kts
-
-      - name: Run complete Gama regression tests
+      - name: Compile Gama before tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
+          gradle :app:compileDebugKotlin \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
 
+      - name: Run all Gama unit tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
           gradle :app:testDebugUnitTest \
             --no-daemon \
             --stacktrace \
-            --tests 'com.gama.assistant.ConversationSessionTest' \
-            --tests 'com.gama.assistant.GamaRecognitionPolicyTest' \
-            --tests 'com.gama.assistant.GamaProactivePolicyTest' \
-            --tests 'com.gama.assistant.GamaCriticalCommandPolicyTest' \
-            --tests 'com.gama.assistant.GamaAudioFrontEndTest' \
-            --tests 'com.gama.assistant.GamaSpeechNoisePolicyTest' \
-            --tests 'com.gama.assistant.VoicePolicyTest' \
-            --tests 'com.gama.assistant.ActionFollowUpTest' \
-            --tests 'com.gama.assistant.GamaModelInstallPolicyTest' \
-            --tests 'com.gama.assistant.ZevronPlannerTest' \
-            --tests 'com.gama.assistant.ZevronCalendarFlowTest' \
-            --tests 'com.gama.assistant.ZevronSystemControlTest' \
-            --tests 'com.gama.assistant.GamaOnlineRouterTest' \
-            --tests 'com.gama.assistant.FreshnessPolicyTest' \
-            2>&1 \
-            | tee "$GITHUB_WORKSPACE/gama-tests.log"
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-      - name: Build Gama 8.4.0 APK
+      - name: Build and verify Gama 9 APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
-          if [ -x tools/download_models.sh ]; then
-            bash tools/download_models.sh
-          fi
-
           gradle :app:assembleDebug \
             --no-daemon \
             --stacktrace \
-            2>&1 \
-            | tee "$GITHUB_WORKSPACE/gama-build.log"
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
 
           mkdir -p dist
-
-          APK="$(
-            find \
-              app/build/outputs/apk/debug \
-              -maxdepth 1 \
-              -type f \
-              -name '*.apk' \
-              -print \
-              -quit
-          )"
-
-          if [ -z "$APK" ]; then
-            echo "::error::APK not found."
-            exit 1
-          fi
-
-          if [ ! -s "$APK" ]; then
-            echo "::error::Generated APK is empty."
-            exit 1
-          fi
-
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          test -s "$APK"
           cp "$APK" dist/Gama.apk
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            verify \
-            --verbose \
-            dist/Gama.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose dist/Gama.apk
+          (cd dist && sha256sum Gama.apk > Gama.apk.sha256)
+          test -s dist/Gama.apk.sha256
 
-          (
-            cd dist
-            sha256sum Gama.apk > Gama.apk.sha256
-          )
+          echo "Gama 9 APK built and verified."
 
-          echo "Gama 8.4.0 APK built and verified."
-
-      - name: Upload Gama 8.4.0 APK
+      - name: Upload Gama 9 APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.4.0-JARVIS-ANTI-PHANTOM-APK
+          name: Gama-9.0.0-JARVIS-SUPERVISOR-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
           if-no-files-found: error
 
-      - name: Upload Gama 8.4.0 source
+      - name: Upload Gama 9 source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.4.0-JARVIS-ANTI-PHANTOM-source
+          name: Gama-9.0.0-JARVIS-SUPERVISOR-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -892,31 +355,32 @@ jobs:
             !_gama_build/dist/**
           if-no-files-found: error
 
-      - name: Publish Gama 8.4.0 release
+      - name: Publish Gama 9 release
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          TAG="gama-v8.4.0-anti-phantom-${GITHUB_RUN_NUMBER}"
+          TAG="gama-v9.0.0-supervisor-${GITHUB_RUN_NUMBER}"
 
           gh release create "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 8.4.0 JARVIS Anti-Phantom" \
-            --notes "Baseada diretamente no build #127 aprovado. Corrige fala espontânea sem hotword, elimina reprodução tardia de eventos antigos, deduplica notificações repostadas, endurece o detector de descanso para impedir encerramentos falsos e exige evidência real de fala no hotword dedicado. Mantém Gemma offline, conversa contínua, ações encadeadas, tela/OCR, agenda, pesquisa atual e ferramentas Android." \
+            --title "Gama 9.0.0 JARVIS Supervisor" \
+            --notes "Baseado no source aprovado do build #127. Corrige o erro do #128, cria Supervisor central, bloqueia falso hotword e falso descanso, mantém silêncio em espera, evita falar notificações velhas ou repetidas e abre WhatsApp/Spotify/Instagram/YouTube/TikTok/Play Store por registro determinístico antes da IA. Mantém Gemma local, conversa contínua, planejamento multi-etapas, memória, tela/OCR, agenda, pesquisa atual, automações e barge-in." \
             --latest
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-8.4.0-JARVIS-ANTI-PHANTOM-diagnostics
+          name: Gama-9.0.0-JARVIS-SUPERVISOR-diagnostics
           path: |
-            gama-build.log
+            gama-audit.log
+            gama-compile.log
             gama-tests.log
+            gama-build.log
             _gama_build/app/build/reports/tests
             _gama_build/app/build/test-results
           if-no-files-found: warn
