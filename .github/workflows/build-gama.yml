@@ -40,7 +40,7 @@ jobs:
           GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
         run: |
           set -euo pipefail
-          if [ -z "${{ GAMA_SIGNING_SEED:- }}" ]; then
+          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
             echo "mode=fresh" >> "$GITHUB_OUTPUT"
             echo "artifact=Gama-9.0.1-SUPERVISOR-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
             echo "::warning::GAMA_SIGNING_SEED não está configurado. O APK será apenas para instalação limpa."
