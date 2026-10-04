@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX148
+name: Build Gama 9.5.0 Personal Intelligence Core FIX149
 
 on:
   workflow_dispatch:
@@ -372,7 +372,7 @@ jobs:
               count=1,
           )
           if helper_count != 1:
-              raise SystemExit(f"FIX148: helper 9.4 encontrado {helper_count} vezes.")
+              raise SystemExit(f"FIX149: helper 9.4 encontrado {helper_count} vezes.")
 
           ast.parse(
               script,
@@ -392,7 +392,7 @@ jobs:
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
-          # FIX148: prova que o regex flexível casa com a fonte auditada #136.
+          # FIX149: prova que o regex flexível casa com a fonte auditada #136.
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -414,10 +414,10 @@ jobs:
 
           if re.search(flexible, source, flags=re.S) is None:
               raise SystemExit(
-                  "FIX148: preflight não encontrou o bloco de timeouts na fonte #136."
+                  "FIX149: preflight não encontrou o bloco de timeouts na fonte #136."
               )
 
-          print("PASS: FIX148 preflight regex/source #136.")
+          print("PASS: FIX149 preflight regex/source #136.")
           PY
 
           python3 \
@@ -657,7 +657,7 @@ jobs:
               count=1,
           )
           if helper_i_count != 1:
-              raise SystemExit(f"FIX148: helper 9.5 encontrado {helper_i_count} vezes.")
+              raise SystemExit(f"FIX149: helper 9.5 encontrado {helper_i_count} vezes.")
 
           ast.parse(integration, filename="gama95-integrate.py")
 
@@ -676,6 +676,77 @@ jobs:
             /tmp/gama95-integrate.py
 
           echo "PASS: Gama 9.5 Personal Intelligence Core integrado."
+
+      - name: Repair generated Kotlin before compile
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path(
+              "app/src/main/java/com/gama/assistant/GamaService.kt"
+          )
+
+          text = path.read_text(encoding="utf-8")
+
+          repairs = [
+              (
+                  "finishCommandListening()cancelActiveWorkForSleep()",
+                  "finishCommandListening()\n        cancelActiveWorkForSleep()",
+                  "goodbye sleep separator",
+              ),
+              (
+                  '.joinToString("\n")',
+                  '.joinToString("\\n")',
+                  "brain context newline literal",
+              ),
+              (
+                  "ownerAuthResumeConversation = conversation.activeconversation.suspend()",
+                  "ownerAuthResumeConversation = conversation.active\n        conversation.suspend()",
+                  "owner auth conversation suspend",
+              ),
+          ]
+
+          for old, new, label in repairs:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"FIX149: {label}: esperava 1 ocorrência, encontrou {count}."
+                  )
+              text = text.replace(old, new, 1)
+              print(f"PASS FIX149: {label}")
+
+          forbidden = [
+              "finishCommandListening()cancelActiveWorkForSleep()",
+              "conversation.activeconversation.suspend()",
+              '.joinToString("\n")',
+          ]
+
+          for token in forbidden:
+              if token in text:
+                  raise SystemExit(
+                      f"FIX149: corrupção ainda presente após reparo: {token!r}"
+                  )
+
+          required = [
+              "private fun cancelActiveWorkForSleep()",
+              "cancelActiveWorkForSleep()",
+              "ownerAuthResumeConversation = conversation.active",
+              "conversation.suspend()",
+              '.joinToString("\\n")',
+          ]
+
+          for token in required:
+              if token not in text:
+                  raise SystemExit(
+                      f"FIX149: estrutura Kotlin esperada ausente: {token!r}"
+                  )
+
+          path.write_text(text, encoding="utf-8")
+          print("PASS: GamaService.kt reparado antes do compileReleaseKotlin.")
+          PY
 
       - name: Upload Gama 9.5 integration debug
         if: failure()
@@ -702,7 +773,7 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX148
+          # GAMA 9.5.0 Personal Intelligence Core FIX149
 
           ## CORREÇÕES DE BUILD
 
@@ -902,6 +973,23 @@ jobs:
             --no-daemon \
             --stacktrace \
             2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+
+      - name: Upload Kotlin compile diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-Kotlin-compile-debug-${{ github.run_number }}
+          path: |
+            gama-compile.log
+            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaPersonalCore.kt
+            _gama_build/app/src/main/java/com/gama/assistant/SemanticEndpointer.kt
+            _gama_build/app/src/main/java/com/gama/assistant/ContextSanityCheck.kt
+            _gama_build/app/src/main/java/com/gama/assistant/AssistantStateController.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaSupervisor.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          if-no-files-found: warn
 
       - name: Unit tests
         working-directory: _gama_build
@@ -1250,6 +1338,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX148" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX149" \
             --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
