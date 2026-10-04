@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX149
+name: Build Gama 9.5.0 Personal Intelligence Core FIX150
 
 on:
   workflow_dispatch:
@@ -372,7 +372,7 @@ jobs:
               count=1,
           )
           if helper_count != 1:
-              raise SystemExit(f"FIX149: helper 9.4 encontrado {helper_count} vezes.")
+              raise SystemExit(f"FIX150: helper 9.4 encontrado {helper_count} vezes.")
 
           ast.parse(
               script,
@@ -392,7 +392,7 @@ jobs:
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
-          # FIX149: prova que o regex flexível casa com a fonte auditada #136.
+          # FIX150: prova que o regex flexível casa com a fonte auditada #136.
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -414,10 +414,10 @@ jobs:
 
           if re.search(flexible, source, flags=re.S) is None:
               raise SystemExit(
-                  "FIX149: preflight não encontrou o bloco de timeouts na fonte #136."
+                  "FIX150: preflight não encontrou o bloco de timeouts na fonte #136."
               )
 
-          print("PASS: FIX149 preflight regex/source #136.")
+          print("PASS: FIX150 preflight regex/source #136.")
           PY
 
           python3 \
@@ -657,7 +657,7 @@ jobs:
               count=1,
           )
           if helper_i_count != 1:
-              raise SystemExit(f"FIX149: helper 9.5 encontrado {helper_i_count} vezes.")
+              raise SystemExit(f"FIX150: helper 9.5 encontrado {helper_i_count} vezes.")
 
           ast.parse(integration, filename="gama95-integrate.py")
 
@@ -713,10 +713,10 @@ jobs:
               count = text.count(old)
               if count != 1:
                   raise SystemExit(
-                      f"FIX149: {label}: esperava 1 ocorrência, encontrou {count}."
+                      f"FIX150: {label}: esperava 1 ocorrência, encontrou {count}."
                   )
               text = text.replace(old, new, 1)
-              print(f"PASS FIX149: {label}")
+              print(f"PASS FIX150: {label}")
 
           forbidden = [
               "finishCommandListening()cancelActiveWorkForSleep()",
@@ -727,7 +727,7 @@ jobs:
           for token in forbidden:
               if token in text:
                   raise SystemExit(
-                      f"FIX149: corrupção ainda presente após reparo: {token!r}"
+                      f"FIX150: corrupção ainda presente após reparo: {token!r}"
                   )
 
           required = [
@@ -741,12 +741,198 @@ jobs:
           for token in required:
               if token not in text:
                   raise SystemExit(
-                      f"FIX149: estrutura Kotlin esperada ausente: {token!r}"
+                      f"FIX150: estrutura Kotlin esperada ausente: {token!r}"
                   )
 
           path.write_text(text, encoding="utf-8")
           print("PASS: GamaService.kt reparado antes do compileReleaseKotlin.")
           PY
+
+      - name: Fix behavioral regressions caught by unit tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY150'
+          from pathlib import Path
+          import re
+
+          src = Path("app/src/main/java/com/gama/assistant")
+
+          # 1) Context sanity: reject the six-token unrelated answer that
+          # escaped the 9.5 sanity gate in run #150.
+          context_file = src / "ContextSanityCheck.kt"
+          context = context_file.read_text(encoding="utf-8")
+
+          context, count = re.subn(
+              r'answerTokens\.size\s*>=\s*7',
+              'answerTokens.size >= 6',
+              context,
+              count=1,
+          )
+
+          if count != 1:
+              raise SystemExit(
+                  f"FIX150: ContextSanityCheck threshold esperado uma vez, encontrou {count}."
+              )
+
+          context_file.write_text(context, encoding="utf-8")
+          print("PASS FIX150: unrelated-topic gate strengthened.")
+
+          # 2) Recognition endpoint: when there is no transcript yet,
+          # semantic timing has no text to classify. Preserve the tested
+          # deterministic silence timeout in that specific case.
+          recognition_file = src / "GamaRecognitionPolicy.kt"
+          recognition = recognition_file.read_text(encoding="utf-8")
+
+          endpoint_pattern = re.compile(
+              r'val semanticSilence\s*=\s*'
+              r'SemanticEndpointer\s*'
+              r'\.requiredSilenceMs\(\s*'
+              r'transcript,\s*'
+              r'confidence,\s*'
+              r'\)',
+              re.S,
+          )
+
+          endpoint_replacement = """val semanticSilence =
+                          if (transcript.isBlank()) {
+                              silenceMs
+                          } else {
+                              SemanticEndpointer
+                                  .requiredSilenceMs(
+                                      transcript,
+                                      confidence,
+                                  )
+                          }"""
+
+          recognition, count = endpoint_pattern.subn(
+              endpoint_replacement,
+              recognition,
+              count=1,
+          )
+
+          if count != 1:
+              raise SystemExit(
+                  f"FIX150: GamaRecognitionPolicy semanticSilence esperado uma vez, encontrou {count}."
+              )
+
+          recognition_file.write_text(recognition, encoding="utf-8")
+          print("PASS FIX150: endpoint policy repaired.")
+
+          # 3) Reply guard: cache/reinstall advice and internal-engine details
+          # must never reach speech.
+          guard_file = src / "GamaReplyGuard.kt"
+          guard_source = r'''package com.gama.assistant
+
+          import java.text.Normalizer
+          import java.util.Locale
+
+          /** Final user-facing guard. Internal implementation details never reach speech. */
+          object GamaReplyGuard {
+              fun sanitize(raw: String): String {
+                  val text =
+                      raw
+                          .trim()
+                          .replace(
+                              Regex("\\s+"),
+                              " ",
+                          )
+
+                  if (text.isBlank()) {
+                      return "Pode repetir essa parte?"
+                  }
+
+                  val n = normalize(text)
+
+                  val cacheAdvice =
+                      "cache" in n &&
+                          listOf(
+                              "limpe",
+                              "limpar",
+                              "apague",
+                              "apagar",
+                              "dados",
+                              "reinstal",
+                          ).any {
+                              it in n
+                          }
+
+                  val internalFailure =
+                      listOf(
+                          "brain ipc",
+                          "isolated process",
+                          "isolated-process",
+                          "processo isolado",
+                          "stack trace",
+                          "native crash",
+                          "llminference",
+                          "mediapipe",
+                          "jni",
+                          "engine indisponivel",
+                          "modelo local reinici",
+                          "reiniciei o modelo",
+                          "falha de inferencia local",
+                          ".task",
+                          "pid ",
+                      ).any {
+                          it in n
+                      }
+
+                  return when {
+                      cacheAdvice ->
+                          "Não consegui concluir isso agora. Posso tentar de outra forma."
+
+                      internalFailure ->
+                          "Pode repetir essa parte?"
+
+                      else ->
+                          text.replace(
+                              Regex("(?i)\\bGama\\b"),
+                              "Gama",
+                          )
+                  }
+              }
+
+              private fun normalize(
+                  value: String
+              ): String =
+                  Normalizer.normalize(
+                      value.lowercase(Locale.ROOT),
+                      Normalizer.Form.NFD,
+                  )
+                      .replace(
+                          Regex("\\p{M}+"),
+                          "",
+                      )
+                      .replace(
+                          Regex("\\s+"),
+                          " ",
+                      )
+                      .trim()
+          }
+          '''
+
+          guard_file.write_text(guard_source, encoding="utf-8")
+          print("PASS FIX150: reply guard repaired.")
+
+          # Invariants corresponding to all three run #150 failures.
+          required = [
+              (context_file, "answerTokens.size >= 6"),
+              (recognition_file, "if (transcript.isBlank())"),
+              (guard_file, "cacheAdvice"),
+              (guard_file, "Não consegui concluir isso agora"),
+          ]
+
+          for path, token in required:
+              value = path.read_text(encoding="utf-8")
+              if token not in value:
+                  raise SystemExit(
+                      f"FIX150: invariant ausente em {path.name}: {token!r}"
+                  )
+
+          print("PASS: FIX150 behavioral regressions repaired before tests.")
+          PY150
 
       - name: Upload Gama 9.5 integration debug
         if: failure()
@@ -773,7 +959,7 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX149
+          # GAMA 9.5.0 Personal Intelligence Core FIX150
 
           ## CORREÇÕES DE BUILD
 
@@ -1338,6 +1524,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX149" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX150" \
             --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
