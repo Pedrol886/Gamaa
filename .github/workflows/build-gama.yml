@@ -1,4 +1,4 @@
-name: Build Gama 9.4.1 Continuous Core Mouth Fix
+name: Build Gama 9.4.2 Continuous Core Release
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-9-4-1-continuous-${{ github.ref }}
+  group: gama-9-4-2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,17 +28,27 @@ jobs:
       GAMA_BASE_RUN_ID: "37158343882"
       GAMA_BASE_ARTIFACT: "Gama-9.3.0-JARVIS-source"
 
-      # Workflow do #139. Usamos sua transformação completa como fonte,
-      # mas consertamos o Python antes de executá-la.
+      # Contém a transformação completa Continuous Core criada no #139.
+      # O workflow atual extrai essa transformação, corrige a sintaxe e
+      # valida com py_compile antes de tocar no source.
       GAMA_94_TEMPLATE_COMMIT: "b81455bdc29c25f85fa6b34612cee526e1c45508"
 
       GAMA_EXPECTED_CERT_SHA256: "6933EDA890C29567A8F4B6CEAD7A39A442DF109D43B813A19F3F6FA7F39B078C"
 
     steps:
+
+      # ==============================================================
+      # CHECKOUT
+      # ==============================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # ==============================================================
+      # SIGNING
+      # ==============================================================
 
       - name: Resolve signing mode
         id: signing
@@ -48,21 +58,30 @@ jobs:
           set -euo pipefail
 
           if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
-            echo "mode=fresh" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.4.1-CONTINUOUS-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
 
-            echo "::warning::GAMA_SIGNING_SEED ausente. O APK será release, mas instalação limpa."
-          elif printf '%s' "$GAMA_SIGNING_SEED" |
-            grep -Eq '^[0-9A-Fa-f]{64}$'; then
+            echo "mode=fresh" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-9.4.2-CONTINUOUS-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+
+            echo "::warning::GAMA_SIGNING_SEED ausente. O APK será Release, porém instalação limpa."
+
+          elif printf '%s' "$GAMA_SIGNING_SEED" \
+            | grep -Eq '^[0-9A-Fa-f]{64}$'; then
 
             echo "mode=stable" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.4.1-CONTINUOUS-CORE-APK" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-9.4.2-CONTINUOUS-CORE-APK" >> "$GITHUB_OUTPUT"
+
           else
-            echo "::error::GAMA_SIGNING_SEED inválido."
+
+            echo "::error::GAMA_SIGNING_SEED deve conter exatamente 64 caracteres hexadecimais."
             exit 1
+
           fi
 
-      - name: Restore exact Gama 9.3.0 source
+      # ==============================================================
+      # RESTORE EXACT SUCCESSFUL SOURCE
+      # ==============================================================
+
+      - name: Restore exact successful Gama 9.3.0 source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -71,15 +90,26 @@ jobs:
           rm -rf _gama_build
           mkdir -p _gama_build
 
-          gh run download "$GAMA_BASE_RUN_ID" \
+          gh run download \
+            "$GAMA_BASE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
 
-          test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/AndroidManifest.xml
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+          test -s \
+            _gama_build/app/build.gradle.kts
+
+          test -s \
+            _gama_build/app/src/main/AndroidManifest.xml
+
+          test -s \
+            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+
+          test -s \
+            _gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+
+          test -s \
+            _gama_build/app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt
 
           grep -Fq \
             'Gama 9.3.0 JARVIS Reliability' \
@@ -87,7 +117,11 @@ jobs:
 
           echo "PASS: fonte exata do #136 restaurada."
 
-      - name: Verify audited source
+      # ==============================================================
+      # VERIFY SOURCE
+      # ==============================================================
+
+      - name: Verify exact audited source
         run: |
           set -euo pipefail
 
@@ -98,12 +132,16 @@ jobs:
 
             test -s "$file"
 
-            actual="$(git hash-object "$file")"
+            actual="$(
+              git hash-object "$file"
+            )"
 
             if [ "$actual" != "$expected" ]; then
-              echo "::error::Fonte diferente da versão auditada: $file"
+
+              echo "::error::Arquivo diferente da versão auditada: $file"
               echo "expected=$expected"
               echo "actual=$actual"
+
               exit 1
             fi
 
@@ -168,6 +206,12 @@ jobs:
             "$ROOT/app/src/main/AndroidManifest.xml" \
             "e898888312d7c1355cf751b9dc391ca1aa3a48ea"
 
+          echo "PASS: todos os arquivos correspondem ao source auditado."
+
+      # ==============================================================
+      # RECOVER COMPLETE 9.4 CONTINUOUS CORE TRANSFORMATION
+      # ==============================================================
+
       - name: Recover and repair complete Gama 9.4 transformation
         run: |
           set -euo pipefail
@@ -178,7 +222,9 @@ jobs:
 
           python3 - \
             /tmp/gama139-workflow.yml \
-            /tmp/gama94-transform.py <<'EXTRACT_PY'
+            /tmp/gama94-transform.py \
+            <<'EXTRACT_PY'
+
           from pathlib import Path
           import re
           import sys
@@ -186,20 +232,44 @@ jobs:
           source = Path(sys.argv[1])
           output = Path(sys.argv[2])
 
-          lines = source.read_text(
+          content = source.read_text(
               encoding="utf-8"
-          ).splitlines()
+          )
+
+          lines = content.splitlines()
+
+          # Encontrar especificamente a transformação Continuous Core,
+          # em vez de simplesmente pegar o primeiro Python do workflow.
+
+          step_index = None
+
+          for i, line in enumerate(lines):
+              if (
+                  "name: Apply Gama 9.4.0 Continuous Core"
+                  in line
+              ):
+                  step_index = i
+                  break
+
+          if step_index is None:
+              raise SystemExit(
+                  "Etapa Apply Gama 9.4.0 Continuous Core "
+                  "não encontrada no workflow #139."
+              )
 
           start = None
 
-          for i, line in enumerate(lines):
-              if "python3 - <<'PY'" in line:
+          for i in range(
+              step_index,
+              len(lines)
+          ):
+              if "python3 - <<'PY'" in lines[i]:
                   start = i
                   break
 
           if start is None:
               raise SystemExit(
-                  "Transformação Python do #139 não encontrada."
+                  "Python da transformação 9.4 não encontrado."
               )
 
           marker_indent = (
@@ -219,12 +289,12 @@ jobs:
 
           if end is None:
               raise SystemExit(
-                  "Fim da transformação do #139 não encontrado."
+                  "Final do Python da transformação 9.4 não encontrado."
               )
 
-          body = []
-
           prefix = " " * marker_indent
+
+          body = []
 
           for line in lines[
               start + 1:end
@@ -238,33 +308,61 @@ jobs:
 
           script = "\n".join(body) + "\n"
 
-          # O #139 possuía seis atribuições Python quebradas:
-          #
-          # registry =
-          #     src / ...
-          #
-          # Python exige que a expressão esteja na mesma linha
-          # ou dentro de parênteses.
-          #
-          # Corrigimos qualquer atribuição desse formato antes
-          # de compilar/executar a transformação.
-          pattern = re.compile(
-              r"(?m)^([ \t]*)"
-              r"([A-Za-z_][A-Za-z0-9_]*)"
-              r"[ \t]*=[ \t]*\n"
-              r"[ \t]+"
-              r"([^#\n].*)$"
-          )
+          # ==========================================================
+          # CORRIGIR AS QUEBRAS DE SINTAXE QUE EXISTIAM NO #139
+          # ==========================================================
 
-          script = pattern.sub(
-              lambda m:
-                  f"{m.group(1)}"
-                  f"{m.group(2)} = "
-                  f"{m.group(3).lstrip()}",
-              script,
-          )
+          replacements = [
+              (
+                  re.compile(
+                      r'(?m)^registry\s*=\s*\n'
+                      r'\s*src\s*/\s*'
+                      r'"GamaAppRegistry\.kt"\s*$'
+                  ),
+                  'registry = src / "GamaAppRegistry.kt"'
+              ),
+              (
+                  re.compile(
+                      r'(?m)^service\s*=\s*\n'
+                      r'\s*src\s*/\s*'
+                      r'"GamaService\.kt"\s*$'
+                  ),
+                  'service = src / "GamaService.kt"'
+              ),
+              (
+                  re.compile(
+                      r'(?m)^value\s*=\s*\n'
+                      r'\s*service\.read_text\($'
+                  ),
+                  'value = service.read_text('
+              ),
+              (
+                  re.compile(
+                      r'(?m)^gradle\s*=\s*\n'
+                      r'\s*root\s*/\s*'
+                      r'"app/build\.gradle\.kts"\s*$'
+                  ),
+                  'gradle = root / "app/build.gradle.kts"'
+              ),
+              (
+                  re.compile(
+                      r'(?m)^recognition_test\s*=\s*\n'
+                      r'\s*tests\s*/\s*\n'
+                      r'\s*"GamaRecognitionPolicyTest\.kt"\s*$'
+                  ),
+                  'recognition_test = tests / "GamaRecognitionPolicyTest.kt"'
+              ),
+              (
+                  re.compile(
+                      r'(?m)^reports\s*=\s*\n'
+                      r'\s*root\s*/\s*'
+                      r'"reports"\s*$'
+                  ),
+                  'reports = root / "reports"'
+              ),
+          ]
 
-          required_assignments = [
+          labels = [
               "registry",
               "service",
               "value",
@@ -273,46 +371,70 @@ jobs:
               "reports",
           ]
 
-          for name in required_assignments:
-              if not re.search(
-                  rf"(?m)^[ \t]*{name}[ \t]*=",
+          for label, (pattern, replacement) in zip(
+              labels,
+              replacements
+          ):
+              script, count = pattern.subn(
+                  replacement,
                   script,
-              ):
+                  count=1
+              )
+
+              if count != 1:
                   raise SystemExit(
-                      f"Atribuição reparada ausente: {name}"
+                      "Não consegui reparar exatamente uma ocorrência "
+                      f"de {label}. Ocorrências: {count}"
                   )
 
-          remaining = re.findall(
-              r"(?m)^[ \t]*"
-              r"([A-Za-z_][A-Za-z0-9_]*)"
-              r"[ \t]*=[ \t]*$",
-              script,
-          )
+          # Guardas contra os bugs do #139 e #140.
 
-          if remaining:
-              raise SystemExit(
-                  "Ainda existem atribuições Python quebradas: " +
-                  ", ".join(remaining)
-              )
+          forbidden = [
+              "registry =\n",
+              "service =\n",
+              "value =\n",
+              "gradle =\n",
+              "recognition_test =\n",
+              "recognition_test = tests /\n",
+              "reports =\n",
+          ]
+
+          for fragment in forbidden:
+              if fragment in script:
+                  raise SystemExit(
+                      "Ainda existe Python quebrado: "
+                      + repr(fragment)
+                  )
 
           output.write_text(
               script,
-              encoding="utf-8",
+              encoding="utf-8"
           )
 
           print(
-              "Transformação do #139 recuperada e corrigida."
+              "PASS: transformação 9.4 extraída e reparada."
           )
+
           EXTRACT_PY
 
-          # O erro do #139 agora é detectado ANTES de tocar no projeto.
+          # Importantíssimo:
+          # validar sintaxe antes de alterar qualquer arquivo Android.
+
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
-          echo "PASS: Python da transformação compilou."
+          echo "PASS: Python da transformação é sintaticamente válido."
+
+          # Só agora aplicar no source real.
 
           python3 \
             /tmp/gama94-transform.py
+
+          echo "PASS: Continuous Core aplicado."
+
+      # ==============================================================
+      # NEW MOUTH ANIMATION
+      # ==============================================================
 
       - name: Replace mouth animation with exact marked-mouth movement
         run: |
@@ -321,6 +443,7 @@ jobs:
           cat > \
             _gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt \
             <<'KOTLIN'
+
           package com.gama.assistant
 
           import android.animation.ValueAnimator
@@ -340,21 +463,23 @@ jobs:
           import kotlin.math.sin
 
           /**
-           * GAMA RED CORE
+           * Visual principal do GAMA.
            *
-           * A cabeça NÃO é deformada.
+           * IMPORTANTE:
+           * a cabeça não é deformada.
            *
-           * A única parte móvel durante SPEAKING é a pequena peça
-           * vermelha inferior central da logo, marcada pelo usuário
-           * como a boca.
+           * Durante SPEAKING somente a pequena peça vermelha
+           * inferior central da logo se move.
            *
-           * Ela se move PARA CIMA enquanto fecha a fala e volta para
-           * a posição original ao abrir.
+           * Essa é a região que o usuário marcou como boca.
            */
           class GamaEnergyView @JvmOverloads constructor(
               context: Context,
               attrs: AttributeSet? = null,
-          ) : View(context, attrs) {
+          ) : View(
+              context,
+              attrs,
+          ) {
 
               enum class Mode {
                   LISTENING,
@@ -362,8 +487,7 @@ jobs:
                   SPEAKING,
               }
 
-              var mode: Mode =
-                  Mode.LISTENING
+              var mode: Mode = Mode.LISTENING
                   set(value) {
                       field = value
                       invalidate()
@@ -384,12 +508,9 @@ jobs:
               private val glowPaint =
                   Paint(
                       Paint.ANTI_ALIAS_FLAG
-                  ).apply {
-                      style =
-                          Paint.Style.FILL
-                  }
+                  )
 
-              private val accentPaint =
+              private val ringPaint =
                   Paint(
                       Paint.ANTI_ALIAS_FLAG
                   ).apply {
@@ -397,15 +518,20 @@ jobs:
                           Paint.Style.STROKE
                   }
 
-              private var phase = 0f
-              private var released = false
+              private var phase =
+                  0f
+
+              private var released =
+                  false
 
               private val animator =
                   ValueAnimator.ofFloat(
                       0f,
                       1f,
                   ).apply {
-                      duration = 980L
+
+                      duration =
+                          1_000L
 
                       repeatCount =
                           ValueAnimator.INFINITE
@@ -434,7 +560,9 @@ jobs:
               override fun onDraw(
                   canvas: Canvas
               ) {
-                  super.onDraw(canvas)
+                  super.onDraw(
+                      canvas
+                  )
 
                   if (
                       width <= 0 ||
@@ -451,35 +579,29 @@ jobs:
                           height,
                       ).toFloat()
 
-                  val t =
+                  val radians =
                       phase *
                           (PI * 2.0)
 
-                  /*
-                   * Ritmo propositalmente irregular.
-                   *
-                   * Ele não faz a cabeça pulsar.
-                   * Apenas decide o quanto a BOCA sobe.
-                   */
                   val speechWave =
                       (
                           abs(
                               sin(
-                                  t * 3.15
+                                  radians * 3.0
                               )
                           ) * 0.48 +
                               abs(
                                   sin(
-                                      t * 5.70 +
-                                          0.75
+                                      radians * 5.4 +
+                                          0.72
                                   )
-                              ) * 0.32 +
+                              ) * 0.34 +
                               abs(
                                   sin(
-                                      t * 8.20 +
-                                          1.55
+                                      radians * 7.7 +
+                                          1.3
                                   )
-                              ) * 0.20
+                              ) * 0.18
                           )
                           .toFloat()
                           .coerceIn(
@@ -489,23 +611,28 @@ jobs:
 
                   val statePulse =
                       when (mode) {
+
                           Mode.LISTENING ->
                               (
-                                  0.50 +
-                                      0.50 *
+                                  0.5 +
+                                      0.5 *
                                       sin(
-                                          t * 1.25
+                                          radians *
+                                              1.2
                                       )
-                                  ).toFloat()
+                                  )
+                                  .toFloat()
 
                           Mode.THINKING ->
                               (
-                                  0.50 +
-                                      0.50 *
+                                  0.5 +
+                                      0.5 *
                                       sin(
-                                          t * 2.0
+                                          radians *
+                                              1.9
                                       )
-                                  ).toFloat()
+                                  )
+                                  .toFloat()
 
                           Mode.SPEAKING ->
                               speechWave
@@ -517,41 +644,111 @@ jobs:
                   val cy =
                       height / 2f
 
+                  # this comment is replaced below
+              }
+
+              private fun drawRegion(
+                  canvas: Canvas,
+                  src: Rect,
+                  dst: RectF,
+              ) {
+                  if (
+                      src.width() <= 0 ||
+                      src.height() <= 0 ||
+                      dst.width() <= 0f ||
+                      dst.height() <= 0f
+                  ) {
+                      return
+                  }
+
+                  canvas.drawBitmap(
+                      logo,
+                      src,
+                      dst,
+                      bitmapPaint,
+                  )
+              }
+
+              fun release() {
+                  if (!released) {
+                      released = true
+                      animator.cancel()
+                  }
+              }
+
+              override fun onDetachedFromWindow() {
+                  release()
+                  super.onDetachedFromWindow()
+              }
+          }
+
+          KOTLIN
+
+          # O bloco Kotlin acima foi escrito em duas etapas para evitar
+          # edições enormes e frágeis no shell.
+          #
+          # Substituímos o marcador pela implementação real do desenho.
+
+          python3 - <<'PY'
+
+          from pathlib import Path
+
+          path = Path(
+              "_gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt"
+          )
+
+          text = path.read_text(
+              encoding="utf-8"
+          )
+
+          marker = (
+              "                  # this comment is replaced below\n"
+          )
+
+          if marker not in text:
+              raise SystemExit(
+                  "Marcador da animação da boca não encontrado."
+              )
+
+          drawing = r'''
                   /*
-                   * Aura vermelha.
+                   * Aura vermelha do estado.
                    *
-                   * Independente do movimento da boca.
+                   * Ela NÃO modifica a geometria da cabeça.
                    */
                   val auraRadius =
                       minSize *
                           (
                               0.40f +
-                                  0.015f *
+                                  0.014f *
                                   statePulse
                               )
 
                   val auraAlpha =
                       when (mode) {
-                          Mode.LISTENING -> 42
-                          Mode.THINKING -> 68
-                          Mode.SPEAKING -> 86
+                          Mode.LISTENING -> 40
+                          Mode.THINKING -> 65
+                          Mode.SPEAKING -> 82
                       }
+
+                  glowPaint.style =
+                      Paint.Style.FILL
 
                   glowPaint.color =
                       Color.argb(
                           auraAlpha,
-                          230,
+                          225,
                           20,
-                          34,
+                          32,
                       )
 
                   glowPaint.setShadowLayer(
-                      minSize * 0.13f,
+                      minSize * 0.12f,
                       0f,
                       0f,
                       Color.rgb(
-                          175,
-                          8,
+                          180,
+                          10,
                           20,
                       ),
                   )
@@ -565,82 +762,85 @@ jobs:
 
                   glowPaint.clearShadowLayer()
 
-                  val availableW =
+                  /*
+                   * A logo fica parada.
+                   */
+                  val availableWidth =
                       width * 0.91f
 
-                  val availableH =
+                  val availableHeight =
                       height * 0.91f
 
                   val scale =
                       minOf(
-                          availableW /
-                              logo.width,
-                          availableH /
-                              logo.height,
+                          availableWidth /
+                              logo.width.toFloat(),
+                          availableHeight /
+                              logo.height.toFloat(),
                       )
 
-                  val drawW =
+                  val drawWidth =
                       logo.width *
                           scale
 
-                  val drawH =
+                  val drawHeight =
                       logo.height *
                           scale
 
                   val left =
                       cx -
-                          drawW / 2f
+                          drawWidth / 2f
 
                   val top =
                       cy -
-                          drawH / 2f
+                          drawHeight / 2f
 
                   /*
-                   * ==============================================
-                   * BOCA REAL DA LOGO
-                   * ==============================================
+                   * Região da BOCA indicada pelo usuário.
                    *
-                   * Região inferior central marcada na imagem pelo
-                   * usuário.
+                   * Ela corresponde somente à pequena peça vermelha
+                   * central abaixo do focinho.
                    *
-                   * NÃO inclui o focinho.
-                   * NÃO inclui a cabeça.
-                   * NÃO inclui as laterais.
-                   *
-                   * É somente a pequena peça vermelha inferior.
+                   * Não inclui o focinho superior.
+                   * Não inclui olhos.
+                   * Não inclui bochechas.
+                   * Não inclui cabeça.
                    */
+
                   val mouthLeftPx =
                       (
                           logo.width *
-                              0.455f
-                          ).toInt()
+                              0.465f
+                          )
+                          .toInt()
 
                   val mouthRightPx =
                       (
                           logo.width *
-                              0.595f
-                          ).toInt()
+                              0.575f
+                          )
+                          .toInt()
 
                   val mouthTopPx =
                       (
                           logo.height *
-                              0.835f
-                          ).toInt()
+                              0.825f
+                          )
+                          .toInt()
 
                   val mouthBottomPx =
                       (
                           logo.height *
-                              0.965f
-                          ).toInt()
+                              0.945f
+                          )
+                          .toInt()
 
                   /*
-                   * Primeiro desenhamos a logo inteira EXCETO
-                   * o pequeno retângulo da boca.
+                   * Desenhar tudo EXCETO o pequeno retângulo da boca.
                    *
-                   * Assim a cabeça permanece 100% parada.
+                   * Isso mantém toda a cabeça completamente imóvel.
                    */
 
-                  // Parte acima da boca.
                   drawRegion(
                       canvas,
                       Rect(
@@ -652,14 +852,13 @@ jobs:
                       RectF(
                           left,
                           top,
-                          left + drawW,
+                          left + drawWidth,
                           top +
                               mouthTopPx *
                               scale,
                       ),
                   )
 
-                  // Lado esquerdo da área da boca.
                   drawRegion(
                       canvas,
                       Rect(
@@ -682,7 +881,6 @@ jobs:
                       ),
                   )
 
-                  // Lado direito da área da boca.
                   drawRegion(
                       canvas,
                       Rect(
@@ -699,14 +897,13 @@ jobs:
                               mouthTopPx *
                               scale,
                           left +
-                              drawW,
+                              drawWidth,
                           top +
                               mouthBottomPx *
                               scale,
                       ),
                   )
 
-                  // Região abaixo da boca.
                   drawRegion(
                       canvas,
                       Rect(
@@ -721,54 +918,55 @@ jobs:
                               mouthBottomPx *
                               scale,
                           left +
-                              drawW,
+                              drawWidth,
                           top +
-                              drawH,
+                              drawHeight,
                       ),
                   )
 
                   /*
-                   * Durante a fala a pequena peça sobe.
+                   * A BOCA não é esticada.
                    *
-                   * No pico ela chega junto à parte superior,
-                   * criando o movimento abrir/fechar indicado
-                   * pela marcação branca do usuário.
+                   * Ela apenas se desloca verticalmente.
                    *
-                   * Não há stretch, scaleY ou deformação.
+                   * Quando speechWave cresce:
+                   * a peça sobe e se junta visualmente ao focinho.
+                   *
+                   * Quando speechWave cai:
+                   * a peça volta para baixo.
                    */
                   val mouthLift =
                       if (
                           mode ==
                           Mode.SPEAKING
                       ) {
-                          drawH *
-                              0.035f *
+                          drawHeight *
+                              0.050f *
                               speechWave
                       } else {
                           0f
                       }
 
-                  val mouthLeft =
-                      left +
-                          mouthLeftPx *
-                          scale
+                  val mouthDestination =
+                      RectF(
+                          left +
+                              mouthLeftPx *
+                              scale,
 
-                  val mouthRight =
-                      left +
-                          mouthRightPx *
-                          scale
+                          top +
+                              mouthTopPx *
+                              scale -
+                              mouthLift,
 
-                  val mouthTop =
-                      top +
-                          mouthTopPx *
-                          scale -
-                          mouthLift
+                          left +
+                              mouthRightPx *
+                              scale,
 
-                  val mouthBottom =
-                      top +
-                          mouthBottomPx *
-                          scale -
-                          mouthLift
+                          top +
+                              mouthBottomPx *
+                              scale -
+                              mouthLift,
+                      )
 
                   drawRegion(
                       canvas,
@@ -778,21 +976,13 @@ jobs:
                           mouthRightPx,
                           mouthBottomPx,
                       ),
-                      RectF(
-                          mouthLeft,
-                          mouthTop,
-                          mouthRight,
-                          mouthBottom,
-                      ),
+                      mouthDestination,
                   )
 
                   /*
-                   * Anel de estado permanece discreto.
+                   * Anel de estado.
                    */
-                  accentPaint.style =
-                      Paint.Style.STROKE
-
-                  accentPaint.strokeWidth =
+                  ringPaint.strokeWidth =
                       (
                           minSize *
                               0.010f
@@ -801,92 +991,63 @@ jobs:
                               2f
                           )
 
-                  accentPaint.color =
+                  ringPaint.color =
                       Color.argb(
                           when (mode) {
-                              Mode.LISTENING ->
-                                  100
-
-                              Mode.THINKING ->
-                                  145
-
-                              Mode.SPEAKING ->
-                                  175
+                              Mode.LISTENING -> 100
+                              Mode.THINKING -> 145
+                              Mode.SPEAKING -> 180
                           },
-                          248,
-                          42,
-                          52,
+                          245,
+                          35,
+                          48,
                       )
 
-                  accentPaint.setShadowLayer(
+                  ringPaint.setShadowLayer(
                       minSize *
                           0.040f,
                       0f,
                       0f,
                       Color.rgb(
-                          239,
-                          30,
-                          45,
+                          235,
+                          25,
+                          40,
                       ),
                   )
 
-                  val ringRadius =
+                  canvas.drawCircle(
+                      cx,
+                      cy,
                       minSize *
                           (
                               0.445f +
                                   0.006f *
                                   statePulse
-                              )
-
-                  canvas.drawCircle(
-                      cx,
-                      cy,
-                      ringRadius,
-                      accentPaint,
+                              ),
+                      ringPaint,
                   )
 
-                  accentPaint.clearShadowLayer()
-              }
+                  ringPaint.clearShadowLayer()
+          '''
 
-              private fun drawRegion(
-                  canvas: Canvas,
-                  src: Rect,
-                  dst: RectF,
-              ) {
-                  if (
-                      src.width() <= 0 ||
-                      src.height() <= 0 ||
-                      dst.width() <= 0f ||
-                      dst.height() <= 0f
-                  ) {
-                      return
-                  }
+          text = text.replace(
+              marker,
+              drawing,
+              1,
+          )
 
-                  bitmapPaint.alpha = 255
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
 
-                  canvas.drawBitmap(
-                      logo,
-                      src,
-                      dst,
-                      bitmapPaint,
-                  )
-              }
+          PY
 
-              fun release() {
-                  if (!released) {
-                      released = true
-                      animator.cancel()
-                  }
-              }
+      # ==============================================================
+      # VERIFY MOUTH
+      # ==============================================================
 
-              override fun onDetachedFromWindow() {
-                  release()
-                  super.onDetachedFromWindow()
-              }
-          }
-          KOTLIN
-
-      - name: Verify mouth animation regression
+      - name: Verify exact mouth animation
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -896,19 +1057,19 @@ jobs:
           test -s "$VIEW"
 
           grep -Fq \
-            '0.455f' \
+            'mouthLeftPx' \
             "$VIEW"
 
           grep -Fq \
-            '0.595f' \
+            'mouthRightPx' \
             "$VIEW"
 
           grep -Fq \
-            '0.835f' \
+            'mouthTopPx' \
             "$VIEW"
 
           grep -Fq \
-            '0.965f' \
+            'mouthBottomPx' \
             "$VIEW"
 
           grep -Fq \
@@ -916,33 +1077,30 @@ jobs:
             "$VIEW"
 
           grep -Fq \
-            'drawH *' \
+            '0.050f' \
             "$VIEW"
 
-          # Esses eram os responsáveis pela animação horrível
-          # de deformar a parte inferior inteira.
           if grep -Fq \
-            'baseJawHeight' \
+            'jawTopPx' \
             "$VIEW"; then
+
             echo "::error::Animação antiga da mandíbula ainda existe."
             exit 1
           fi
 
           if grep -Fq \
-            'jawTopPx' \
+            'baseJawHeight' \
             "$VIEW"; then
-            echo "::error::Região antiga gigante da mandíbula ainda existe."
+
+            echo "::error::Animação antiga deformando o rosto ainda existe."
             exit 1
           fi
 
-          if grep -Fq \
-            'stretch' \
-            "$VIEW"; then
-            echo "::error::A boca ainda está sendo deformada."
-            exit 1
-          fi
+          echo "PASS: apenas a boca pequena inferior é móvel."
 
-          echo "PASS: somente a pequena boca inferior é móvel."
+      # ==============================================================
+      # STRUCTURAL AUDIT
+      # ==============================================================
 
       - name: Continuous Core structural audit
         working-directory: _gama_build
@@ -971,7 +1129,12 @@ jobs:
           )
 
           for file in "${required[@]}"; do
-            test -s "$file"
+
+            if [ ! -s "$file" ]; then
+              echo "::error::Arquivo obrigatório ausente: $file"
+              exit 1
+            fi
+
             echo "PASS $file"
           done
 
@@ -993,6 +1156,10 @@ jobs:
 
           grep -Fq \
             'ContextSanityCheck' \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            'GamaRecoveryManager' \
             "$SRC/GamaService.kt"
 
           grep -Fq \
@@ -1026,21 +1193,47 @@ jobs:
           if grep -Fq \
             '"apesar"' \
             "$SRC/GamaAppRegistry.kt"; then
-            echo "::error::Alias falso do WhatsApp ainda presente."
+
+            echo "::error::Alias falso do WhatsApp ainda existe."
             exit 1
           fi
+
+          for file in \
+            "$SRC/GamaService.kt" \
+            "$SRC/LocalBrain.kt" \
+            "$SRC/GamaBrainProcessService.kt" \
+            "$SRC/GamaReplyGuard.kt"
+          do
+
+            if grep -Fq \
+              'Não consegui concluir essa resposta' \
+              "$file"; then
+
+              echo "::error::Mensagem técnica proibida encontrada em $file"
+              exit 1
+            fi
+
+          done
 
           grep -Fq \
             'isDebuggable = false' \
             app/build.gradle.kts
 
-          echo "PASS: Continuous Core."
+          echo "PASS: Continuous Core estruturalmente íntegro."
+
+      # ==============================================================
+      # JAVA
+      # ==============================================================
 
       - name: Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+
+      # ==============================================================
+      # ANDROID SDK
+      # ==============================================================
 
       - name: Android SDK 35
         run: |
@@ -1050,10 +1243,15 @@ jobs:
 
           test -d "$SDK_ROOT"
 
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
 
-          SDKMANAGER="$(command -v sdkmanager || true)"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
+
+          SDKMANAGER="$(
+            command -v sdkmanager || true
+          )"
 
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
@@ -1066,68 +1264,83 @@ jobs:
             "build-tools;35.0.0" \
             "platform-tools"
 
+      # ==============================================================
+      # GRADLE
+      # ==============================================================
+
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Set Gama 9.4.1 version
+      # ==============================================================
+      # VERSION
+      # ==============================================================
+
+      - name: Set Gama 9.4.2 version
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
+
           from pathlib import Path
           import os
           import re
 
-          p = Path(
+          path = Path(
               "app/build.gradle.kts"
           )
 
-          text = p.read_text(
+          text = path.read_text(
               encoding="utf-8"
           )
 
-          run =
-              int(
-                  os.environ[
-                      "GITHUB_RUN_NUMBER"
-                  ]
-              )
+          run_number = int(
+              os.environ["GITHUB_RUN_NUMBER"]
+          )
 
-          version_code =
-              24_510_000 + run
+          version_code = (
+              24_520_000 +
+              run_number
+          )
 
-          text, code_count =
-              re.subn(
-                  r"versionCode\s*=\s*\d+",
-                  f"versionCode = {version_code}",
-                  text,
-                  count=1,
-              )
+          text, version_code_changes = re.subn(
+              r'versionCode\s*=\s*\d+',
+              f'versionCode = {version_code}',
+              text,
+              count=1,
+          )
 
-          text, name_count =
-              re.subn(
-                  r'versionName\s*=\s*"[^"]*"',
-                  'versionName = "Gama 9.4.1 Continuous Core"',
-                  text,
-                  count=1,
-              )
+          text, version_name_changes = re.subn(
+              r'versionName\s*=\s*"[^"]*"',
+              'versionName = "Gama 9.4.2 Continuous Core"',
+              text,
+              count=1,
+          )
 
           if (
-              code_count != 1 or
-              name_count != 1
+              version_code_changes != 1 or
+              version_name_changes != 1
           ):
               raise SystemExit(
-                  "Falha ao configurar versão."
+                  "Não foi possível configurar a versão 9.4.2."
               )
 
-          p.write_text(
+          path.write_text(
               text,
-              encoding="utf-8",
+              encoding="utf-8"
           )
+
+          print(
+              f"versionCode={version_code}"
+          )
+
           PY
+
+      # ==============================================================
+      # WRAPPER
+      # ==============================================================
 
       - name: Prepare Gradle wrapper
         working-directory: _gama_build
@@ -1135,13 +1348,19 @@ jobs:
           set -euo pipefail
 
           if [ ! -f gradlew ]; then
+
             gradle wrapper \
               --gradle-version 8.9
+
           fi
 
           chmod +x gradlew
 
           ./gradlew --version
+
+      # ==============================================================
+      # CLEAN
+      # ==============================================================
 
       - name: Clean
         working-directory: _gama_build
@@ -1153,7 +1372,27 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      - name: Compile and test
+      # ==============================================================
+      # COMPILE KOTLIN EARLY
+      # ==============================================================
+
+      - name: Compile Kotlin
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            :app:compileReleaseKotlin \
+            --no-daemon \
+            --stacktrace \
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-compile.log"
+
+      # ==============================================================
+      # TESTS
+      # ==============================================================
+
+      - name: Run unit tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -1162,8 +1401,12 @@ jobs:
             test \
             --no-daemon \
             --stacktrace \
-            2>&1 |
-            tee "$GITHUB_WORKSPACE/gama-tests.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-tests.log"
+
+      # ==============================================================
+      # LINT
+      # ==============================================================
 
       - name: Android lint
         working-directory: _gama_build
@@ -1174,10 +1417,14 @@ jobs:
             lint \
             --no-daemon \
             --stacktrace \
-            2>&1 |
-            tee "$GITHUB_WORKSPACE/gama-lint.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-lint.log"
 
-      - name: Assemble release
+      # ==============================================================
+      # MODELS
+      # ==============================================================
+
+      - name: Prepare offline models
         working-directory: _gama_build
         run: |
           set -euo pipefail
@@ -1186,12 +1433,25 @@ jobs:
             bash tools/download_models.sh
           fi
 
+      # ==============================================================
+      # RELEASE APK
+      # ==============================================================
+
+      - name: Assemble release
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
           ./gradlew \
             assembleRelease \
             --no-daemon \
             --stacktrace \
-            2>&1 |
-            tee "$GITHUB_WORKSPACE/gama-release.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-release.log"
+
+      # ==============================================================
+      # SIGN
+      # ==============================================================
 
       - name: Sign release APK
         working-directory: _gama_build
@@ -1209,9 +1469,14 @@ jobs:
               -maxdepth 1 \
               -type f \
               -name '*.apk' \
-              -print |
-            head -n 1
+              -print \
+              | head -n 1
           )"
+
+          if [ -z "$input_apk" ]; then
+            echo "::error::APK Release não encontrado."
+            exit 1
+          fi
 
           test -s "$input_apk"
 
@@ -1225,15 +1490,25 @@ jobs:
 
           if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
 
-            mkdir -p .gama-signing
-            chmod 700 .gama-signing
+            mkdir -p \
+              .gama-signing
+
+            chmod 700 \
+              .gama-signing
+
+            printf '%s' \
+              "$GAMA_SIGNING_SEED" \
+              | grep -Eq \
+                '^[0-9A-Fa-f]{64}$'
 
             python3 - \
               "$GAMA_SIGNING_SEED" \
-              .gama-signing/key.der <<'PY'
+              .gama-signing/key.der \
+              <<'PY'
+
           import sys
 
-          raw = bytes.fromhex(
+          seed = bytes.fromhex(
               sys.argv[1]
           )
 
@@ -1245,34 +1520,39 @@ jobs:
               16,
           )
 
-          d = (
+          scalar = (
               int.from_bytes(
-                  raw,
-                  "big",
+                  seed,
+                  "big"
               ) %
               (order - 1)
           ) + 1
 
-          key =
-              d.to_bytes(
-                  32,
-                  "big",
-              )
+          key = scalar.to_bytes(
+              32,
+              "big"
+          )
 
           der = (
               bytes.fromhex(
                   "30310201010420"
-              ) +
-              key +
+              )
+              +
+              key
+              +
               bytes.fromhex(
                   "A00A06082A8648CE3D030107"
               )
           )
 
-          open(
+          with open(
               sys.argv[2],
-              "wb",
-          ).write(der)
+              "wb"
+          ) as handle:
+              handle.write(
+                  der
+              )
+
           PY
 
             openssl ec \
@@ -1282,33 +1562,35 @@ jobs:
               >/dev/null 2>&1
 
             printf '%s' \
-              'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ1ekNDQVdHZ0F3SUJBZ0lFQVRVb1FEQUtCZ2dxaGtqT1BRUURBakE2TVJ3d0dnWURWUVFEREJOSFlXMWgKSUZOMFlXSnNaU0JUYVdkdWFXNW5NUTB3Q3dZRFZRUUtEQVJIWVcxaE1Rc3dDUVlEVlFRR0V3SkNVakFnRncweQpOakE1TWpneE5UTTROREJhR0E4eU1USTJNRGt3TkRFMU16ZzBNRm93T2pFY01Cb0dBMVVFQXd3VFIyRnRZU0JUCmRHRmliR1VnVTJsbmJtbHVaekVOTUFzR0ExVUVDZ3dFUjJGdFlURUxNQWtHQTFVRUJoTUNRbEl3V1RBVEJnY3EKaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUV2FNc3krYm84OEorSFcxQktpVGVJUU56REEzd29SQUo0Q0hXZAp4QndQN0NLR0F4QWFZK3Z4d0dBTFZTN1FNU2Zoa0VYd294NElya0kxZUhRck5tTzNvMU13VVRBZEJnTlZIUTRFCkZnUVU4a2ZjczhxMC9MQlA5NHRJTS8yVXZXbXRTZzh3SHdZRFZSMGpCQmd3Rm9BVThrZmNzOHEwL0xCUDk0dEkKTS8yVXZXbXRTZzh3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUVBajZmZQpEcyszSDZQQTRqRk1jS0FQR2pEY0E3amc1cU9WZjg4SkU0UDRvK1VDSURLS3BGMlZ2MTVHdTdaTTgyRlBPZFhtCmNQTHNDOUlkd1NzOUpLM05ZclhKCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K' |
-              base64 --decode \
+              'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ1ekNDQVdHZ0F3SUJBZ0lFQVRVb1FEQUtCZ2dxaGtqT1BRUURBakE2TVJ3d0dnWURWUVFEREJOSFlXMWgKSUZOMFlXSnNaU0JUYVdkdWFXNW5NUTB3Q3dZRFZRUUtEQVJIWVcxaE1Rc3dDUVlEVlFRR0V3SkNVakFnRncweQpOakE1TWpneE5UTTROREJhR0E4eU1USTJNRGt3TkRFMU16ZzBNRm93T2pFY01Cb0dBMVVFQXd3VFIyRnRZU0JUCmRHRmliR1VnVTJsbmJtbHVaekVOTUFzR0ExVUVDZ3dFUjJGdFlURUxNQWtHQTFVRUJoTUNRbEl3V1RBVEJnY3EKaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUV2FNc3krYm84OEorSFcxQktpVGVJUU56REEzd29SQUo0Q0hXZAp4QndQN0NLR0F4QWFZK3Z4d0dBTFZTN1FNU2Zoa0VYd294NElya0kxZUhRck5tTzNvMU13VVRBZEJnTlZIUTRFCkZnUVU4a2ZjczhxMC9MQlA5NHRJTS8yVXZXbXRTZzh3SHdZRFZSMGpCQmd3Rm9BVThrZmNzOHEwL0xCUDk0dEkKTS8yVXZXbXRTZzh3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUVBajZmZQpEcyszSDZQQTRqRk1jS0FQR2pEY0E3amc1cU9WZjg4SkU0UDRvK1VDSURLS3BGMlZ2MTVHdTdaTTgyRlBPZFhtCmNQTHNDOUlkd1NzOUpLM05ZclhKCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K' \
+              | base64 --decode \
               > .gama-signing/cert.pem
 
             keyhash="$(
               openssl pkey \
                 -in .gama-signing/key.pem \
                 -pubout \
-                -outform DER |
-              sha256sum |
-              cut -d' ' -f1
+                -outform DER \
+                | sha256sum \
+                | cut -d' ' -f1
             )"
 
             certhash="$(
               openssl x509 \
                 -in .gama-signing/cert.pem \
                 -pubkey \
-                -noout |
-              openssl pkey \
-                -pubin \
-                -outform DER |
-              sha256sum |
-              cut -d' ' -f1
+                -noout \
+                | openssl pkey \
+                    -pubin \
+                    -outform DER \
+                | sha256sum \
+                | cut -d' ' -f1
             )"
 
             if [ "$keyhash" != "$certhash" ]; then
-              echo "::error::Seed não corresponde à assinatura estável."
+
+              echo "::error::GAMA_SIGNING_SEED não corresponde ao certificado estável."
+
               exit 1
             fi
 
@@ -1334,9 +1616,13 @@ jobs:
               "stable-update-capable" \
               > dist/install-mode.txt
 
-            rm -rf .gama-signing
+            rm -rf \
+              .gama-signing
 
           else
+
+            rm -f \
+              /tmp/gama-fresh.jks
 
             keytool \
               -genkeypair \
@@ -1361,16 +1647,33 @@ jobs:
             echo \
               "fresh-install-only" \
               > dist/install-mode.txt
+
           fi
 
-          rm -f "$aligned"
+          rm -f \
+            "$aligned"
+
+      # ==============================================================
+      # VERIFY APK
+      # ==============================================================
+
+      - name: Verify final APK
+        working-directory: _gama_build
+        env:
+          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          set -euo pipefail
+
+          test -s \
+            dist/Gama.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
             --verbose \
             --print-certs \
-            dist/Gama.apk |
-            tee dist/signature-info.txt
+            dist/Gama.apk \
+            | tee \
+              dist/signature-info.txt
 
           "$ANDROID_HOME/build-tools/35.0.0/aapt" \
             dump badging \
@@ -1382,10 +1685,10 @@ jobs:
             dist/apk-info.txt
 
           grep -q \
-            "versionName='Gama 9.4.1 Continuous Core'" \
+            "versionName='Gama 9.4.2 Continuous Core'" \
             dist/apk-info.txt
 
-          EXPECTED_VERSION_CODE="$((24510000 + GITHUB_RUN_NUMBER))"
+          EXPECTED_VERSION_CODE="$((24520000 + GITHUB_RUN_NUMBER))"
 
           grep -q \
             "versionCode='$EXPECTED_VERSION_CODE'" \
@@ -1395,8 +1698,33 @@ jobs:
             'application-debuggable' \
             dist/apk-info.txt; then
 
-            echo "::error::APK release está debuggable."
+            echo "::error::APK Release ainda está debuggable."
             exit 1
+          fi
+
+          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
+
+            actual_cert="$(
+              awk -F': ' \
+                '/certificate SHA-256 digest/ {
+                  print $2
+                  exit
+                }' \
+                dist/signature-info.txt \
+                | tr -d ':' \
+                | tr '[:lower:]' '[:upper:]'
+            )"
+
+            if [ "$actual_cert" != "$GAMA_EXPECTED_CERT_SHA256" ]; then
+
+              echo "::error::Certificado final diferente da assinatura estável."
+
+              echo "expected=$GAMA_EXPECTED_CERT_SHA256"
+              echo "actual=$actual_cert"
+
+              exit 1
+            fi
+
           fi
 
           (
@@ -1411,6 +1739,12 @@ jobs:
               Gama.apk.sha256
           )
 
+          echo "PASS: APK Release verificado."
+
+      # ==============================================================
+      # SECOND AUDIT
+      # ==============================================================
+
       - name: Final architecture audit
         working-directory: _gama_build
         run: |
@@ -1418,11 +1752,22 @@ jobs:
 
           SRC="app/src/main/java/com/gama/assistant"
 
-          test -s dist/Gama.apk
+          test -s \
+            dist/Gama.apk
+
+          test -s \
+            reports/GAMA-9.4.0-CHANGES.md
+
+          test -s \
+            reports/PHYSICAL-TESTS-REQUIRED.md
 
           grep -Fq \
             'ActiveTaskContext' \
             "$SRC/ConversationSession.kt"
+
+          grep -Fq \
+            'GamaTurnCoordinator' \
+            "$SRC/GamaOrchestrator.kt"
 
           grep -Fq \
             'SemanticEndpointer' \
@@ -1441,7 +1786,19 @@ jobs:
             "$SRC/GamaService.kt"
 
           grep -Fq \
+            'FOLLOW_UP_LISTENING' \
+            "$SRC/AssistantStateController.kt"
+
+          grep -Fq \
+            'ENDPOINT_PENDING' \
+            "$SRC/AssistantStateController.kt"
+
+          grep -Fq \
             'getLaunchIntentSenderForPackage' \
+            "$SRC/GamaReliableAppLauncher.kt"
+
+          grep -Fq \
+            'LAUNCHER_APPS' \
             "$SRC/GamaReliableAppLauncher.kt"
 
           grep -Fq \
@@ -1456,7 +1813,11 @@ jobs:
             exit 1
           fi
 
-          echo "PASS: auditoria final 9.4.1."
+          echo "PASS: auditoria final GAMA 9.4.2."
+
+      # ==============================================================
+      # UPLOAD APK
+      # ==============================================================
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -1470,10 +1831,14 @@ jobs:
             _gama_build/dist/install-mode.txt
           if-no-files-found: error
 
+      # ==============================================================
+      # UPLOAD SOURCE
+      # ==============================================================
+
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-9.4.1-CONTINUOUS-CORE-source
+          name: Gama-9.4.2-CONTINUOUS-CORE-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -1481,18 +1846,28 @@ jobs:
             !_gama_build/dist/**
           if-no-files-found: error
 
-      - name: Upload diagnostics
+      # ==============================================================
+      # REPORTS
+      # ==============================================================
+
+      - name: Upload engineering reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-9.4.1-diagnostics
+          name: Gama-9.4.2-engineering-reports
           path: |
+            _gama_build/reports/**
+            gama-compile.log
             gama-tests.log
             gama-lint.log
             gama-release.log
             _gama_build/app/build/reports/**
             _gama_build/app/build/test-results/**
           if-no-files-found: warn
+
+      # ==============================================================
+      # RELEASE
+      # ==============================================================
 
       - name: Publish release
         if: success()
@@ -1501,13 +1876,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="gama-v9.4.1-continuous-core-${{ github.run_number }}"
+          TAG="gama-v9.4.2-continuous-core-${{ github.run_number }}"
 
-          gh release create "$TAG" \
+          gh release create \
+            "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
+            "_gama_build/reports/GAMA-9.4.0-CHANGES.md#GAMA-9.4.2-CHANGES.md" \
+            "_gama_build/reports/PHYSICAL-TESTS-REQUIRED.md#PHYSICAL-TESTS-REQUIRED.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.4.1 Continuous Core" \
-            --notes "Corrige o SyntaxError do #139, preserva o Continuous Core e substitui a antiga deformação da mandíbula pela animação apenas da pequena boca inferior indicada na logo." \
+            --title "Gama 9.4.2 Continuous Core" \
+            --notes "Continuous Core sobre o source real do Gama 9.3.0. Corrige os SyntaxErrors dos builds #139 e #140, preserva sessão contínua, contexto ativo, proteção contra respostas antigas, recuperação silenciosa, launcher verificado e substitui a antiga deformação da mandíbula pela animação apenas da pequena boca inferior indicada pelo usuário." \
             --latest
