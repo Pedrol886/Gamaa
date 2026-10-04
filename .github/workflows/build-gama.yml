@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX147
+name: Build Gama 9.5.0 Personal Intelligence Core FIX148
 
 on:
   workflow_dispatch:
@@ -372,7 +372,7 @@ jobs:
               count=1,
           )
           if helper_count != 1:
-              raise SystemExit(f"FIX147: helper 9.4 encontrado {helper_count} vezes.")
+              raise SystemExit(f"FIX148: helper 9.4 encontrado {helper_count} vezes.")
 
           ast.parse(
               script,
@@ -392,7 +392,7 @@ jobs:
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
-          # FIX147: prova que o regex flexível casa com a fonte auditada #136.
+          # FIX148: prova que o regex flexível casa com a fonte auditada #136.
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -414,10 +414,10 @@ jobs:
 
           if re.search(flexible, source, flags=re.S) is None:
               raise SystemExit(
-                  "FIX147: preflight não encontrou o bloco de timeouts na fonte #136."
+                  "FIX148: preflight não encontrou o bloco de timeouts na fonte #136."
               )
 
-          print("PASS: FIX147 preflight regex/source #136.")
+          print("PASS: FIX148 preflight regex/source #136.")
           PY
 
           python3 \
@@ -447,6 +447,7 @@ jobs:
           python3 - /tmp/gama142.yml <<'PY'
           from pathlib import Path
           import ast
+          import re
           import sys
 
           template = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
@@ -656,7 +657,7 @@ jobs:
               count=1,
           )
           if helper_i_count != 1:
-              raise SystemExit(f"FIX147: helper 9.5 encontrado {helper_i_count} vezes.")
+              raise SystemExit(f"FIX148: helper 9.5 encontrado {helper_i_count} vezes.")
 
           ast.parse(integration, filename="gama95-integrate.py")
 
@@ -676,6 +677,24 @@ jobs:
 
           echo "PASS: Gama 9.5 Personal Intelligence Core integrado."
 
+      - name: Upload Gama 9.5 integration debug
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-9.5-integration-debug-${{ github.run_number }}
+          path: |
+            /tmp/gama142.yml
+            /tmp/gama95-integrate.py
+            _gama_build/app/src/main/java/com/gama/assistant/GamaPersonalCore.kt
+            _gama_build/app/src/main/java/com/gama/assistant/SemanticEndpointer.kt
+            _gama_build/app/src/main/java/com/gama/assistant/ContextSanityCheck.kt
+            _gama_build/app/src/main/java/com/gama/assistant/AssistantStateController.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaSupervisor.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          if-no-files-found: warn
+
       - name: Generate engineering report
         run: |
           set -euo pipefail
@@ -683,7 +702,7 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX147
+          # GAMA 9.5.0 Personal Intelligence Core FIX148
 
           ## CORREÇÕES DE BUILD
 
@@ -1231,6 +1250,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX147" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX148" \
             --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
