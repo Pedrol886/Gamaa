@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX145
+name: Build Gama 9.5.0 Personal Intelligence Core FIX146
 
 on:
   workflow_dispatch:
@@ -321,7 +321,7 @@ jobs:
                       f"exatamente uma ocorrência. count={count}"
                   )
 
-          # FIX #145: substitui os helpers frágeis do #139 antes de executar.
+          # FIX #146: substitui os helpers frágeis do #139 antes de executar.
           robust_helper = "\n".join([
               "def replace_once(path: Path, old: str, new: str):",
               "    value = path.read_text(encoding=\"utf-8\")",
@@ -344,6 +344,7 @@ jobs:
               "    candidates = [pattern]",
               "    if normalized not in candidates: candidates.append(normalized)",
               "    flexible = normalized.replace(r\"\\ \", r\"\\s+\")",
+              "    flexible = re.sub(r\"\\n\\s*\", lambda _m: r\"\\s*\", flexible)",
               "    if flexible not in candidates: candidates.append(flexible)",
               "    for candidate in candidates:",
               "        result, count = re.subn(candidate, replacement, value, count=1, flags=re.S)",
@@ -365,7 +366,7 @@ jobs:
               count=1,
           )
           if helper_count != 1:
-              raise SystemExit(f"FIX145: helper 9.4 encontrado {helper_count} vezes.")
+              raise SystemExit(f"FIX146: helper 9.4 encontrado {helper_count} vezes.")
 
           ast.parse(
               script,
@@ -385,10 +386,49 @@ jobs:
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
+          # FIX146: prova que o regex flexível casa com a fonte auditada #136.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          source = Path(
+              "_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt"
+          ).read_text(encoding="utf-8")
+
+          original = r'''
+          private\ const\ val\ COMMAND_START_TIMEOUT_MS\ =\ 2000L
+          .*?
+          private\ const\ val\ CONVERSATION_IDLE_TIMEOUT_MS\ =\ 60L\ \*\ 60L\ \*\ 1000L
+          '''
+
+          normalized = textwrap.dedent(original).strip()
+          flexible = normalized.replace(r"\ ", r"\s+")
+          flexible = re.sub(r"\n\s*", lambda _m: r"\s*", flexible)
+
+          if re.search(flexible, source, flags=re.S) is None:
+              raise SystemExit(
+                  "FIX146: preflight não encontrou o bloco de timeouts na fonte #136."
+              )
+
+          print("PASS: FIX146 preflight regex/source #136.")
+          PY
+
           python3 \
             /tmp/gama94-transform.py
 
           echo "PASS: Gama 9.4 Continuous Core aplicado."
+
+      - name: Upload Continuous Core recovery diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-Continuous-Core-debug-${{ github.run_number }}
+          path: |
+            /tmp/gama94-transform.py
+            /tmp/gama139.yml
+            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          if-no-files-found: warn
 
       - name: Import Gama 9.5 Personal Intelligence Core from exact 142 source
         run: |
@@ -573,6 +613,7 @@ jobs:
               "    candidates = [pattern]",
               "    if normalized not in candidates: candidates.append(normalized)",
               "    flexible = normalized.replace(r\"\\ \", r\"\\s+\")",
+              "    flexible = re.sub(r\"\\n\\s*\", lambda _m: r\"\\s*\", flexible)",
               "    if flexible not in candidates: candidates.append(flexible)",
               "    for candidate in candidates:",
               "        updated, count = re.subn(candidate, replacement, text, count=1, flags=re.S)",
@@ -609,7 +650,7 @@ jobs:
               count=1,
           )
           if helper_i_count != 1:
-              raise SystemExit(f"FIX145: helper 9.5 encontrado {helper_i_count} vezes.")
+              raise SystemExit(f"FIX146: helper 9.5 encontrado {helper_i_count} vezes.")
 
           ast.parse(integration, filename="gama95-integrate.py")
 
@@ -636,7 +677,7 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX145
+          # GAMA 9.5.0 Personal Intelligence Core FIX146
 
           ## CORREÇÕES DE BUILD
 
@@ -1184,6 +1225,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX145" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX146" \
             --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
