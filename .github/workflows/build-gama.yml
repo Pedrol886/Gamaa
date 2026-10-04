@@ -1,4 +1,4 @@
-name: Build Gama 9.3.0 JARVIS Reliability APK
+name: Audit Exact Gama 9.3.0 Source
 
 on:
   workflow_dispatch:
@@ -12,22 +12,17 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-9-3-jarvis-${{ github.ref }}
+  group: gama-source-audit-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build:
+  audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    defaults:
-      run:
-        shell: bash
+    timeout-minutes: 30
 
     env:
-      # Base imutável: #135, última build aprovada.
-      GAMA_BASE_RUN_ID: "37153784130"
-      GAMA_BASE_ARTIFACT: "Gama-9.2.3-RED-CORE-source"
+      GAMA_BASE_RUN_ID: "37158343882"
+      GAMA_BASE_ARTIFACT: "Gama-9.3.0-JARVIS-source"
 
     steps:
       - name: Checkout repository
@@ -35,947 +30,375 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve signing mode
-        id: signing
-        env:
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
-            echo "mode=fresh" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.3.0-JARVIS-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
-            echo "::warning::Sem GAMA_SIGNING_SEED. O APK será instalação limpa."
-          elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
-            echo "mode=stable" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-9.3.0-JARVIS-APK" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::GAMA_SIGNING_SEED precisa ter exatamente 64 caracteres hexadecimais."
-            exit 1
-          fi
-
-      - name: Restore exact successful Gama 9.2.3 source
+      - name: Restore exact successful Gama 9.3.0 source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          rm -rf _gama_build
-          mkdir -p _gama_build
+          rm -rf _gama_audit audit-source
+          mkdir -p _gama_audit audit-source
 
           gh run download "$GAMA_BASE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --name "$GAMA_BASE_ARTIFACT" \
-            --dir _gama_build
+            --dir _gama_audit
 
-          test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/AndroidManifest.xml
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaActionVerifier.kt
-          test -s _gama_build/app/src/main/res/drawable/gama_red_core.webp
+          test -s _gama_audit/app/build.gradle.kts
+          test -s _gama_audit/app/src/main/AndroidManifest.xml
+          test -s _gama_audit/app/src/main/java/com/gama/assistant/GamaService.kt
 
-          grep -Fq 'Gama 9.2.3 Red Core' \
-            _gama_build/app/build.gradle.kts
+          grep -Fq \
+            'Gama 9.3.0 JARVIS Reliability' \
+            _gama_audit/app/build.gradle.kts
 
-          echo "Base #135 confirmada."
+          echo "Exact build #136 source restored."
 
-      - name: Apply Gama 9.3 JARVIS reliability hardening
+      - name: Audit architecture and extract textual source
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
           from pathlib import Path
+          import json
           import re
+          import shutil
 
-          root = Path("_gama_build")
-          src = root / "app/src/main/java/com/gama/assistant"
+          root = Path("_gama_audit")
+          out = Path("audit-source")
+          out.mkdir(parents=True, exist_ok=True)
 
-          service_path = src / "GamaService.kt"
-          launcher_path = src / "GamaReliableAppLauncher.kt"
-          manifest_path = root / "app/src/main/AndroidManifest.xml"
+          allowed = {
+              ".kt",
+              ".kts",
+              ".xml",
+              ".gradle",
+              ".properties",
+              ".py",
+              ".sh",
+              ".md",
+              ".txt",
+          }
 
-          for p in (service_path, launcher_path, manifest_path):
+          copied = []
+
+          for p in root.rglob("*"):
               if not p.is_file():
-                  raise SystemExit(f"Arquivo obrigatório ausente: {p}")
-
-          # ==========================================================
-          # 1. WAKE WORD MAIS RÍGIDO
-          # ==========================================================
-          service = service_path.read_text(encoding="utf-8")
-
-          wake_pattern = re.compile(
-              r'wakePartialHits\s*>=\s*(\d+)'
-          )
-
-          match = wake_pattern.search(service)
-
-          if not match:
-              raise SystemExit(
-                  "Não encontrei o contador wakePartialHits da base #135."
-              )
-
-          current_hits = int(match.group(1))
-
-          if current_hits < 6:
-              service = wake_pattern.sub(
-                  "wakePartialHits >= 6",
-                  service,
-                  count=1
-              )
-
-          # ==========================================================
-          # 2. JANELA DE CONVERSA MAIS NATURAL
-          #
-          # Ajusta somente constantes claramente identificadas como
-          # timeout/idle de sessão. Não mexe em timers genéricos.
-          # ==========================================================
-          conversation_files = [
-              service_path,
-              src / "ConversationSession.kt",
-          ]
-
-          session_patterns = [
-              re.compile(
-                  r'('
-                  r'(?:SESSION|CONVERSATION)'
-                  r'[A-Z0-9_]*'
-                  r'(?:TIMEOUT|IDLE)'
-                  r'[A-Z0-9_]*'
-                  r'\s*=\s*)'
-                  r'\d[\d_]*L'
-              ),
-              re.compile(
-                  r'('
-                  r'(?:SESSION|CONVERSATION)'
-                  r'[A-Z0-9_]*'
-                  r'(?:TIMEOUT|IDLE)'
-                  r'[A-Z0-9_]*'
-                  r'\s*=\s*)'
-                  r'\d[\d_]*'
-              ),
-          ]
-
-          for path in conversation_files:
-              if not path.is_file():
                   continue
 
-              text = path.read_text(encoding="utf-8")
+              if p.suffix.lower() not in allowed:
+                  continue
 
-              for pattern in session_patterns:
-                  text, _ = pattern.subn(
-                      lambda m: m.group(1) + "30_000L",
-                      text,
-                      count=1,
-                  )
-
-              path.write_text(text, encoding="utf-8")
-
-          # Salva alteração do wake.
-          service_path.write_text(service, encoding="utf-8")
-
-          # ==========================================================
-          # 3. FALLBACK UNIVERSAL DE ABERTURA DE APPS
-          #
-          # O launcher atual permanece como primeira rota.
-          # Esse fallback só entra se todas as rotas anteriores
-          # falharem.
-          # ==========================================================
-          fallback = r'''package com.gama.assistant
-
-          import android.content.Context
-          import android.content.Intent
-          import android.content.pm.LauncherApps
-          import android.net.Uri
-          import android.os.Process
-
-          /**
-           * Última rota para abertura de aplicativos.
-           *
-           * O GamaReliableAppLauncher continua tentando:
-           * 1. IntentSender
-           * 2. LaunchIntent normal
-           * 3. Activity explícita
-           * 4. deep-link
-           *
-           * Essa classe adiciona:
-           * 5. LauncherApps
-           * 6. ACTION_MAIN + CATEGORY_LAUNCHER
-           * 7. deep-link final para WhatsApp
-           */
-          object GamaLaunchFallback {
-
-              fun launch(
-                  context: Context,
-                  packageName: String
-              ): Boolean {
-
-                  // Rota LauncherApps.
-                  runCatching {
-                      val launcherApps =
-                          context.getSystemService(LauncherApps::class.java)
-
-                      val user = Process.myUserHandle()
-
-                      val activities =
-                          launcherApps?.getActivityList(
-                              packageName,
-                              user
-                          ).orEmpty()
-
-                      val activity =
-                          activities.firstOrNull()
-
-                      if (
-                          launcherApps != null &&
-                          activity != null
-                      ) {
-                          launcherApps.startMainActivity(
-                              activity.componentName,
-                              user,
-                              null,
-                              null
-                          )
-
-                          return true
-                      }
-                  }
-
-                  // Rota launcher genérica.
-                  runCatching {
-                      val intent =
-                          Intent(Intent.ACTION_MAIN)
-                              .addCategory(
-                                  Intent.CATEGORY_LAUNCHER
-                              )
-                              .setPackage(packageName)
-                              .addFlags(
-                                  Intent.FLAG_ACTIVITY_NEW_TASK or
-                                  Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                              )
-
-                      val resolved =
-                          context.packageManager
-                              .resolveActivity(intent, 0)
-
-                      if (resolved != null) {
-                          context.startActivity(intent)
-                          return true
-                      }
-                  }
-
-                  // Última tentativa para WhatsApp.
-                  if (
-                      packageName == "com.whatsapp" ||
-                      packageName == "com.whatsapp.w4b"
-                  ) {
-                      runCatching {
-                          val whatsapp =
-                              Intent(
-                                  Intent.ACTION_VIEW,
-                                  Uri.parse("whatsapp://send")
-                              ).addFlags(
-                                  Intent.FLAG_ACTIVITY_NEW_TASK
-                              )
-
-                          context.startActivity(whatsapp)
-
-                          return true
-                      }
-                  }
-
-                  return false
-              }
-          }
-          '''.strip() + "\n"
-
-          fallback_path = src / "GamaLaunchFallback.kt"
-          fallback_path.write_text(
-              fallback,
-              encoding="utf-8"
-          )
-
-          # ==========================================================
-          # 4. CONECTA O FALLBACK AO LAUNCHER EXISTENTE
-          #
-          # Localizamos a função que contém
-          # getLaunchIntentSenderForPackage e inserimos o fallback
-          # imediatamente antes do último "return false".
-          # ==========================================================
-          launcher = launcher_path.read_text(encoding="utf-8")
-
-          if "GamaLaunchFallback.launch" not in launcher:
-
-              marker = "getLaunchIntentSenderForPackage"
-              point = launcher.find(marker)
-
-              if point < 0:
-                  raise SystemExit(
-                      "Launcher #135 não contém "
-                      "getLaunchIntentSenderForPackage."
-                  )
-
-              fun_start = launcher.rfind(
-                  "fun ",
-                  0,
-                  point
-              )
-
-              if fun_start < 0:
-                  raise SystemExit(
-                      "Não localizei a função de launch."
-                  )
-
-              brace = launcher.find(
-                  "{",
-                  fun_start
-              )
-
-              if brace < 0:
-                  raise SystemExit(
-                      "Corpo da função launcher não localizado."
-                  )
-
-              signature = launcher[
-                  fun_start:brace
-              ]
-
-              params = re.findall(
-                  r'(\w+)\s*:\s*([^,\)]+)',
-                  signature
-              )
-
-              context_param = None
-              package_param = None
-
-              for name, typ in params:
-                  typ = typ.strip()
-
-                  if (
-                      context_param is None and
-                      "Context" in typ
-                  ):
-                      context_param = name
-
-                  if (
-                      package_param is None and
-                      "String" in typ and
-                      (
-                          "package" in name.lower() or
-                          "pkg" in name.lower()
-                      )
-                  ):
-                      package_param = name
-
-              if context_param is None:
-                  raise SystemExit(
-                      "Parâmetro Context do launcher não identificado."
-                  )
-
-              if package_param is None:
-                  # Fallback: primeiro String.
-                  for name, typ in params:
-                      if "String" in typ:
-                          package_param = name
-                          break
-
-              if package_param is None:
-                  raise SystemExit(
-                      "Parâmetro packageName do launcher não identificado."
-                  )
-
-              # Encontra o fechamento correto da função.
-              depth = 0
-              body_end = None
-
-              for i in range(
-                  brace,
-                  len(launcher)
+              if any(
+                  part in {".gradle", ".git", "build"}
+                  for part in p.parts
               ):
-                  ch = launcher[i]
+                  continue
 
-                  if ch == "{":
-                      depth += 1
-                  elif ch == "}":
-                      depth -= 1
+              rel = p.relative_to(root)
+              dest = out / rel
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(p, dest)
+              copied.append(str(rel))
 
-                      if depth == 0:
-                          body_end = i
-                          break
+          kotlin = list(root.rglob("*.kt"))
 
-              if body_end is None:
-                  raise SystemExit(
-                      "Não consegui fechar função do launcher."
+          contents = {}
+
+          for p in kotlin:
+              try:
+                  contents[p] = p.read_text(
+                      encoding="utf-8",
+                      errors="replace",
                   )
+              except Exception:
+                  contents[p] = ""
 
-              body = launcher[
-                  brace + 1:body_end
-              ]
+          corpus = "\n".join(contents.values())
 
-              final_false = body.rfind(
-                  "return false"
+          def files_with(pattern):
+              regex = re.compile(pattern)
+              return sorted(
+                  str(p.relative_to(root))
+                  for p, text in contents.items()
+                  if regex.search(text)
               )
 
-              if final_false < 0:
-                  raise SystemExit(
-                      "Launcher não possui retorno final false."
-                  )
+          metrics = {
+              "kotlin_files": len(kotlin),
 
-              absolute = (
-                  brace +
-                  1 +
-                  final_false
-              )
+              "recognition_listener_mentions":
+                  corpus.count("RecognitionListener"),
 
-              line_start = launcher.rfind(
-                  "\n",
-                  0,
-                  absolute
-              ) + 1
+              "on_partial_result":
+                  corpus.count("onPartialResult"),
 
-              indent = launcher[
-                  line_start:absolute
-              ]
+              "on_result":
+                  corpus.count("onResult"),
 
-              injection = (
-                  f"if (GamaLaunchFallback.launch("
-                  f"{context_param}, {package_param}"
-                  f")) return true\n"
-                  f"{indent}"
-              )
+              "on_final_result":
+                  corpus.count("onFinalResult"),
 
-              launcher = (
-                  launcher[:absolute] +
-                  injection +
-                  launcher[absolute:]
-              )
+              "speech_service_mentions":
+                  corpus.count("SpeechService"),
 
-          launcher_path.write_text(
-              launcher,
-              encoding="utf-8"
+              "audio_record_mentions":
+                  corpus.count("AudioRecord"),
+
+              "tts_speak_mentions":
+                  corpus.count(".speak("),
+
+              "coroutine_scope_mentions":
+                  corpus.count("CoroutineScope"),
+
+              "job_mentions":
+                  len(re.findall(r"\bJob\b", corpus)),
+
+              "handler_mentions":
+                  len(re.findall(r"\bHandler\b", corpus)),
+
+              "delay_calls":
+                  len(re.findall(r"\bdelay\s*\(", corpus)),
+
+              "thread_sleep_calls":
+                  len(re.findall(r"Thread\.sleep\s*\(", corpus)),
+
+              "with_timeout_calls":
+                  len(re.findall(r"withTimeout", corpus)),
+
+              "aec_mentions":
+                  corpus.count("AcousticEchoCanceler"),
+
+              "audio_effect_ns_mentions":
+                  corpus.count("NoiseSuppressor"),
+
+              "gama_supervisor":
+                  "GamaSupervisor" in corpus,
+
+              "intent_engine":
+                  "GamaIntentEngine" in corpus,
+
+              "tool_registry":
+                  "GamaToolRegistry" in corpus,
+
+              "action_verifier":
+                  "GamaActionVerifier" in corpus,
+
+              "conversation_session":
+                  "ConversationSession" in corpus,
+
+              "continuity_memory":
+                  "GamaContinuityMemory" in corpus,
+
+              "reference_memory":
+                  "GamaReferenceMemory" in corpus,
+
+              "screen_memory":
+                  "GamaScreenMemory" in corpus,
+
+              "reliable_launcher":
+                  "GamaReliableAppLauncher" in corpus,
+
+              "launch_fallback":
+                  "GamaLaunchFallback" in corpus,
+
+              "local_brain_mentions":
+                  corpus.count("LocalBrain"),
+
+              "request_id_mentions":
+                  len(re.findall(
+                      r"\brequestId\b",
+                      corpus,
+                  )),
+
+              "tts_files":
+                  files_with(
+                      r"TextToSpeech|\.speak\("
+                  ),
+
+              "recognition_files":
+                  files_with(
+                      r"RecognitionListener|"
+                      r"onPartialResult|"
+                      r"SpeechService"
+                  ),
+
+              "audio_files":
+                  files_with(
+                      r"AudioRecord|"
+                      r"AcousticEchoCanceler|"
+                      r"NoiseSuppressor"
+                  ),
+
+              "brain_files":
+                  files_with(
+                      r"Gemma|"
+                      r"LocalBrain|"
+                      r"generateResponse|"
+                      r"generateAsync"
+                  ),
+
+              "launcher_files":
+                  files_with(
+                      r"LaunchIntent|"
+                      r"LauncherApps|"
+                      r"com\.whatsapp"
+                  ),
+
+              "state_files":
+                  files_with(
+                      r"GamaSupervisor|"
+                      r"State|"
+                      r"SLEEPING|"
+                      r"LISTENING|"
+                      r"THINKING"
+                  ),
+          }
+
+          manifest_path = (
+              root /
+              "app/src/main/AndroidManifest.xml"
           )
 
-          # ==========================================================
-          # 5. PACKAGE VISIBILITY
-          # ==========================================================
           manifest = manifest_path.read_text(
-              encoding="utf-8"
+              encoding="utf-8",
+              errors="replace",
           )
 
-          packages = [
-              "com.whatsapp",
-              "com.whatsapp.w4b",
+          build_path = root / "app/build.gradle.kts"
+
+          build = build_path.read_text(
+              encoding="utf-8",
+              errors="replace",
+          )
+
+          checks = {
+              "debuggable_true":
+                  'android:debuggable="true"' in manifest,
+
+              "whatsapp_query":
+                  "com.whatsapp" in manifest,
+
+              "whatsapp_business_query":
+                  "com.whatsapp.w4b" in manifest,
+
+              "debug_build_type":
+                  "debug {" in build,
+
+              "release_build_type":
+                  "release {" in build,
+
+              "minify_enabled":
+                  "isMinifyEnabled = true" in build,
+          }
+
+          report = [
+              "# GAMA 9.3.0 EXACT SOURCE AUDIT",
+              "",
+              "Source:",
+              "GitHub Actions run #136",
+              "Gama-9.3.0-JARVIS-source",
+              "",
+              "No application source was modified by this audit.",
+              "",
+              "## Metrics",
+              "",
           ]
 
-          missing = [
-              p for p in packages
-              if f'android:name="{p}"' not in manifest
-          ]
-
-          if missing:
-              package_xml = "\n".join(
-                  f'        <package android:name="{p}" />'
-                  for p in missing
+          for key, value in metrics.items():
+              report.append(
+                  f"- {key}: {value}"
               )
 
-              if "</queries>" in manifest:
-                  manifest = manifest.replace(
-                      "</queries>",
-                      package_xml + "\n    </queries>",
-                      1,
-                  )
-              else:
-                  manifest_start = manifest.find(
-                      "<manifest"
-                  )
+          report += [
+              "",
+              "## Build / Manifest",
+              "",
+          ]
 
-                  manifest_end = manifest.find(
-                      ">",
-                      manifest_start
-                  )
+          for key, value in checks.items():
+              report.append(
+                  f"- {key}: {value}"
+              )
 
-                  if (
-                      manifest_start < 0 or
-                      manifest_end < 0
-                  ):
-                      raise SystemExit(
-                          "Manifest inválido."
-                      )
+          report += [
+              "",
+              "## Copied source files",
+              "",
+          ]
 
-                  queries = (
-                      "\n\n    <queries>\n" +
-                      package_xml +
-                      "\n    </queries>"
-                  )
+          for name in sorted(copied):
+              report.append(f"- {name}")
 
-                  manifest = (
-                      manifest[:manifest_end + 1] +
-                      queries +
-                      manifest[manifest_end + 1:]
-                  )
-
-          manifest_path.write_text(
-              manifest,
-              encoding="utf-8"
+          (out / "ARCHITECTURE_AUDIT.md").write_text(
+              "\n".join(report) + "\n",
+              encoding="utf-8",
           )
 
-          # ==========================================================
-          # 6. TEMPO DE VERIFICAÇÃO DE APP
-          #
-          # Em aparelhos onde o app demora a aparecer, o GAMA não
-          # deve concluir cedo demais que a abertura falhou.
-          # Só altera constantes explicitamente relacionadas ao
-          # verificador de apps.
-          # ==========================================================
-          service = service_path.read_text(
-              encoding="utf-8"
-          )
-
-          verify_patterns = [
-              re.compile(
-                  r'('
-                  r'APP[A-Z0-9_]*VERIFY[A-Z0-9_]*'
-                  r'(?:DELAY|TIMEOUT)[A-Z0-9_]*'
-                  r'\s*=\s*)'
-                  r'\d[\d_]*L'
+          (out / "architecture-metrics.json").write_text(
+              json.dumps(
+                  {
+                      "metrics": metrics,
+                      "checks": checks,
+                  },
+                  indent=2,
+                  ensure_ascii=False,
               ),
-              re.compile(
-                  r'('
-                  r'APP[A-Z0-9_]*LAUNCH[A-Z0-9_]*'
-                  r'(?:DELAY|TIMEOUT)[A-Z0-9_]*'
-                  r'\s*=\s*)'
-                  r'\d[\d_]*L'
-              ),
-          ]
-
-          for pattern in verify_patterns:
-              service, _ = pattern.subn(
-                  lambda m: m.group(1) + "1_800L",
-                  service,
-                  count=1
-              )
-
-          service_path.write_text(
-              service,
-              encoding="utf-8"
+              encoding="utf-8",
           )
 
-          print("GAMA 9.3 reliability patch aplicado.")
-          PY
-
-      - name: Verify JARVIS guards
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          SRC="app/src/main/java/com/gama/assistant"
-
-          test -s "$SRC/GamaLaunchFallback.kt"
-          test -s "$SRC/GamaReliableAppLauncher.kt"
-          test -s "$SRC/GamaActionVerifier.kt"
-          test -s "$SRC/GamaContinuityMemory.kt"
-          test -s "$SRC/GamaReferenceMemory.kt"
-          test -s "$SRC/GamaScreenMemory.kt"
-
-          grep -Eq \
-            'wakePartialHits[[:space:]]*>=[[:space:]]*6' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'GamaLaunchFallback.launch' \
-            "$SRC/GamaReliableAppLauncher.kt"
-
-          grep -Fq \
-            'LauncherApps' \
-            "$SRC/GamaLaunchFallback.kt"
-
-          grep -Fq \
-            'whatsapp://send' \
-            "$SRC/GamaLaunchFallback.kt"
-
-          grep -Fq \
-            'com.whatsapp' \
-            app/src/main/AndroidManifest.xml
-
-          grep -Fq \
-            'verifyKnownAppLaunch' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'resumePendingNotificationRead' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'REQUEST_NOTIFICATION_ACCESS' \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            'Ativar controle de tela e rolagem' \
-            "$SRC/MainActivity.kt"
-
-          grep -Fq \
-            'Autorizar acesso às notificações' \
-            "$SRC/MainActivity.kt"
-
-          grep -Fq \
-            '@drawable/gama_red_core' \
-            app/src/main/AndroidManifest.xml
-
-          grep -Fq \
-            'GamaRedTheme' \
-            app/src/main/AndroidManifest.xml
-
-          # Continua sendo obrigatório não confirmar antes da
-          # verificação.
-          grep -Fq \
-            'GamaActionVerifier' \
-            "$SRC/GamaService.kt"
-
-          if [ -f tools/audit_gama.py ]; then
-            python3 tools/audit_gama.py
-          fi
-
-          echo "GAMA 9.3 JARVIS guards aprovados."
-
-      - name: Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Android SDK 35
-        run: |
-          set -euo pipefail
-
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-
-          test -d "$SDK_ROOT"
-
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(command -v sdkmanager || true)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          fi
-
-          test -x "$SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
-
-      - name: Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Set Gama 9.3.0 version
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import re
-
-          p = Path("app/build.gradle.kts")
-          s = p.read_text(encoding="utf-8")
-
-          run = int(os.environ["GITHUB_RUN_NUMBER"])
-          version_code = 24_400_000 + run
-
-          s, n1 = re.subn(
-              r'versionCode\s*=\s*\d+',
-              f'versionCode = {version_code}',
-              s,
-              count=1
-          )
-
-          s, n2 = re.subn(
-              r'versionName\s*=\s*"[^"]*"',
-              'versionName = "Gama 9.3.0 JARVIS Reliability"',
-              s,
-              count=1
-          )
-
-          if n1 != 1 or n2 != 1:
-              raise SystemExit(
-                  "Falha ao definir versão 9.3.0."
-              )
-
-          p.write_text(
-              s,
-              encoding="utf-8"
+          print(
+              "Audit complete:",
+              len(copied),
+              "text source files copied.",
           )
           PY
 
-      - name: Compile Kotlin first
-        working-directory: _gama_build
+      - name: Publish exact textual source to audit branch
         run: |
           set -euo pipefail
 
-          gradle :app:compileDebugKotlin \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+          git config \
+            user.name \
+            "Gama Architecture Audit"
 
-      - name: Run full regression suite
-        working-directory: _gama_build
+          git config \
+            user.email \
+            "gama-audit@users.noreply.github.com"
+
+          git checkout \
+            --orphan \
+            gama-source-audit-work
+
+          git rm -rf . \
+            >/dev/null 2>&1 || :
+
+          cp -a audit-source/. .
+
+          rm -rf \
+            audit-source \
+            _gama_audit
+
+          git add -A
+
+          git commit \
+            -m \
+            "Gama 9.3.0 exact source architecture audit"
+
+          git push \
+            --force \
+            origin \
+            HEAD:refs/heads/gama-source-audit
+
+      - name: Done
         run: |
           set -euo pipefail
 
-          gradle :app:testDebugUnitTest \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
-
-      - name: Build APK
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          if [ -x tools/download_models.sh ]; then
-            bash tools/download_models.sh
-          fi
-
-          gradle :app:assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-build.log"
-
-      - name: Sign and verify APK
-        working-directory: _gama_build
-        env:
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
-        run: |
-          set -euo pipefail
-
-          mkdir -p dist
-
-          input_apk="$(
-            find app/build/outputs/apk/debug \
-              -maxdepth 1 \
-              -type f \
-              -name '*.apk' \
-              -print \
-              -quit
-          )"
-
-          test -s "$input_apk"
-
-          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
-
-            mkdir -p .gama-signing
-            chmod 700 .gama-signing
-
-            printf '%s' "$GAMA_SIGNING_SEED" |
-              grep -Eq '^[0-9A-Fa-f]{64}$'
-
-            python3 - \
-              "$GAMA_SIGNING_SEED" \
-              .gama-signing/key.der <<'PY'
-          import sys
-
-          raw = bytes.fromhex(sys.argv[1])
-
-          order = int(
-              "FFFFFFFF00000000FFFFFFFFFFFFFFFF"
-              "BCE6FAADA7179E84F3B9CAC2FC632551",
-              16
-          )
-
-          d = (
-              int.from_bytes(raw, "big") %
-              (order - 1)
-          ) + 1
-
-          key = d.to_bytes(
-              32,
-              "big"
-          )
-
-          der = (
-              bytes.fromhex("30310201010420") +
-              key +
-              bytes.fromhex(
-                  "A00A06082A8648CE3D030107"
-              )
-          )
-
-          open(
-              sys.argv[2],
-              "wb"
-          ).write(der)
-          PY
-
-            openssl ec \
-              -inform DER \
-              -in .gama-signing/key.der \
-              -out .gama-signing/key.pem \
-              >/dev/null 2>&1
-
-            printf '%s' \
-              'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ1ekNDQVdHZ0F3SUJBZ0lFQVRVb1FEQUtCZ2dxaGtqT1BRUURBakE2TVJ3d0dnWURWUVFEREJOSFlXMWgKSUZOMFlXSnNaU0JUYVdkdWFXNW5NUTB3Q3dZRFZRUUtEQVJIWVcxaE1Rc3dDUVlEVlFRR0V3SkNVakFnRncweQpOakE1TWpneE5UTTROREJhR0E4eU1USTJNRGt3TkRFMU16ZzBNRm93T2pFY01Cb0dBMVVFQXd3VFIyRnRZU0JUCmRHRmliR1VnVTJsbmJtbHVaekVOTUFzR0ExVUVDZ3dFUjJGdFlURUxNQWtHQTFVRUJoTUNRbEl3V1RBVEJnY3EKaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUV2FNc3krYm84OEorSFcxQktpVGVJUU56REEzd29SQUo0Q0hXZAp4QndQN0NLR0F4QWFZK3Z4d0dBTFZTN1FNU2Zoa0VYd294NElya0kxZUhRck5tTzNvMU13VVRBZEJnTlZIUTRFCkZnUVU4a2ZjczhxMC9MQlA5NHRJTS8yVXZXbXRTZzh3SHdZRFZSMGpCQmd3Rm9BVThrZmNzOHEwL0xCUDk0dEkKTS8yVXZXbXRTZzh3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUVBajZmZQpEcyszSDZQQTRqRk1jS0FQR2pEY0E3amc1cU9WZjg4SkU0UDRvK1VDSURLS3BGMlZ2MTVHdTdaTTgyRlBPZFhtCmNQTHNDOUlkd1NzOUpLM05ZclhKCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K' |
-              base64 --decode \
-              > .gama-signing/cert.pem
-
-            keyhash="$(
-              openssl pkey \
-                -in .gama-signing/key.pem \
-                -pubout \
-                -outform DER |
-              sha256sum |
-              cut -d' ' -f1
-            )"
-
-            certhash="$(
-              openssl x509 \
-                -in .gama-signing/cert.pem \
-                -pubkey \
-                -noout |
-              openssl pkey \
-                -pubin \
-                -outform DER |
-              sha256sum |
-              cut -d' ' -f1
-            )"
-
-            if [ "$keyhash" != "$certhash" ]; then
-              echo "::error::Seed não corresponde à identidade estável."
-              exit 1
-            fi
-
-            openssl pkcs12 \
-              -export \
-              -inkey .gama-signing/key.pem \
-              -in .gama-signing/cert.pem \
-              -out .gama-signing/gama.p12 \
-              -name gama \
-              -passout pass:GamaStable2026
-
-            "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
-              -f 4 \
-              "$input_apk" \
-              dist/Gama-aligned.apk
-
-            "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-              sign \
-              --ks .gama-signing/gama.p12 \
-              --ks-type PKCS12 \
-              --ks-key-alias gama \
-              --ks-pass pass:GamaStable2026 \
-              --key-pass pass:GamaStable2026 \
-              --out dist/Gama.apk \
-              dist/Gama-aligned.apk
-
-            rm -rf .gama-signing
-            rm -f dist/Gama-aligned.apk
-
-            echo "stable-update-capable" \
-              > dist/install-mode.txt
-
-          else
-
-            cp "$input_apk" \
-              dist/Gama.apk
-
-            echo "fresh-install-only" \
-              > dist/install-mode.txt
-
-          fi
-
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            verify \
-            --verbose \
-            --print-certs \
-            dist/Gama.apk |
-            tee dist/signature-info.txt
-
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging \
-            dist/Gama.apk \
-            > dist/apk-info.txt
-
-          grep -q \
-            "name='com.gama.assistant'" \
-            dist/apk-info.txt
-
-          grep -q \
-            "versionName='Gama 9.3.0 JARVIS Reliability'" \
-            dist/apk-info.txt
-
-          EXPECTED_VERSION_CODE="$((24400000 + GITHUB_RUN_NUMBER))"
-
-          grep -q \
-            "versionCode='$EXPECTED_VERSION_CODE'" \
-            dist/apk-info.txt
-
-          (
-            cd dist
-            sha256sum Gama.apk \
-              > Gama.apk.sha256
-
-            sha256sum -c \
-              Gama.apk.sha256
-          )
-
-      - name: Upload Gama 9.3.0 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.signing.outputs.artifact }}
-          path: |
-            _gama_build/dist/Gama.apk
-            _gama_build/dist/Gama.apk.sha256
-            _gama_build/dist/apk-info.txt
-            _gama_build/dist/signature-info.txt
-            _gama_build/dist/install-mode.txt
-          if-no-files-found: error
-
-      - name: Upload Gama 9.3.0 source
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-9.3.0-JARVIS-source
-          path: |
-            _gama_build/**
-            !_gama_build/.gradle/**
-            !_gama_build/**/build/**
-            !_gama_build/dist/**
-          if-no-files-found: error
-
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-9.3.0-JARVIS-diagnostics
-          path: |
-            gama-compile.log
-            gama-tests.log
-            gama-build.log
-            _gama_build/app/build/reports/tests
-            _gama_build/app/build/test-results
-          if-no-files-found: warn
-
-      - name: Publish Gama 9.3.0 release
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          TAG="gama-v9.3.0-jarvis-${{ github.run_number }}"
-
-          gh release create "$TAG" \
-            "_gama_build/dist/Gama.apk#Gama.apk" \
-            "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
-            "_gama_build/dist/install-mode.txt#install-mode.txt" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.3.0 JARVIS Reliability" \
-            --notes "Base exata do build #135 aprovado. Mantém Red Core, nova logo, interface vermelha, animação de fala, notificações, memória, planner, Accessibility e verificação. Reforça wake word contra ativações fantasmas, continuidade de conversa, tempo de verificação de ações e abertura de aplicativos/WhatsApp com LauncherApps e fallback adicional." \
-            --latest
+          echo "========================================"
+          echo "GAMA 9.3.0 SOURCE AUDIT COMPLETE"
+          echo "========================================"
+          echo
+          echo "Branch:"
+          echo "gama-source-audit"
+          echo
+          echo "No GAMA application code was modified."
