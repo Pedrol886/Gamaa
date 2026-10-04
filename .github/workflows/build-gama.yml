@@ -1,18 +1,18 @@
-name: Build Gama 10.1.0 JARVIS Continuity Core
+name: Build Gama 10.2.0 JARVIS Agent Core
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/build-gama.yml'
+      - ".github/workflows/build-gama.yml"
 
 permissions:
   contents: write
   actions: read
 
 concurrency:
-  group: gama-10-1-jarvis-continuity-${{ github.ref }}
+  group: gama-10-2-agent-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,12 +25,8 @@ jobs:
         shell: bash
 
     env:
-      # PRIMEIRA REGRA DESTA BUILD:
-      # partir diretamente do GAMA 10 verde do run #156.
       GAMA_BASE_RUN_ID: "37226292316"
       GAMA_BASE_ARTIFACT: "Gama-10.0.0-JARVIS-CONTEXT-source"
-
-      GAMA_EXPECTED_CERT_SHA256: "6933EDA890C29567A8F4B6CEAD7A39A442DF109D43B813A19F3F6FA7F39B078C"
 
     steps:
       - name: Checkout repository
@@ -38,30 +34,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve signing mode
-        id: signing
-        env:
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
-            echo "mode=fresh" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-10.1.0-JARVIS-CONTINUITY-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
-
-            echo "::warning::GAMA_SIGNING_SEED não está configurado."
-            echo "::warning::O APK será Release, mas será FRESH-INSTALL-ONLY."
-
-          elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
-            echo "mode=stable" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-10.1.0-JARVIS-CONTINUITY-APK" >> "$GITHUB_OUTPUT"
-
-          else
-            echo "::error::GAMA_SIGNING_SEED deve possuir exatamente 64 caracteres hexadecimais."
-            exit 1
-          fi
-
-      - name: Restore exact successful Gama 10 source
+      - name: Restore exact green Gama 10 source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -79,38 +52,618 @@ jobs:
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaScreenContextService.kt
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaFaceGateActivity.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaFaceSessionCoordinator.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaMorningBriefing.kt
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaPersonalCore.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaKnowledgePolicy.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaSpokenNumbers.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaRepeatTool.kt
 
-          grep -Fq \
-            'versionName = "Gama 10.0.0 JARVIS Context Core"' \
-            _gama_build/app/build.gradle.kts
+          echo "PASS: usando diretamente o GAMA 10 verde do #156."
 
-          grep -Fq \
-            'isDebuggable = false' \
-            _gama_build/app/build.gradle.kts
-
-          echo "PASS: source verde do GAMA 10 / run #156 restaurado."
-
-      - name: Apply Gama 10.1 JARVIS Continuity upgrade
+      - name: Install JARVIS Agent modules
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           SRC="app/src/main/java/com/gama/assistant"
 
-          # ==========================================================
-          # 1. VISUAL CONFIÁVEL
+          # ============================================================
+          # MÓDULO 1
+          # CÉREBRO LOCAL DE STATUS / "COMO ESTAMOS?"
+          # ============================================================
+
+          cat > "$SRC/GamaJarvisStatus.kt" <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.app.KeyguardManager
+          import android.content.Context
+          import android.net.ConnectivityManager
+          import android.net.NetworkCapabilities
+          import android.os.BatteryManager
+          import java.text.Normalizer
+          import java.util.Locale
+
+          object GamaJarvisStatus {
+
+              fun handle(
+                  context: Context,
+                  raw: String,
+              ): String? {
+                  val command = normalize(raw)
+
+                  val statusRequest =
+                      command == "como estamos" ||
+                          command == "como estamos gama" ||
+                          command == "gama como estamos" ||
+                          command == "status" ||
+                          command == "status do sistema" ||
+                          command == "como esta o celular" ||
+                          command == "como esta o sistema" ||
+                          command == "relatorio do sistema" ||
+                          command == "situacao do sistema"
+
+                  if (!statusRequest) {
+                      return null
+                  }
+
+                  return buildStatus(context)
+              }
+
+              fun buildStatus(
+                  context: Context,
+              ): String {
+                  val batteryManager =
+                      context.getSystemService(
+                          BatteryManager::class.java
+                      )
+
+                  val battery =
+                      batteryManager
+                          ?.getIntProperty(
+                              BatteryManager.BATTERY_PROPERTY_CAPACITY
+                          )
+                          ?.takeIf {
+                              it in 0..100
+                          }
+
+                  val charging =
+                      batteryManager
+                          ?.isCharging ==
+                          true
+
+                  val connectivity =
+                      context.getSystemService(
+                          ConnectivityManager::class.java
+                      )
+
+                  val capabilities =
+                      connectivity
+                          ?.getNetworkCapabilities(
+                              connectivity.activeNetwork
+                          )
+
+                  val network =
+                      when {
+                          capabilities
+                              ?.hasTransport(
+                                  NetworkCapabilities.TRANSPORT_WIFI
+                              ) == true ->
+                              "Wi-Fi"
+
+                          capabilities
+                              ?.hasTransport(
+                                  NetworkCapabilities.TRANSPORT_CELLULAR
+                              ) == true ->
+                              "dados móveis"
+
+                          capabilities
+                              ?.hasCapability(
+                                  NetworkCapabilities.NET_CAPABILITY_INTERNET
+                              ) == true ->
+                              "Internet"
+
+                          else ->
+                              "sem conexão"
+                      }
+
+                  val keyguard =
+                      context.getSystemService(
+                          KeyguardManager::class.java
+                      )
+
+                  val locked =
+                      keyguard?.isDeviceLocked ==
+                          true
+
+                  val accessibility =
+                      GamaScreenContextService
+                          .isConnected()
+
+                  val voice =
+                      AssistantRuntime.service
+                          ?.isVoiceReady() ==
+                          true
+
+                  val sections =
+                      mutableListOf<String>()
+
+                  sections +=
+                      "Estamos operacionais, senhor."
+
+                  battery?.let {
+                      sections +=
+                          if (charging) {
+                              "A bateria está em $it por cento e carregando."
+                          } else {
+                              "A bateria está em $it por cento."
+                          }
+                  }
+
+                  sections +=
+                      "A conexão atual é $network."
+
+                  sections +=
+                      if (voice) {
+                          "O sistema de voz está ativo."
+                      } else {
+                          "O sistema de voz está se recuperando ou aguardando ativação."
+                      }
+
+                  sections +=
+                      if (accessibility) {
+                          "O controle assistivo da tela está disponível."
+                      } else {
+                          "O controle assistivo da tela ainda não está ativo."
+                      }
+
+                  if (!locked) {
+                      val unread =
+                          GamaUnreadMessageStore
+                              .peekUnread(context)
+
+                      sections +=
+                          when (unread.size) {
+                              0 ->
+                                  "Não há mensagens não lidas registradas."
+
+                              1 ->
+                                  "Há uma mensagem não lida registrada."
+
+                              else ->
+                                  "Há ${unread.size} mensagens não lidas registradas."
+                          }
+
+                      GamaScreenContextService
+                          .currentPackageName()
+                          ?.takeIf {
+                              it.isNotBlank()
+                          }
+                          ?.let {
+                              sections +=
+                                  "O contexto atual da tela também está disponível."
+                          }
+                  } else {
+                      sections +=
+                          "Detalhes privados ficam disponíveis depois da confirmação do Android."
+                  }
+
+                  return sections.joinToString(" ")
+              }
+
+              private fun normalize(
+                  value: String,
+              ): String =
+                  Normalizer
+                      .normalize(
+                          value.lowercase(
+                              Locale("pt", "BR")
+                          ),
+                          Normalizer.Form.NFD,
+                      )
+                      .replace(
+                          Regex("\\p{M}+"),
+                          "",
+                      )
+                      .replace(
+                          Regex("[^a-z0-9 ]+"),
+                          " ",
+                      )
+                      .replace(
+                          Regex("\\s+"),
+                          " ",
+                      )
+                      .trim()
+          }
+          KOTLIN
+
+          # ============================================================
+          # WAKE DA TELA
           #
-          # A logo recortada em mandíbula era visualmente frágil.
-          # Voltamos ao núcleo/esfera vermelha mantendo:
-          # LISTENING / THINKING / SPEAKING.
-          # ==========================================================
+          # Acende a tela.
+          # NÃO remove PIN / biometria / Keyguard.
+          # ============================================================
+
+          cat > "$SRC/GamaScreenWake.kt" <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.content.Context
+          import android.os.PowerManager
+
+          object GamaScreenWake {
+
+              @Suppress("DEPRECATION")
+              fun wake(
+                  context: Context,
+              ): Boolean {
+                  val power =
+                      context.getSystemService(
+                          PowerManager::class.java
+                      ) ?: return false
+
+                  if (power.isInteractive) {
+                      return true
+                  }
+
+                  return runCatching {
+                      val lock =
+                          power.newWakeLock(
+                              PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                                  PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                                  PowerManager.ON_AFTER_RELEASE,
+                              "Gama:VoiceWake",
+                          )
+
+                      lock.acquire(3_500L)
+
+                      if (lock.isHeld) {
+                          lock.release()
+                      }
+
+                      true
+                  }.getOrDefault(false)
+              }
+          }
+          KOTLIN
+
+          # ============================================================
+          # MÓDULO 2
+          # DIRETOR DE ACESSIBILIDADE
+          #
+          # Ações somente depois da autorização de Accessibility.
+          # Nada toca em campos de senha.
+          # Nada tenta burlar a tela segura.
+          # ============================================================
+
+          cat > "$SRC/GamaAccessibilityDirector.kt" <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.accessibilityservice.AccessibilityService
+          import android.app.KeyguardManager
+          import android.content.Intent
+          import android.os.Handler
+          import android.os.Looper
+          import java.text.Normalizer
+          import java.util.Locale
+
+          object GamaAccessibilityDirector {
+
+              private val handler =
+                  Handler(
+                      Looper.getMainLooper()
+                  )
+
+              fun handleAsync(
+                  service: GamaService,
+                  raw: String,
+                  callback: (String) -> Unit,
+              ): Boolean {
+                  val command =
+                      normalize(raw)
+
+                  val looksLikeAction =
+                      command.contains("clique") ||
+                          command.contains("toque") ||
+                          command.contains("role") ||
+                          command.contains("rolar") ||
+                          command.contains("voltar") ||
+                          command.contains("ir para inicio") ||
+                          (
+                              command.contains("whatsapp") &&
+                                  command.contains("abr")
+                              )
+
+                  if (!looksLikeAction) {
+                      return false
+                  }
+
+                  val keyguard =
+                      service.getSystemService(
+                          KeyguardManager::class.java
+                      )
+
+                  if (
+                      keyguard?.isDeviceLocked ==
+                      true
+                  ) {
+                      callback(
+                          "O celular está bloqueado. Confirme o desbloqueio pelo Android e eu continuo."
+                      )
+
+                      return true
+                  }
+
+                  if (
+                      !GamaScreenContextService
+                          .isConnected()
+                  ) {
+                      GamaScreenContextService
+                          .openSettings(service)
+
+                      callback(
+                          "Ative Gama Contexto da Tela uma vez para eu executar essa ação."
+                      )
+
+                      return true
+                  }
+
+                  if (
+                      command == "voltar" ||
+                      command == "volte" ||
+                      command.contains(
+                          "volte para tela anterior"
+                      )
+                  ) {
+                      val done =
+                          GamaScreenContextService
+                              .performGlobal(
+                                  AccessibilityService.GLOBAL_ACTION_BACK
+                              )
+
+                      callback(
+                          if (done) {
+                              "Voltei."
+                          } else {
+                              "O Android não confirmou a ação de voltar."
+                          }
+                      )
+
+                      return true
+                  }
+
+                  if (
+                      command.contains(
+                          "ir para inicio"
+                      ) ||
+                      command.contains(
+                          "tela inicial"
+                      ) ||
+                      command == "inicio"
+                  ) {
+                      val done =
+                          GamaScreenContextService
+                              .performGlobal(
+                                  AccessibilityService.GLOBAL_ACTION_HOME
+                              )
+
+                      callback(
+                          if (done) {
+                              "Pronto."
+                          } else {
+                              "O Android não confirmou a tela inicial."
+                          }
+                      )
+
+                      return true
+                  }
+
+                  if (
+                      command.contains(
+                          "role para baixo"
+                      ) ||
+                      command.contains(
+                          "rolar para baixo"
+                      )
+                  ) {
+                      val done =
+                          GamaScreenContextService
+                              .scroll(true)
+
+                      callback(
+                          if (done) {
+                              "Rolei a tela."
+                          } else {
+                              "Não encontrei uma área que pudesse rolar."
+                          }
+                      )
+
+                      return true
+                  }
+
+                  if (
+                      command.contains(
+                          "role para cima"
+                      ) ||
+                      command.contains(
+                          "rolar para cima"
+                      )
+                  ) {
+                      val done =
+                          GamaScreenContextService
+                              .scroll(false)
+
+                      callback(
+                          if (done) {
+                              "Rolei a tela para cima."
+                          } else {
+                              "Não encontrei uma área que pudesse rolar."
+                          }
+                      )
+
+                      return true
+                  }
+
+                  val requestedLabel =
+                      extractLabel(command)
+
+                  val wantsWhatsApp =
+                      command.contains("whatsapp") ||
+                          command.contains("zap")
+
+                  if (
+                      wantsWhatsApp &&
+                      command.contains("abr")
+                  ) {
+                      val packageManager =
+                          service.packageManager
+
+                      val launch =
+                          packageManager
+                              .getLaunchIntentForPackage(
+                                  "com.whatsapp"
+                              )
+                              ?: packageManager
+                                  .getLaunchIntentForPackage(
+                                      "com.whatsapp.w4b"
+                                  )
+
+                      if (launch == null) {
+                          callback(
+                              "Não encontrei o WhatsApp instalado."
+                          )
+
+                          return true
+                      }
+
+                      service.launchSafely(
+                          Intent(launch)
+                      )
+
+                      if (
+                          requestedLabel.isNullOrBlank()
+                      ) {
+                          callback(
+                              "Abrindo WhatsApp."
+                          )
+
+                          return true
+                      }
+
+                      if (
+                          requestedLabel ==
+                          "primeiro contato"
+                      ) {
+                          callback(
+                              "Abra o WhatsApp e diga o nome do contato. Assim eu não corro o risco de selecionar a pessoa errada."
+                          )
+
+                          return true
+                      }
+
+                      handler.postDelayed(
+                          {
+                              val clicked =
+                                  GamaScreenContextService
+                                      .clickByLabel(
+                                          requestedLabel
+                                      )
+
+                              callback(
+                                  if (clicked) {
+                                      "Abri o WhatsApp e selecionei $requestedLabel."
+                                  } else {
+                                      "O WhatsApp abriu, mas não encontrei $requestedLabel na tela atual."
+                                  }
+                              )
+                          },
+                          1_600L,
+                      )
+
+                      return true
+                  }
+
+                  if (
+                      !requestedLabel.isNullOrBlank()
+                  ) {
+                      val clicked =
+                          GamaScreenContextService
+                              .clickByLabel(
+                                  requestedLabel
+                              )
+
+                      callback(
+                          if (clicked) {
+                              "Pronto."
+                          } else {
+                              "Não encontrei $requestedLabel na tela atual."
+                          }
+                      )
+
+                      return true
+                  }
+
+                  return false
+              }
+
+              private fun extractLabel(
+                  command: String,
+              ): String? {
+                  val patterns =
+                      listOf(
+                          Regex(
+                              """(?:clique|clicar|toque|tocar)\s+(?:em|no|na)\s+(.+)$"""
+                          ),
+                          Regex(
+                              """(?:e\s+)?(?:clique|toque)\s+(.+)$"""
+                          ),
+                      )
+
+                  return patterns
+                      .asSequence()
+                      .mapNotNull {
+                          it.find(command)
+                              ?.groupValues
+                              ?.getOrNull(1)
+                              ?.trim()
+                      }
+                      .firstOrNull {
+                          it.isNotBlank()
+                      }
+              }
+
+              private fun normalize(
+                  value: String,
+              ): String =
+                  Normalizer
+                      .normalize(
+                          value.lowercase(
+                              Locale("pt", "BR")
+                          ),
+                          Normalizer.Form.NFD,
+                      )
+                      .replace(
+                          Regex("\\p{M}+"),
+                          "",
+                      )
+                      .replace(
+                          Regex("[^a-z0-9 ]+"),
+                          " ",
+                      )
+                      .replace(
+                          Regex("\\b(?:zap|zape|zapzap)\\b"),
+                          "whatsapp",
+                      )
+                      .replace(
+                          Regex("\\s+"),
+                          " ",
+                      )
+                      .trim()
+          }
+          KOTLIN
+
+          # ============================================================
+          # VISUAL
+          # Volta à esfera vermelha confiável.
+          # ============================================================
 
           cat > "$SRC/GamaEnergyView.kt" <<'KOTLIN'
           package com.gama.assistant
@@ -129,18 +682,6 @@ jobs:
           import kotlin.math.abs
           import kotlin.math.sin
 
-          /**
-           * GAMA Red Orb.
-           *
-           * Visual simples e resistente:
-           *
-           * LISTENING -> pulso calmo
-           * THINKING  -> rotação/pulso rápido
-           * SPEAKING  -> oscilações curtas que acompanham o estado de fala
-           *
-           * Não usa microfone para animar.
-           * Isso evita que o visual interfira no pipeline de voz.
-           */
           class GamaEnergyView @JvmOverloads constructor(
               context: Context,
               attrs: AttributeSet? = null,
@@ -152,67 +693,68 @@ jobs:
                   SPEAKING,
               }
 
-              var mode: Mode = Mode.LISTENING
+              var mode =
+                  Mode.LISTENING
                   set(value) {
                       field = value
                       invalidate()
                   }
 
-              private val corePaint =
-                  Paint(Paint.ANTI_ALIAS_FLAG)
-
-              private val glowPaint =
-                  Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                      style = Paint.Style.FILL
-                  }
-
-              private val ringPaint =
-                  Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                      style = Paint.Style.STROKE
-                      strokeCap = Paint.Cap.ROUND
-                  }
-
-              private val innerRingPaint =
-                  Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                      style = Paint.Style.STROKE
-                      strokeCap = Paint.Cap.ROUND
-                  }
-
-              private var phase = 0f
-              private var released = false
-
-              private val animator =
-                  ValueAnimator.ofFloat(0f, 1f).apply {
-                      duration = 1200L
-                      repeatCount = ValueAnimator.INFINITE
-                      interpolator = LinearInterpolator()
-
-                      addUpdateListener {
-                          phase = it.animatedValue as Float
-                          invalidate()
-                      }
-                  }
-
-              init {
-                  setLayerType(
-                      LAYER_TYPE_SOFTWARE,
-                      null,
+              private val core =
+                  Paint(
+                      Paint.ANTI_ALIAS_FLAG
                   )
 
-                  animator.start()
-              }
+              private val glow =
+                  Paint(
+                      Paint.ANTI_ALIAS_FLAG
+                  )
+
+              private val ring =
+                  Paint(
+                      Paint.ANTI_ALIAS_FLAG
+                  ).apply {
+                      style =
+                          Paint.Style.STROKE
+                  }
+
+              private var phase =
+                  0f
+
+              private var released =
+                  false
+
+              private val animator =
+                  ValueAnimator
+                      .ofFloat(
+                          0f,
+                          1f,
+                      )
+                      .apply {
+                          duration =
+                              1_100L
+
+                          repeatCount =
+                              ValueAnimator.INFINITE
+
+                          interpolator =
+                              LinearInterpolator()
+
+                          addUpdateListener {
+                              phase =
+                                  it.animatedValue
+                                      as Float
+
+                              invalidate()
+                          }
+
+                          start()
+                      }
 
               override fun onDraw(
                   canvas: Canvas,
               ) {
                   super.onDraw(canvas)
-
-                  if (
-                      width <= 0 ||
-                      height <= 0
-                  ) {
-                      return
-                  }
 
                   val size =
                       minOf(
@@ -220,194 +762,145 @@ jobs:
                           height,
                       ).toFloat()
 
+                  if (size <= 0f) {
+                      return
+                  }
+
                   val cx =
                       width / 2f
 
                   val cy =
                       height / 2f
 
-                  val time =
+                  val t =
                       phase *
-                          (PI * 2.0)
-
-                  val listeningWave =
-                      (
-                          0.5 +
-                              0.5 *
-                              sin(
-                                  time * 1.25
+                          (
+                              PI *
+                                  2.0
                               )
-                          ).toFloat()
-
-                  val thinkingWave =
-                      (
-                          0.5 +
-                              0.5 *
-                              sin(
-                                  time * 3.1
-                              )
-                          ).toFloat()
-
-                  val speakingWave =
-                      (
-                          abs(
-                              sin(
-                                  time * 3.7
-                              )
-                          ) * 0.50 +
-                              abs(
-                                  sin(
-                                      time * 6.3 +
-                                          0.8
-                                  )
-                              ) * 0.30 +
-                              abs(
-                                  sin(
-                                      time * 9.1 +
-                                          1.4
-                                  )
-                              ) * 0.20
-                          )
-                          .toFloat()
-                          .coerceIn(
-                              0f,
-                              1f,
-                          )
 
                   val wave =
                       when (mode) {
                           Mode.LISTENING ->
-                              listeningWave
+                              (
+                                  0.5 +
+                                      0.5 *
+                                      sin(
+                                          t * 1.2
+                                      )
+                                  ).toFloat()
 
                           Mode.THINKING ->
-                              thinkingWave
+                              (
+                                  0.5 +
+                                      0.5 *
+                                      sin(
+                                          t * 3.0
+                                      )
+                                  ).toFloat()
 
                           Mode.SPEAKING ->
-                              speakingWave
+                              (
+                                  abs(
+                                      sin(
+                                          t * 4.0
+                                      )
+                                  ) *
+                                      0.65 +
+                                      abs(
+                                          sin(
+                                              t * 7.0
+                                          )
+                                      ) *
+                                      0.35
+                                  )
+                                  .toFloat()
                       }
 
-                  val coreRadius =
+                  val radius =
                       size *
                           (
-                              0.205f +
+                              0.20f +
                                   wave *
-                                  when (mode) {
-                                      Mode.LISTENING ->
-                                          0.006f
-
-                                      Mode.THINKING ->
-                                          0.012f
-
-                                      Mode.SPEAKING ->
-                                          0.025f
+                                  if (
+                                      mode ==
+                                      Mode.SPEAKING
+                                  ) {
+                                      0.025f
+                                  } else {
+                                      0.010f
                                   }
                               )
 
-                  // Aura externa.
-                  val glowRadius =
-                      size *
-                          (
-                              0.33f +
-                                  wave * 0.018f
-                              )
-
-                  glowPaint.color =
+                  glow.color =
                       Color.argb(
-                          when (mode) {
-                              Mode.LISTENING ->
-                                  35
-
-                              Mode.THINKING ->
-                                  55
-
-                              Mode.SPEAKING ->
-                                  75
-                          },
-                          255,
-                          24,
-                          35,
+                          65,
+                          235,
+                          10,
+                          30,
                       )
 
-                  glowPaint.setShadowLayer(
-                      size * 0.17f,
+                  glow.setShadowLayer(
+                      size *
+                          0.15f,
                       0f,
                       0f,
-                      Color.rgb(
-                          190,
-                          0,
-                          18,
-                      ),
+                      Color.RED,
                   )
 
                   canvas.drawCircle(
                       cx,
                       cy,
-                      glowRadius,
-                      glowPaint,
+                      size *
+                          0.32f,
+                      glow,
                   )
 
-                  glowPaint.clearShadowLayer()
+                  glow.clearShadowLayer()
 
-                  // Núcleo luminoso.
-                  corePaint.shader =
+                  core.shader =
                       RadialGradient(
-                          cx - coreRadius * 0.20f,
-                          cy - coreRadius * 0.22f,
-                          coreRadius * 1.22f,
+                          cx -
+                              radius *
+                              0.22f,
+                          cy -
+                              radius *
+                              0.22f,
+                          radius *
+                              1.25f,
                           intArrayOf(
+                              Color.WHITE,
                               Color.rgb(
                                   255,
-                                  225,
-                                  225,
+                                  90,
+                                  100,
                               ),
                               Color.rgb(
-                                  255,
-                                  78,
-                                  86,
+                                  220,
+                                  5,
+                                  30,
                               ),
                               Color.rgb(
-                                  212,
-                                  6,
-                                  27,
-                              ),
-                              Color.rgb(
-                                  80,
+                                  60,
                                   0,
-                                  10,
+                                  8,
                               ),
                           ),
-                          floatArrayOf(
-                              0f,
-                              0.20f,
-                              0.62f,
-                              1f,
-                          ),
+                          null,
                           Shader.TileMode.CLAMP,
                       )
 
-                  corePaint.setShadowLayer(
-                      size * 0.09f,
-                      0f,
-                      0f,
-                      Color.rgb(
-                          255,
-                          20,
-                          35,
-                      ),
-                  )
-
                   canvas.drawCircle(
                       cx,
                       cy,
-                      coreRadius,
-                      corePaint,
+                      radius,
+                      core,
                   )
 
-                  corePaint.clearShadowLayer()
-                  corePaint.shader = null
+                  core.shader =
+                      null
 
-                  // Anel principal.
-                  ringPaint.strokeWidth =
+                  ring.strokeWidth =
                       (
                           size *
                               0.012f
@@ -416,33 +909,20 @@ jobs:
                               2f
                           )
 
-                  ringPaint.color =
+                  ring.color =
                       Color.argb(
-                          when (mode) {
-                              Mode.LISTENING ->
-                                  120
-
-                              Mode.THINKING ->
-                                  185
-
-                              Mode.SPEAKING ->
-                                  225
+                          if (
+                              mode ==
+                              Mode.SPEAKING
+                          ) {
+                              230
+                          } else {
+                              150
                           },
                           255,
-                          45,
+                          40,
                           55,
                       )
-
-                  ringPaint.setShadowLayer(
-                      size * 0.04f,
-                      0f,
-                      0f,
-                      Color.rgb(
-                          255,
-                          22,
-                          35,
-                      ),
-                  )
 
                   canvas.drawCircle(
                       cx,
@@ -451,50 +931,9 @@ jobs:
                           (
                               0.285f +
                                   wave *
-                                  0.012f
+                                  0.01f
                               ),
-                      ringPaint,
-                  )
-
-                  ringPaint.clearShadowLayer()
-
-                  // Segundo anel dá leitura visual de atividade.
-                  innerRingPaint.strokeWidth =
-                      (
-                          size *
-                              0.005f
-                          )
-                          .coerceAtLeast(
-                              1.5f
-                          )
-
-                  innerRingPaint.color =
-                      Color.argb(
-                          when (mode) {
-                              Mode.LISTENING ->
-                                  75
-
-                              Mode.THINKING ->
-                                  120
-
-                              Mode.SPEAKING ->
-                                  160
-                          },
-                          255,
-                          110,
-                          115,
-                      )
-
-                  canvas.drawCircle(
-                      cx,
-                      cy,
-                      size *
-                          (
-                              0.245f +
-                                  wave *
-                                  0.007f
-                              ),
-                      innerRingPaint,
+                      ring,
                   )
               }
 
@@ -512,39 +951,50 @@ jobs:
           }
           KOTLIN
 
-          # ==========================================================
-          # 2. CONTINUIDADE DE LOCK/UNLOCK
-          # 3. FACE GATE REAL
-          # 4. WATCHDOG DO MICROFONE
-          # ==========================================================
+      - name: Integrate Agent Core and continuity fixes
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
 
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
-          service_path = Path(
-              "app/src/main/java/com/gama/assistant/GamaService.kt"
+          src = Path(
+              "app/src/main/java/com/gama/assistant"
           )
 
-          manifest_path = Path(
-              "app/src/main/AndroidManifest.xml"
-          )
+          service_path =
+              src / "GamaService.kt"
 
-          service = service_path.read_text(
-              encoding="utf-8"
-          )
+          service =
+              service_path.read_text(
+                  encoding="utf-8"
+              )
 
-          manifest = manifest_path.read_text(
-              encoding="utf-8"
-          )
+          face_gate_path =
+              src / "GamaFaceAccessGate.kt"
+
+          face_gate =
+              face_gate_path.read_text(
+                  encoding="utf-8"
+              )
+
+          morning_path =
+              src / "GamaMorningBriefing.kt"
+
+          morning =
+              morning_path.read_text(
+                  encoding="utf-8"
+              )
 
           def replace_once(
-              value: str,
-              old: str,
-              new: str,
-              label: str,
-          ) -> str:
-              count = value.count(old)
+              value,
+              old,
+              new,
+              label,
+          ):
+              count =
+                  value.count(old)
 
               if count != 1:
                   raise SystemExit(
@@ -557,40 +1007,904 @@ jobs:
                   1,
               )
 
-          def replace_region(
-              value: str,
-              start_marker: str,
-              end_marker: str,
-              replacement: str,
-              label: str,
-          ) -> str:
-              start = value.find(
-                  start_marker
-              )
+          # ------------------------------------------------------------
+          # JARVIS local status + Accessibility Director
+          # entram ANTES do fallback de IA.
+          # ------------------------------------------------------------
 
-              if start < 0:
-                  raise SystemExit(
-                      f"{label}: start marker not found"
+          marker = (
+              "        // GAMA109_LOCKSCREEN_PUBLIC_FAST_LANE"
+          )
+
+          routing = """
+                  GamaJarvisStatus
+                      .handle(
+                          this,
+                          command,
+                      )
+                      ?.let { jarvisStatus ->
+                          markResponseStarted()
+                          speak(
+                              jarvisStatus,
+                              false,
+                          )
+                          return
+                      }
+
+                  if (
+                      GamaAccessibilityDirector
+                          .handleAsync(
+                              this,
+                              command,
+                          ) { accessibilityReply ->
+                              uiHandler.post {
+                                  if (
+                                      userCommandSequence ==
+                                      gamaCommandSequence
+                                  ) {
+                                      speak(
+                                          accessibilityReply,
+                                          false,
+                                      )
+                                  }
+                              }
+                          }
+                  ) {
+                      return
+                  }
+
+          """
+
+          if (
+              "GamaAccessibilityDirector.handleAsync" not in
+              service
+          ):
+              service =
+                  replace_once(
+                      service,
+                      marker,
+                      routing +
+                          marker,
+                      "Agent Core routing",
                   )
 
-              end = value.find(
-                  end_marker,
+          # ------------------------------------------------------------
+          # Ao ouvir "Gama", a tela pode acender.
+          # Isso NÃO desbloqueia o Keyguard.
+          # ------------------------------------------------------------
+
+          wake_marker = (
+              "    private fun acknowledgeWake(speakAcknowledgement: Boolean = true) {\n"
+          )
+
+          if (
+              "GamaScreenWake.wake(this)" not in
+              service
+          ):
+              service =
+                  replace_once(
+                      service,
+                      wake_marker,
+                      wake_marker +
+                          "        GamaScreenWake.wake(this)\n",
+                      "screen wake",
+                  )
+
+          # ------------------------------------------------------------
+          # Continuidade lock/unlock
+          # ------------------------------------------------------------
+
+          unlock_field = (
+              "    @Volatile private var unlockPending = false\n"
+          )
+
+          if (
+              "lastScreenOffAt" not in
+              service
+          ):
+              service =
+                  replace_once(
+                      service,
+                      unlock_field,
+                      unlock_field +
+                          "    @Volatile private var lastScreenOffAt = 0L\n",
+                      "screen off epoch",
+                  )
+
+          old_screen_off = """                } else if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                      recentOwnerSession = 0L
+                      recentAndroidAuth = 0L
+                      hideWakeUi()
+                  }
+          """
+
+          new_screen_off = """                } else if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                      lastScreenOffAt = SystemClock.elapsedRealtime()
+                      recentOwnerSession = 0L
+                      recentAndroidAuth = 0L
+                      hideWakeUi()
+                  }
+          """
+
+          if (
+              old_screen_off in
+              service
+          ):
+              service =
+                  service.replace(
+                      old_screen_off,
+                      new_screen_off,
+                      1,
+                  )
+
+          old_close = """        if (!zevronPlanRunning) {
+              conversation.close()
+              GamaSupervisor.onConversationClosed()
+              conversationIdleToken++
+              conversationLastActivityAt = 0L
+          }
+          """
+
+          new_close = """        if (!zevronPlanRunning) {
+              // Bloquear a tela suspende a interação,
+              // mas não destrói o contexto.
+              conversationIdleToken++
+              conversationLastActivityAt = SystemClock.elapsedRealtime()
+          }
+          """
+
+          if (
+              old_close in
+              service
+          ):
+              service =
+                  service.replace(
+                      old_close,
+                      new_close,
+                      1,
+                  )
+
+          old_supervisor = (
+              "                val staleAudio = "
+              "lastAudioReadAt > 0L && "
+              "now - lastAudioReadAt > 5_000L"
+          )
+
+          new_supervisor = (
+              "                val staleAudio = "
+              "!textMode && voiceReady && "
+              "(lastAudioReadAt <= 0L || "
+              "now - lastAudioReadAt > 5_000L)"
+          )
+
+          if (
+              old_supervisor in
+              service
+          ):
+              service =
+                  service.replace(
+                      old_supervisor,
+                      new_supervisor,
+                      1,
+                  )
+
+          old_unlock_stale = """        val stale = listenerThread?.isAlive != true || !voiceReady ||
+              (lastAudioReadAt > 0L && now - lastAudioReadAt > 3_000L)
+          """
+
+          new_unlock_stale = """        val stale =
+              listenerThread?.isAlive != true ||
+                  !voiceReady ||
+                  !running ||
+                  textMode ||
+                  (lastScreenOffAt > 0L && lastAudioReadAt <= lastScreenOffAt) ||
+                  (lastAudioReadAt > 0L && now - lastAudioReadAt > 3_000L)
+          """
+
+          if (
+              old_unlock_stale in
+              service
+          ):
+              service =
+                  service.replace(
+                      old_unlock_stale,
+                      new_unlock_stale,
+                      1,
+                  )
+
+          old_still_stale = """            val stillStale = listenerThread?.isAlive != true || !voiceReady ||
+                  (lastAudioReadAt > 0L && checkNow - lastAudioReadAt > 3_500L)
+          """
+
+          new_still_stale = """            val stillStale =
+                  listenerThread?.isAlive != true ||
+                      !voiceReady ||
+                      !running ||
+                      textMode ||
+                      (lastScreenOffAt > 0L && lastAudioReadAt <= lastScreenOffAt) ||
+                      (lastAudioReadAt > 0L && checkNow - lastAudioReadAt > 3_500L)
+          """
+
+          if (
+              old_still_stale in
+              service
+          ):
+              service =
+                  service.replace(
+                      old_still_stale,
+                      new_still_stale,
+                      1,
+                  )
+
+          hard_marker = """        }, 1_800L)
+              }
+              fun cancelRequest() {
+          """
+
+          hard_watchdog = """        }, 1_800L)
+
+              uiHandler.postDelayed({
+                  if (
+                      !isDeviceLocked() &&
+                      BackgroundMode.enabled(this)
+                  ) {
+                      val now =
+                          SystemClock.elapsedRealtime()
+
+                      val freshAudio =
+                          lastAudioReadAt > 0L &&
+                              (
+                                  lastScreenOffAt <= 0L ||
+                                      lastAudioReadAt >
+                                      lastScreenOffAt
+                                  ) &&
+                              now -
+                                  lastAudioReadAt <
+                                  4_500L
+
+                      if (!freshAudio) {
+                          recoverMicrophoneOnly(
+                              "unlock-hard-watchdog"
+                          )
+                      }
+                  }
+              }, 6_000L)
+              }
+              fun cancelRequest() {
+          """
+
+          if (
+              hard_marker in
+              service &&
+              "unlock-hard-watchdog" not in
+              service
+          ):
+              service =
+                  service.replace(
+                      hard_marker,
+                      hard_watchdog,
+                      1,
+                  )
+
+          # ------------------------------------------------------------
+          # FACE GATE como porta real da confirmação privada.
+          # ------------------------------------------------------------
+
+          start =
+              service.find(
+                  "    private fun requestOwnerAndroidProof(command: String) {"
+              )
+
+          end =
+              service.find(
+                  "\n    /** Called only by the app's Activity after a successful Android credential result. */",
                   start,
               )
 
-              if end < 0:
-                  raise SystemExit(
-                      f"{label}: end marker not found"
-                  )
-
-              return (
-                  value[:start] +
-                  replacement.rstrip() +
-                  value[end:]
+          if (
+              start < 0 or
+              end < 0
+          ):
+              raise SystemExit(
+                  "requestOwnerAndroidProof region not found"
               )
 
-          # ----------------------------------------------------------
-          # Estado de continuidade.
-          # ----------------------------------------------------------
+          replacement = r'''    private fun requestOwnerAndroidProof(
+              command: String,
+          ) {
+              ownerAuthResumeConversation =
+                  conversation.active
 
-         
+              conversation.close()
+
+              GamaSupervisor
+                  .onConversationClosed()
+
+              ownerAuthCommand =
+                  command
+
+              ownerAuthUntil =
+                  SystemClock.elapsedRealtime() +
+                      90_000L
+
+              finishCommandListening()
+
+              GamaFaceSessionCoordinator
+                  .beginPrivateCommand(
+                      command = command,
+                      onApproved = {
+                          completeOwnerAndroidProof()
+                      },
+                      onStatus = { status ->
+                          uiHandler.post {
+                              updateNotification(
+                                  status
+                              )
+
+                              val lower =
+                                  status.lowercase()
+
+                              val fallback =
+                                  lower.contains(
+                                      "camera"
+                                  ) ||
+                                      lower.contains(
+                                          "câmera"
+                                      ) ||
+                                      lower.contains(
+                                          "biometria"
+                                      ) ||
+                                      lower.contains(
+                                          "nao consegui"
+                                      ) ||
+                                      lower.contains(
+                                          "não consegui"
+                                      )
+
+                              if (
+                                  fallback &&
+                                  ownerAuthCommand != null
+                              ) {
+                                  val official =
+                                      Intent(
+                                          this,
+                                          MainActivity::class.java,
+                                      ).setAction(
+                                          "com.gama.assistant.AUTH_OWNER"
+                                      )
+
+                                  launchSafely(
+                                      official
+                                  )
+                              }
+                          }
+                      },
+                  )
+
+              val face =
+                  Intent(
+                      this,
+                      GamaFaceGateActivity::class.java,
+                  ).addFlags(
+                      Intent.FLAG_ACTIVITY_NEW_TASK or
+                          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                          Intent.FLAG_ACTIVITY_SINGLE_TOP
+                  )
+
+              launchSafely(
+                  face
+              )
+
+              updateNotification(
+                  "Confirmando sua identidade."
+              )
+
+              speak(
+                  "Vou confirmar sua identidade pelo rosto e pelo sistema seguro do Android.",
+                  true,
+              )
+          }
+          '''
+
+          service =
+              service[:start] +
+              replacement +
+              service[end:]
+
+          # ------------------------------------------------------------
+          # Face Gate também vale para pedido sensível desbloqueado,
+          # caso a autenticação ainda não esteja fresca.
+          # ------------------------------------------------------------
+
+          old_face_condition = """            GamaFaceCommandPolicy.isSensitiveCommand(raw) &&
+                  isLocked(context) &&
+                  !GamaFaceAuthSession.isFresh()
+          """
+
+          new_face_condition = """            GamaFaceCommandPolicy.isSensitiveCommand(raw) &&
+                  !GamaFaceAuthSession.isFresh()
+          """
+
+          if (
+              old_face_condition in
+              face_gate
+          ):
+              face_gate =
+                  face_gate.replace(
+                      old_face_condition,
+                      new_face_condition,
+                      1,
+                  )
+
+          # ------------------------------------------------------------
+          # Fala mais natural no briefing.
+          # Não inventamos clima se não houver fonte real.
+          # ------------------------------------------------------------
+
+          morning =
+              morning.replace(
+                  'return "Bom dia. Hoje é $date, são $time.',
+                  'return "Bom dia, senhor. Hoje é $date, são $time.',
+                  1,
+              )
+
+          service_path.write_text(
+              service,
+              encoding="utf-8",
+          )
+
+          face_gate_path.write_text(
+              face_gate,
+              encoding="utf-8",
+          )
+
+          morning_path.write_text(
+              morning,
+              encoding="utf-8",
+          )
+
+          required = [
+              "GamaJarvisStatus",
+              "GamaAccessibilityDirector",
+              "GamaScreenWake.wake(this)",
+              "lastScreenOffAt",
+              "unlock-hard-watchdog",
+              "GamaFaceGateActivity::class.java",
+              "completeOwnerAndroidProof()",
+          ]
+
+          final_service =
+              service_path.read_text(
+                  encoding="utf-8"
+              )
+
+          for token in required:
+              if token not in final_service:
+                  raise SystemExit(
+                      f"Missing integration token: {token}"
+                  )
+
+          print(
+              "PASS: JARVIS Agent Core integrado."
+          )
+          PY
+
+      - name: Audit source before build
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          SRC="app/src/main/java/com/gama/assistant"
+
+          test -s "$SRC/GamaJarvisStatus.kt"
+          test -s "$SRC/GamaAccessibilityDirector.kt"
+          test -s "$SRC/GamaScreenWake.kt"
+          test -s "$SRC/GamaEnergyView.kt"
+
+          grep -Fq \
+            "GamaJarvisStatus" \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            "GamaAccessibilityDirector" \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            "GamaScreenWake.wake(this)" \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            "unlock-hard-watchdog" \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            "GamaFaceGateActivity::class.java" \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            "GamaPersonalAICore" \
+            "$SRC/GamaPersonalCore.kt"
+
+          grep -Fq \
+            "GamaUnreadMessageStore" \
+            "$SRC/GamaNotificationListener.kt"
+
+          grep -Fq \
+            "dispatchGesture" \
+            "$SRC/GamaScreenContextService.kt"
+
+          grep -Fq \
+            "isDebuggable = false" \
+            app/build.gradle.kts
+
+          echo "PASS: auditoria pré-build concluída."
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK 35
+        run: |
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER="$(command -v sdkmanager || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          test -x "$SDKMANAGER"
+
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Set Gama 10.2 version
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path =
+              Path(
+                  "app/build.gradle.kts"
+              )
+
+          value =
+              path.read_text(
+                  encoding="utf-8"
+              )
+
+          version_code =
+              25_200_000 +
+              int(
+                  os.environ[
+                      "GITHUB_RUN_NUMBER"
+                  ]
+              )
+
+          value, code_count =
+              re.subn(
+                  r"versionCode\s*=\s*\d+",
+                  f"versionCode = {version_code}",
+                  value,
+                  count=1,
+              )
+
+          value, name_count =
+              re.subn(
+                  r'versionName\s*=\s*"[^"]*"',
+                  'versionName = "Gama 10.2.0 JARVIS Agent Core"',
+                  value,
+                  count=1,
+              )
+
+          if (
+              code_count != 1 or
+              name_count != 1
+          ):
+              raise SystemExit(
+                  "Could not set version"
+              )
+
+          path.write_text(
+              value,
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Prepare Gradle wrapper
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          if [ ! -f gradlew ]; then
+            gradle wrapper \
+              --gradle-version 8.9
+          fi
+
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Clean
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew clean --no-daemon --stacktrace
+
+      - name: Compile Release Kotlin
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            :app:compileReleaseKotlin \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+
+      - name: Unit tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            test \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+
+      - name: Android lint
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            lint \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-lint.log"
+
+      - name: Prepare offline models
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          if [ -x tools/download_models.sh ]; then
+            bash tools/download_models.sh
+          fi
+
+      - name: Assemble Release
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          ./gradlew \
+            assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
+
+      - name: Sign fresh-install Release APK
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          APK="$(
+            find \
+              app/build/outputs/apk/release \
+              -maxdepth 1 \
+              -type f \
+              -name "*.apk" \
+              -print \
+              | head -n 1
+          )"
+
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            echo "::error::assembleRelease terminou sem gerar APK."
+            exit 1
+          fi
+
+          ALIGNED="dist/Gama-aligned.apk"
+
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            -f \
+            4 \
+            "$APK" \
+            "$ALIGNED"
+
+          rm -f /tmp/gama-10-2.jks
+
+          keytool \
+            -genkeypair \
+            -keystore /tmp/gama-10-2.jks \
+            -storepass GamaFresh2026 \
+            -keypass GamaFresh2026 \
+            -alias gama \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=Gama 10.2,O=Gama,C=BR"
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            sign \
+            --ks /tmp/gama-10-2.jks \
+            --ks-key-alias gama \
+            --ks-pass pass:GamaFresh2026 \
+            --key-pass pass:GamaFresh2026 \
+            --out dist/Gama.apk \
+            "$ALIGNED"
+
+          rm -f "$ALIGNED"
+
+          echo "fresh-install-only" \
+            > dist/install-mode.txt
+
+      - name: Verify APK exists and is valid
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          test -s dist/Gama.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            --verbose \
+            --print-certs \
+            dist/Gama.apk \
+            | tee dist/signature-info.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            dump badging \
+            dist/Gama.apk \
+            > dist/apk-info.txt
+
+          grep -q \
+            "name='com.gama.assistant'" \
+            dist/apk-info.txt
+
+          grep -q \
+            "versionName='Gama 10.2.0 JARVIS Agent Core'" \
+            dist/apk-info.txt
+
+          if grep -q \
+            "application-debuggable" \
+            dist/apk-info.txt
+          then
+            echo "::error::APK saiu debuggable."
+            exit 1
+          fi
+
+          (
+            cd dist
+            sha256sum Gama.apk \
+              > Gama.apk.sha256
+            sha256sum -c Gama.apk.sha256
+          )
+
+          echo "======================================"
+          echo " GAMA APK REALMENTE GERADO"
+          echo "======================================"
+
+          ls -lh dist/Gama.apk
+
+      - name: Generate report
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          mkdir -p reports
+
+          cat > reports/GAMA-10.2.0-JARVIS-AGENT.md <<'REPORT'
+          # GAMA 10.2.0 JARVIS Agent Core
+
+          Base: source verde do GAMA 10 / run #156.
+
+          Implementado:
+
+          - contexto e Personal Intelligence Core preservados;
+          - briefing matinal local existente preservado;
+          - "Como estamos?" agora gera status local;
+          - bateria;
+          - carregamento;
+          - rede;
+          - mensagens não lidas;
+          - estado da voz;
+          - estado da acessibilidade;
+          - NotificationListener local;
+          - Accessibility Director;
+          - clique por rótulo;
+          - voltar;
+          - home;
+          - rolagem;
+          - WhatsApp + seleção por nome;
+          - WakeLock para acender tela;
+          - não há bypass de PIN/biometria;
+          - Face Gate usado em autenticações privadas;
+          - conversa preservada durante lock/unlock;
+          - watchdog de AudioRecord/Vosk após desbloqueio;
+          - esfera vermelha restaurada;
+          - Gemma/Vosk/local-first preservados;
+          - fallback de conhecimento público do GAMA 10 preservado.
+
+          Este APK é fresh-install-only porque a chave estável não foi fornecida.
+          REPORT
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.2.0-JARVIS-AGENT-FRESH-INSTALL-ONLY
+          path: |
+            _gama_build/dist/Gama.apk
+            _gama_build/dist/Gama.apk.sha256
+            _gama_build/dist/apk-info.txt
+            _gama_build/dist/signature-info.txt
+            _gama_build/dist/install-mode.txt
+          if-no-files-found: error
+
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.2.0-JARVIS-AGENT-source
+          path: |
+            _gama_build/**
+            !_gama_build/.gradle/**
+            !_gama_build/**/build/**
+            !_gama_build/dist/**
+          if-no-files-found: error
+
+      - name: Upload engineering reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.2.0-engineering-reports
+          path: |
+            _gama_build/reports/**
+            gama-compile.log
+            gama-tests.log
+            gama-lint.log
+            gama-release.log
+            _gama_build/app/build/reports/**
+            _gama_build/app/build/test-results/**
+          if-no-files-found: warn
+
+      - name: Publish Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          test -s _gama_build/dist/Gama.apk
+
+          TAG="gama-v10.2.0-jarvis-agent-${{ github.run_number }}"
+
+          gh release create \
+            "$TAG" \
+            "_gama_build/dist/Gama.apk#Gama.apk" \
+            "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
+            "_gama_build/dist/install-mode.txt#install-mode.txt" \
+            "_gama_build/reports/GAMA-10.2.0-JARVIS-AGENT.md#GAMA-10.2.0-JARVIS-AGENT.md" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Gama 10.2.0 JARVIS Agent Core" \
+            --notes "Mega upgrade baseado diretamente no source verde do #156. Inclui status contextual local, briefing preservado, Accessibility Director, wake de tela sem bypass de segurança, Face Gate, continuidade pós-unlock, recuperação do pipeline de voz e Red Orb." \
+            --latest
