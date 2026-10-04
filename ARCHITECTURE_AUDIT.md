@@ -1,0 +1,234 @@
+# GAMA 9.3.0 EXACT SOURCE AUDIT
+
+Source:
+GitHub Actions run #136
+Gama-9.3.0-JARVIS-source
+
+No application source was modified by this audit.
+
+## Metrics
+
+- kotlin_files: 164
+- recognition_listener_mentions: 0
+- on_partial_result: 0
+- on_result: 2
+- on_final_result: 0
+- speech_service_mentions: 0
+- audio_record_mentions: 15
+- tts_speak_mentions: 5
+- coroutine_scope_mentions: 0
+- job_mentions: 0
+- handler_mentions: 16
+- delay_calls: 0
+- thread_sleep_calls: 3
+- with_timeout_calls: 0
+- aec_mentions: 5
+- audio_effect_ns_mentions: 6
+- gama_supervisor: True
+- intent_engine: False
+- tool_registry: False
+- action_verifier: True
+- conversation_session: True
+- continuity_memory: True
+- reference_memory: True
+- screen_memory: True
+- reliable_launcher: True
+- launch_fallback: True
+- local_brain_mentions: 3
+- request_id_mentions: 35
+- tts_files: ['app/src/main/java/com/gama/assistant/GamaIntroActivity.kt', 'app/src/main/java/com/gama/assistant/GamaService.kt', 'app/src/main/java/com/gama/assistant/GamaVoice.kt', 'app/src/main/java/com/gama/assistant/GamaVoiceCatalog.kt', 'app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt', 'app/src/main/java/com/gama/assistant/GamaVoiceStyle.kt']
+- recognition_files: []
+- audio_files: ['app/src/main/java/com/gama/assistant/GamaAudioFrontEnd.kt', 'app/src/main/java/com/gama/assistant/GamaAudioNoiseSupervisor.kt', 'app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt', 'app/src/main/java/com/gama/assistant/GamaService.kt']
+- brain_files: ['app/src/main/java/com/gama/assistant/AiSetup.kt', 'app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt', 'app/src/main/java/com/gama/assistant/GamaService.kt', 'app/src/main/java/com/gama/assistant/GamaSupervisor.kt', 'app/src/main/java/com/gama/assistant/LocalBrain.kt', 'app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt']
+- launcher_files: ['app/src/main/java/com/gama/assistant/GamaAppRegistry.kt', 'app/src/main/java/com/gama/assistant/GamaLaunchFallback.kt', 'app/src/main/java/com/gama/assistant/GamaNotificationListener.kt', 'app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt', 'app/src/main/java/com/gama/assistant/GamaService.kt', 'app/src/main/java/com/gama/assistant/GamaWhatsAppAutomation.kt', 'app/src/main/java/com/gama/assistant/WhatsAppMessaging.kt', 'app/src/main/java/com/gama/assistant/ZevronAppTool.kt']
+- state_files: ['app/src/main/java/com/gama/assistant/AssistantRuntime.kt', 'app/src/main/java/com/gama/assistant/GamaCalendarPermissionActivity.kt', 'app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt', 'app/src/main/java/com/gama/assistant/GamaEnergyView.kt', 'app/src/main/java/com/gama/assistant/GamaFaceGateActivity.kt', 'app/src/main/java/com/gama/assistant/GamaIntroActivity.kt', 'app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt', 'app/src/main/java/com/gama/assistant/GamaRecoveryCoordinator.kt', 'app/src/main/java/com/gama/assistant/GamaService.kt', 'app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt', 'app/src/main/java/com/gama/assistant/GamaSupervisor.kt', 'app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt', 'app/src/main/java/com/gama/assistant/LocalBrain.kt', 'app/src/main/java/com/gama/assistant/LockScreenActivity.kt', 'app/src/main/java/com/gama/assistant/MainActivity.kt', 'app/src/main/java/com/gama/assistant/SmartFeatures.kt', 'app/src/test/java/com/gama/assistant/GamaSupervisorTest.kt']
+
+## Build / Manifest
+
+- debuggable_true: False
+- whatsapp_query: True
+- whatsapp_business_query: True
+- debug_build_type: False
+- release_build_type: False
+- minify_enabled: False
+
+## Copied source files
+
+- app/build.gradle.kts
+- app/src/main/AndroidManifest.xml
+- app/src/main/assets/model/phones.txt
+- app/src/main/assets/spk-model/README.txt
+- app/src/main/java/com/gama/assistant/ActionFollowUp.kt
+- app/src/main/java/com/gama/assistant/AiSetup.kt
+- app/src/main/java/com/gama/assistant/AssistantRuntime.kt
+- app/src/main/java/com/gama/assistant/AutomationCommandRouter.kt
+- app/src/main/java/com/gama/assistant/AutomationDuePolicy.kt
+- app/src/main/java/com/gama/assistant/BackgroundMode.kt
+- app/src/main/java/com/gama/assistant/BrainProcessProtocol.kt
+- app/src/main/java/com/gama/assistant/BrainProcessSupervisor.kt
+- app/src/main/java/com/gama/assistant/CalendarCommandRouter.kt
+- app/src/main/java/com/gama/assistant/CommandRouter.kt
+- app/src/main/java/com/gama/assistant/ConversationSession.kt
+- app/src/main/java/com/gama/assistant/CrashRecorder.kt
+- app/src/main/java/com/gama/assistant/DeviceActionSafety.kt
+- app/src/main/java/com/gama/assistant/DeviceExtras.kt
+- app/src/main/java/com/gama/assistant/FailSoftPolicy.kt
+- app/src/main/java/com/gama/assistant/FocusControl.kt
+- app/src/main/java/com/gama/assistant/GamaActionVerifier.kt
+- app/src/main/java/com/gama/assistant/GamaAdaptiveMemory.kt
+- app/src/main/java/com/gama/assistant/GamaAppRegistry.kt
+- app/src/main/java/com/gama/assistant/GamaAudioFrontEnd.kt
+- app/src/main/java/com/gama/assistant/GamaAudioNoiseSupervisor.kt
+- app/src/main/java/com/gama/assistant/GamaAutomationEngine.kt
+- app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt
+- app/src/main/java/com/gama/assistant/GamaCalendarAwareness.kt
+- app/src/main/java/com/gama/assistant/GamaCalendarManager.kt
+- app/src/main/java/com/gama/assistant/GamaCalendarPermissionActivity.kt
+- app/src/main/java/com/gama/assistant/GamaContextFusion.kt
+- app/src/main/java/com/gama/assistant/GamaContinuityMemory.kt
+- app/src/main/java/com/gama/assistant/GamaConversationLanguage.kt
+- app/src/main/java/com/gama/assistant/GamaConversationRepair.kt
+- app/src/main/java/com/gama/assistant/GamaCriticalCommandPolicy.kt
+- app/src/main/java/com/gama/assistant/GamaDayBriefing.kt
+- app/src/main/java/com/gama/assistant/GamaDeviceAdminReceiver.kt
+- app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt
+- app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+- app/src/main/java/com/gama/assistant/GamaEventHub.kt
+- app/src/main/java/com/gama/assistant/GamaFaceAccessGate.kt
+- app/src/main/java/com/gama/assistant/GamaFaceAuthSession.kt
+- app/src/main/java/com/gama/assistant/GamaFaceCommandPolicy.kt
+- app/src/main/java/com/gama/assistant/GamaFaceGateActivity.kt
+- app/src/main/java/com/gama/assistant/GamaFaceRingView.kt
+- app/src/main/java/com/gama/assistant/GamaFaceSessionCoordinator.kt
+- app/src/main/java/com/gama/assistant/GamaIdentity.kt
+- app/src/main/java/com/gama/assistant/GamaInternetHub.kt
+- app/src/main/java/com/gama/assistant/GamaInternetNews.kt
+- app/src/main/java/com/gama/assistant/GamaIntroActivity.kt
+- app/src/main/java/com/gama/assistant/GamaIntroPolicy.kt
+- app/src/main/java/com/gama/assistant/GamaLaunchFallback.kt
+- app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt
+- app/src/main/java/com/gama/assistant/GamaMessageCenter.kt
+- app/src/main/java/com/gama/assistant/GamaMissionStore.kt
+- app/src/main/java/com/gama/assistant/GamaModelInstallPolicy.kt
+- app/src/main/java/com/gama/assistant/GamaMorningBriefing.kt
+- app/src/main/java/com/gama/assistant/GamaNotificationCenter.kt
+- app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
+- app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt
+- app/src/main/java/com/gama/assistant/GamaOwnerFaceProfile.kt
+- app/src/main/java/com/gama/assistant/GamaPendingProposalStore.kt
+- app/src/main/java/com/gama/assistant/GamaPersona.kt
+- app/src/main/java/com/gama/assistant/GamaProactivePolicy.kt
+- app/src/main/java/com/gama/assistant/GamaProcessSafety.kt
+- app/src/main/java/com/gama/assistant/GamaProfile.kt
+- app/src/main/java/com/gama/assistant/GamaProposalEngine.kt
+- app/src/main/java/com/gama/assistant/GamaPulse.kt
+- app/src/main/java/com/gama/assistant/GamaRecognitionPolicy.kt
+- app/src/main/java/com/gama/assistant/GamaRecognitionService.kt
+- app/src/main/java/com/gama/assistant/GamaRecoveryCoordinator.kt
+- app/src/main/java/com/gama/assistant/GamaReferenceMemory.kt
+- app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt
+- app/src/main/java/com/gama/assistant/GamaReplyGuard.kt
+- app/src/main/java/com/gama/assistant/GamaScreenContextService.kt
+- app/src/main/java/com/gama/assistant/GamaScreenFastLane.kt
+- app/src/main/java/com/gama/assistant/GamaScreenMemory.kt
+- app/src/main/java/com/gama/assistant/GamaScreenSnapshot.kt
+- app/src/main/java/com/gama/assistant/GamaService.kt
+- app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt
+- app/src/main/java/com/gama/assistant/GamaSleepWindowStore.kt
+- app/src/main/java/com/gama/assistant/GamaSocialConversation.kt
+- app/src/main/java/com/gama/assistant/GamaSpeechNoisePolicy.kt
+- app/src/main/java/com/gama/assistant/GamaSuperAssistantCore.kt
+- app/src/main/java/com/gama/assistant/GamaSupervisor.kt
+- app/src/main/java/com/gama/assistant/GamaSystemAwareness.kt
+- app/src/main/java/com/gama/assistant/GamaTaskMemory.kt
+- app/src/main/java/com/gama/assistant/GamaTimeAwareBriefing.kt
+- app/src/main/java/com/gama/assistant/GamaTimePolicy.kt
+- app/src/main/java/com/gama/assistant/GamaToolExecutor.kt
+- app/src/main/java/com/gama/assistant/GamaUnreadMessageStore.kt
+- app/src/main/java/com/gama/assistant/GamaVisionCore.kt
+- app/src/main/java/com/gama/assistant/GamaVoice.kt
+- app/src/main/java/com/gama/assistant/GamaVoiceCatalog.kt
+- app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt
+- app/src/main/java/com/gama/assistant/GamaVoiceStyle.kt
+- app/src/main/java/com/gama/assistant/GamaWhatsAppAutomation.kt
+- app/src/main/java/com/gama/assistant/GamaWhatsAppSendParser.kt
+- app/src/main/java/com/gama/assistant/LocalBrain.kt
+- app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt
+- app/src/main/java/com/gama/assistant/LockScreenActivity.kt
+- app/src/main/java/com/gama/assistant/MainActivity.kt
+- app/src/main/java/com/gama/assistant/MessageCommandRouter.kt
+- app/src/main/java/com/gama/assistant/RuntimeRecoveryBus.kt
+- app/src/main/java/com/gama/assistant/SessionExitPolicy.kt
+- app/src/main/java/com/gama/assistant/SmartFeatures.kt
+- app/src/main/java/com/gama/assistant/SystemAssistant.kt
+- app/src/main/java/com/gama/assistant/VoicePolicy.kt
+- app/src/main/java/com/gama/assistant/WhatsAppCommandParser.kt
+- app/src/main/java/com/gama/assistant/WhatsAppMessaging.kt
+- app/src/main/java/com/gama/assistant/ZevronAppTool.kt
+- app/src/main/java/com/gama/assistant/ZevronCalendarFlow.kt
+- app/src/main/java/com/gama/assistant/ZevronContextResolver.kt
+- app/src/main/java/com/gama/assistant/ZevronConversationEngine.kt
+- app/src/main/java/com/gama/assistant/ZevronJarvisCore.kt
+- app/src/main/java/com/gama/assistant/ZevronLocalRouter.kt
+- app/src/main/java/com/gama/assistant/ZevronMathTool.kt
+- app/src/main/java/com/gama/assistant/ZevronMemoryStore.kt
+- app/src/main/java/com/gama/assistant/ZevronPerceptionPolicy.kt
+- app/src/main/java/com/gama/assistant/ZevronPlanner.kt
+- app/src/main/java/com/gama/assistant/ZevronSystemControl.kt
+- app/src/main/res/values/strings.xml
+- app/src/main/res/values/styles.xml
+- app/src/main/res/xml/gama_accessibility_service.xml
+- app/src/main/res/xml/gama_assistant.xml
+- app/src/main/res/xml/gama_device_admin.xml
+- app/src/test/java/com/gama/assistant/ActionFollowUpTest.kt
+- app/src/test/java/com/gama/assistant/AssistantPolicyTest.kt
+- app/src/test/java/com/gama/assistant/AutomationCommandRouterTest.kt
+- app/src/test/java/com/gama/assistant/AutomationDuePolicyTest.kt
+- app/src/test/java/com/gama/assistant/CalendarCommandRouterTest.kt
+- app/src/test/java/com/gama/assistant/CommandRouterTest.kt
+- app/src/test/java/com/gama/assistant/ConversationSessionTest.kt
+- app/src/test/java/com/gama/assistant/DeviceActionSafetyTest.kt
+- app/src/test/java/com/gama/assistant/GamaActionVerifierTest.kt
+- app/src/test/java/com/gama/assistant/GamaAppRegistryTest.kt
+- app/src/test/java/com/gama/assistant/GamaAudioFrontEndTest.kt
+- app/src/test/java/com/gama/assistant/GamaCalendarCommandParserTest.kt
+- app/src/test/java/com/gama/assistant/GamaContinuityMemoryTest.kt
+- app/src/test/java/com/gama/assistant/GamaConversationRepairTest.kt
+- app/src/test/java/com/gama/assistant/GamaCriticalCommandPolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaDayBriefingPolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaFaceCommandPolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaIdentityTest.kt
+- app/src/test/java/com/gama/assistant/GamaIntroPolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaModelInstallPolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaNaturalConversationTest.kt
+- app/src/test/java/com/gama/assistant/GamaOnlineRouterTest.kt
+- app/src/test/java/com/gama/assistant/GamaPersonaTest.kt
+- app/src/test/java/com/gama/assistant/GamaProactivePolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaRecognitionPolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaReplyGuardTest.kt
+- app/src/test/java/com/gama/assistant/GamaScreenFastLanePolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaSpeechNoisePolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaSuperAssistantCoreTest.kt
+- app/src/test/java/com/gama/assistant/GamaSupervisorTest.kt
+- app/src/test/java/com/gama/assistant/GamaTimePolicyTest.kt
+- app/src/test/java/com/gama/assistant/GamaVoiceHintTest.kt
+- app/src/test/java/com/gama/assistant/MessageCommandRouterTest.kt
+- app/src/test/java/com/gama/assistant/RuntimeStabilityRegressionTest.kt
+- app/src/test/java/com/gama/assistant/SmartFeaturesTest.kt
+- app/src/test/java/com/gama/assistant/VoicePolicyTest.kt
+- app/src/test/java/com/gama/assistant/WhatsAppMessagingTest.kt
+- app/src/test/java/com/gama/assistant/ZevronAppToolTest.kt
+- app/src/test/java/com/gama/assistant/ZevronCalendarFlowTest.kt
+- app/src/test/java/com/gama/assistant/ZevronContextResolverTest.kt
+- app/src/test/java/com/gama/assistant/ZevronConversationEngineTest.kt
+- app/src/test/java/com/gama/assistant/ZevronFix101RegressionTest.kt
+- app/src/test/java/com/gama/assistant/ZevronJarvisCorePolicyTest.kt
+- app/src/test/java/com/gama/assistant/ZevronMathToolTest.kt
+- app/src/test/java/com/gama/assistant/ZevronPerceptionPolicyTest.kt
+- app/src/test/java/com/gama/assistant/ZevronPlannerTest.kt
+- app/src/test/java/com/gama/assistant/ZevronSystemControlTest.kt
+- build.gradle.kts
+- gradle.properties
+- settings.gradle.kts
+- tools/audit_gama.py
+- tools/download_models.sh

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="GamaRedTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#080407</item>
+        <item name="android:colorAccent">#EF233C</item>
+        <item name="android:navigationBarColor">#080407</item>
+        <item name="android:statusBarColor">#080407</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:textColorPrimary">#FFF6F6</item>
+        <item name="android:textColorSecondary">#D5A0A4</item>
+    </style>
+</resources>

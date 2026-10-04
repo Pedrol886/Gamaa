@@ -1,0 +1,92 @@
+{
+  "metrics": {
+    "kotlin_files": 164,
+    "recognition_listener_mentions": 0,
+    "on_partial_result": 0,
+    "on_result": 2,
+    "on_final_result": 0,
+    "speech_service_mentions": 0,
+    "audio_record_mentions": 15,
+    "tts_speak_mentions": 5,
+    "coroutine_scope_mentions": 0,
+    "job_mentions": 0,
+    "handler_mentions": 16,
+    "delay_calls": 0,
+    "thread_sleep_calls": 3,
+    "with_timeout_calls": 0,
+    "aec_mentions": 5,
+    "audio_effect_ns_mentions": 6,
+    "gama_supervisor": true,
+    "intent_engine": false,
+    "tool_registry": false,
+    "action_verifier": true,
+    "conversation_session": true,
+    "continuity_memory": true,
+    "reference_memory": true,
+    "screen_memory": true,
+    "reliable_launcher": true,
+    "launch_fallback": true,
+    "local_brain_mentions": 3,
+    "request_id_mentions": 35,
+    "tts_files": [
+      "app/src/main/java/com/gama/assistant/GamaIntroActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaService.kt",
+      "app/src/main/java/com/gama/assistant/GamaVoice.kt",
+      "app/src/main/java/com/gama/assistant/GamaVoiceCatalog.kt",
+      "app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaVoiceStyle.kt"
+    ],
+    "recognition_files": [],
+    "audio_files": [
+      "app/src/main/java/com/gama/assistant/GamaAudioFrontEnd.kt",
+      "app/src/main/java/com/gama/assistant/GamaAudioNoiseSupervisor.kt",
+      "app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt",
+      "app/src/main/java/com/gama/assistant/GamaService.kt"
+    ],
+    "brain_files": [
+      "app/src/main/java/com/gama/assistant/AiSetup.kt",
+      "app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt",
+      "app/src/main/java/com/gama/assistant/GamaService.kt",
+      "app/src/main/java/com/gama/assistant/GamaSupervisor.kt",
+      "app/src/main/java/com/gama/assistant/LocalBrain.kt",
+      "app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt"
+    ],
+    "launcher_files": [
+      "app/src/main/java/com/gama/assistant/GamaAppRegistry.kt",
+      "app/src/main/java/com/gama/assistant/GamaLaunchFallback.kt",
+      "app/src/main/java/com/gama/assistant/GamaNotificationListener.kt",
+      "app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt",
+      "app/src/main/java/com/gama/assistant/GamaService.kt",
+      "app/src/main/java/com/gama/assistant/GamaWhatsAppAutomation.kt",
+      "app/src/main/java/com/gama/assistant/WhatsAppMessaging.kt",
+      "app/src/main/java/com/gama/assistant/ZevronAppTool.kt"
+    ],
+    "state_files": [
+      "app/src/main/java/com/gama/assistant/AssistantRuntime.kt",
+      "app/src/main/java/com/gama/assistant/GamaCalendarPermissionActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaDiagnosticActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaEnergyView.kt",
+      "app/src/main/java/com/gama/assistant/GamaFaceGateActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaIntroActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaLockConversationActivity.kt",
+      "app/src/main/java/com/gama/assistant/GamaRecoveryCoordinator.kt",
+      "app/src/main/java/com/gama/assistant/GamaService.kt",
+      "app/src/main/java/com/gama/assistant/GamaSleepBriefingStore.kt",
+      "app/src/main/java/com/gama/assistant/GamaSupervisor.kt",
+      "app/src/main/java/com/gama/assistant/GamaVoiceSettingsActivity.kt",
+      "app/src/main/java/com/gama/assistant/LocalBrain.kt",
+      "app/src/main/java/com/gama/assistant/LockScreenActivity.kt",
+      "app/src/main/java/com/gama/assistant/MainActivity.kt",
+      "app/src/main/java/com/gama/assistant/SmartFeatures.kt",
+      "app/src/test/java/com/gama/assistant/GamaSupervisorTest.kt"
+    ]
+  },
+  "checks": {
+    "debuggable_true": false,
+    "whatsapp_query": true,
+    "whatsapp_business_query": true,
+    "debug_build_type": false,
+    "release_build_type": false,
+    "minify_enabled": false
+  }
+}
