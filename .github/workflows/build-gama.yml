@@ -141,11 +141,6 @@ jobs:
 
           check_blob \
             "$ROOT/app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt" \
-            "6ef1b60c8a7dc9915d6202812924164b776804d9" \
-            2>/dev/null || true
-
-          check_blob \
-            "$ROOT/app/src/main/java/com/gama/assistant/GamaBrainProcessService.kt" \
             "6ef1b60c8a7dc991b2d5f38bc59062544d512770"
 
           check_blob \
@@ -3504,7 +3499,6 @@ jobs:
               '''
           )
 
-          # Dangerous false aliases from the old build.
           registry =
               src / "GamaAppRegistry.kt"
 
@@ -3530,8 +3524,6 @@ jobs:
               ''',
               '''private const val COMMAND_START_TIMEOUT_MS = 12_000L
                       private const val FOLLOW_UP_START_TIMEOUT_MS = 15_000L
-                      // Conversation sessions are explicit. They do not silently end
-                      // because the owner paused to think.
                       private const val CONVERSATION_IDLE_TIMEOUT_MS = Long.MAX_VALUE
                       private const val BRAIN_HARD_WATCHDOG_MS = 90_000L'''
           )
@@ -3554,7 +3546,6 @@ jobs:
                   private val zevronPlanSteps = ConcurrentLinkedQueue<String>()'''
           )
 
-          # Brain receiver now carries session / turn / generation identity.
           sub_once(
               service,
               r'''
@@ -3636,7 +3627,6 @@ jobs:
                   private var pendingSpeech'''
           )
 
-          # A session never dies only because the owner paused.
           sub_once(
               service,
               r'''
@@ -3695,7 +3685,6 @@ jobs:
                   interactionToken++'''
           )
 
-          # Keep task context during Android-owned authentication.
           sub_once(
               service,
               r'''
@@ -3718,7 +3707,6 @@ jobs:
               r'''\1orchestrator.resumeSession()'''
           )
 
-          # The sleep command cancels every obsolete task and session state.
           sub_once(
               service,
               r'''
@@ -3731,7 +3719,6 @@ jobs:
                       orchestrator.closeSession()'''
           )
 
-          # Turn identity + ActiveTaskContext.
           replace_once(
               service,
               '''        ZevronContextResolver.rememberCommand(resolvedCommand)
@@ -3748,7 +3735,6 @@ jobs:
                   orchestrator.beginTurn(command)'''
           )
 
-          # Low-confidence nonsense never reaches the local brain.
           replace_once(
               service,
               '''        if (fromVoice) {
@@ -3774,8 +3760,6 @@ jobs:
                       val audioNoise = lastAudioMetrics'''
           )
 
-          # A new user turn invalidates the old async work instead of telling
-          # the user to wait for the old response.
           sub_once(
               service,
               r'''
@@ -3852,7 +3836,6 @@ jobs:
                           rec.reset()'''
           )
 
-          # Put the endpoint merger immediately before processFinal.
           replace_once(
               service,
               '''    private fun processFinal(json: JSONObject) {''',
@@ -3982,7 +3965,6 @@ jobs:
                   private fun processFinal(json: JSONObject) {'''
           )
 
-          # Any continuation partial extends the semantic window.
           replace_once(
               service,
               '''        val partialNow = SystemClock.elapsedRealtime()
@@ -4007,7 +3989,6 @@ jobs:
                   if (text.isNotBlank() && text !in setOf("gama", "gamma") &&'''
           )
 
-          # Flush pending semantic endpoint from the audio loop.
           sub_once(
               service,
               r'''
@@ -4090,7 +4071,6 @@ jobs:
                   private fun handleBargeInAudio'''
           )
 
-          # Replace the complete barge handler.
           sub_once(
               service,
               r'''
@@ -5096,8 +5076,6 @@ jobs:
               '''
           )
 
-          # Remove the user-facing brain failure wording that survived in
-          # secondary branches of GamaService.
           value =
               service.read_text(
                   encoding="utf-8"
@@ -5132,7 +5110,6 @@ jobs:
               encoding="utf-8"
           )
 
-          # Add the sleep cleanup helper immediately before goodbye handler.
           replace_once(
               service,
               '''    private fun closeConversationForGoodbye() {''',
@@ -5654,7 +5631,6 @@ jobs:
               '''
           )
 
-          # Extend existing endpoint test with the regression the user reported.
           recognition_test =
               tests /
               "GamaRecognitionPolicyTest.kt"
@@ -5714,10 +5690,6 @@ jobs:
                       value[pos:],
                   encoding="utf-8",
               )
-
-          # ============================================================
-          # REPORTS
-          # ============================================================
 
           reports =
               root / "reports"
@@ -5899,7 +5871,7 @@ jobs:
             "$SRC/GamaService.kt"
 
           grep -Fq \
-            'GamaReliableAppLauncher.maxAttemptIndex' \
+            'maxAttemptIndex()' \
             "$SRC/GamaService.kt"
 
           grep -Fq \
