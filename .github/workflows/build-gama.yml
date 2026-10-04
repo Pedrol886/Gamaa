@@ -1,4 +1,4 @@
-name: Build Gama 10.2.0 JARVIS Agent Core
+name: Build Gama 10.3.0 Personal Android Core
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-10-2-agent-${{ github.ref }}
+  group: gama-personal-android-core-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -27,6 +27,7 @@ jobs:
     env:
       GAMA_BASE_RUN_ID: "37226292316"
       GAMA_BASE_ARTIFACT: "Gama-10.0.0-JARVIS-CONTEXT-source"
+      GAMA_EXPECTED_CERT_SHA256: "6933EDA890C29567A8F4B6CEAD7A39A442DF109D43B813A19F3F6FA7F39B078C"
 
     steps:
       - name: Checkout repository
@@ -34,7 +35,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore exact green Gama 10 source
+      - name: Resolve signing mode
+        id: signing
+        env:
+          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
+            echo "mode=fresh" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-10.3.0-PERSONAL-ANDROID-CORE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+            echo "::warning::GAMA_SIGNING_SEED não está configurado."
+            echo "::warning::O APK será Release, mas será FRESH-INSTALL-ONLY."
+          elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+            echo "mode=stable" >> "$GITHUB_OUTPUT"
+            echo "artifact=Gama-10.3.0-PERSONAL-ANDROID-CORE-APK" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::GAMA_SIGNING_SEED deve possuir exatamente 64 caracteres hexadecimais."
+            exit 1
+          fi
+
+      - name: Restore exact green Gama source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -54,1062 +75,1379 @@ jobs:
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaScreenContextService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaFaceGateActivity.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaMorningBriefing.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaCalendarManager.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaSuperAssistantCore.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaMissionStore.kt
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaPersonalCore.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/VoicePolicy.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/ZevronPlanner.kt
 
-          echo "PASS: usando diretamente o GAMA 10 verde do #156."
+          grep -Fq 'isDebuggable = false' _gama_build/app/build.gradle.kts
 
-      - name: Install JARVIS Agent modules
+          echo "PASS: base verde do GAMA restaurada."
+
+      - name: Install Gama Personal Android Core modules
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           SRC="app/src/main/java/com/gama/assistant"
 
-          # ============================================================
-          # MÓDULO 1
-          # CÉREBRO LOCAL DE STATUS / "COMO ESTAMOS?"
-          # ============================================================
-
-          cat > "$SRC/GamaJarvisStatus.kt" <<'KOTLIN'
+          cat > "$SRC/GamaTaskStateStore.kt" <<'KOTLIN'
           package com.gama.assistant
 
-          import android.app.KeyguardManager
           import android.content.Context
-          import android.net.ConnectivityManager
-          import android.net.NetworkCapabilities
-          import android.os.BatteryManager
-          import java.text.Normalizer
-          import java.util.Locale
+          import org.json.JSONObject
 
-          object GamaJarvisStatus {
+          object GamaTaskStateStore {
+              enum class State {
+                  PENDING,
+                  RUNNING,
+                  WAITING_USER,
+                  COMPLETED,
+                  FAILED_RECOVERABLE,
+              }
 
-              fun handle(
-                  context: Context,
-                  raw: String,
-              ): String? {
-                  val command = normalize(raw)
+              data class Task(
+                  val id: String,
+                  val kind: String,
+                  val goal: String,
+                  val state: State,
+                  val data: String = "{}",
+                  val prompt: String = "",
+                  val createdAt: Long = System.currentTimeMillis(),
+                  val updatedAt: Long = System.currentTimeMillis(),
+              )
 
-                  val statusRequest =
-                      command == "como estamos" ||
-                          command == "como estamos gama" ||
-                          command == "gama como estamos" ||
-                          command == "status" ||
-                          command == "status do sistema" ||
-                          command == "como esta o celular" ||
-                          command == "como esta o sistema" ||
-                          command == "relatorio do sistema" ||
-                          command == "situacao do sistema"
+              private const val PREFS = "gama_structured_task_state"
+              private const val KEY_TASK = "current_task"
+              private const val MAX_AGE_MS = 72L * 60L * 60L * 1000L
 
-                  if (!statusRequest) {
+              fun start(context: Context, kind: String, goal: String, data: String = "{}", prompt: String = ""): Task {
+                  val now = System.currentTimeMillis()
+                  val task = Task(
+                      id = "${kind.trim().lowercase()}-$now",
+                      kind = kind.trim().take(80),
+                      goal = goal.trim().replace(Regex("\\s+"), " ").take(900),
+                      state = State.PENDING,
+                      data = data.take(6000),
+                      prompt = prompt.trim().take(1200),
+                      createdAt = now,
+                      updatedAt = now,
+                  )
+                  save(context, task)
+                  return task
+              }
+
+              fun current(context: Context, now: Long = System.currentTimeMillis()): Task? {
+                  val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TASK, null) ?: return null
+                  val task = runCatching {
+                      val json = JSONObject(raw)
+                      Task(
+                          id = json.optString("id"),
+                          kind = json.optString("kind"),
+                          goal = json.optString("goal"),
+                          state = runCatching { State.valueOf(json.optString("state")) }.getOrDefault(State.PENDING),
+                          data = json.optString("data", "{}"),
+                          prompt = json.optString("prompt"),
+                          createdAt = json.optLong("createdAt"),
+                          updatedAt = json.optLong("updatedAt"),
+                      )
+                  }.getOrNull() ?: run {
+                      clear(context)
                       return null
                   }
 
-                  return buildStatus(context)
-              }
-
-              fun buildStatus(
-                  context: Context,
-              ): String {
-                  val batteryManager =
-                      context.getSystemService(
-                          BatteryManager::class.java
-                      )
-
-                  val battery =
-                      batteryManager
-                          ?.getIntProperty(
-                              BatteryManager.BATTERY_PROPERTY_CAPACITY
-                          )
-                          ?.takeIf {
-                              it in 0..100
-                          }
-
-                  val charging =
-                      batteryManager
-                          ?.isCharging ==
-                          true
-
-                  val connectivity =
-                      context.getSystemService(
-                          ConnectivityManager::class.java
-                      )
-
-                  val capabilities =
-                      connectivity
-                          ?.getNetworkCapabilities(
-                              connectivity.activeNetwork
-                          )
-
-                  val network =
-                      when {
-                          capabilities
-                              ?.hasTransport(
-                                  NetworkCapabilities.TRANSPORT_WIFI
-                              ) == true ->
-                              "Wi-Fi"
-
-                          capabilities
-                              ?.hasTransport(
-                                  NetworkCapabilities.TRANSPORT_CELLULAR
-                              ) == true ->
-                              "dados móveis"
-
-                          capabilities
-                              ?.hasCapability(
-                                  NetworkCapabilities.NET_CAPABILITY_INTERNET
-                              ) == true ->
-                              "Internet"
-
-                          else ->
-                              "sem conexão"
-                      }
-
-                  val keyguard =
-                      context.getSystemService(
-                          KeyguardManager::class.java
-                      )
-
-                  val locked =
-                      keyguard?.isDeviceLocked ==
-                          true
-
-                  val accessibility =
-                      GamaScreenContextService
-                          .isConnected()
-
-                  val voice =
-                      AssistantRuntime.service
-                          ?.isVoiceReady() ==
-                          true
-
-                  val sections =
-                      mutableListOf<String>()
-
-                  sections +=
-                      "Estamos operacionais, senhor."
-
-                  battery?.let {
-                      sections +=
-                          if (charging) {
-                              "A bateria está em $it por cento e carregando."
-                          } else {
-                              "A bateria está em $it por cento."
-                          }
+                  if (task.id.isBlank() || task.kind.isBlank() || now - task.updatedAt > MAX_AGE_MS) {
+                      clear(context)
+                      return null
                   }
 
-                  sections +=
-                      "A conexão atual é $network."
+                  return task
+              }
 
-                  sections +=
-                      if (voice) {
-                          "O sistema de voz está ativo."
-                      } else {
-                          "O sistema de voz está se recuperando ou aguardando ativação."
+              fun update(context: Context, task: Task) {
+                  save(context, task.copy(updatedAt = System.currentTimeMillis()))
+              }
+
+              fun transition(context: Context, state: State, data: String? = null, prompt: String? = null): Task? {
+                  val current = current(context) ?: return null
+                  val next = current.copy(
+                      state = state,
+                      data = data ?: current.data,
+                      prompt = prompt ?: current.prompt,
+                      updatedAt = System.currentTimeMillis(),
+                  )
+                  save(context, next)
+                  return next
+              }
+
+              fun complete(context: Context, result: String = "") {
+                  val current = current(context) ?: return
+                  val json = runCatching { JSONObject(current.data) }.getOrElse { JSONObject() }
+                  if (result.isNotBlank()) json.put("result", result.take(1500))
+                  save(
+                      context,
+                      current.copy(
+                          state = State.COMPLETED,
+                          data = json.toString(),
+                          updatedAt = System.currentTimeMillis(),
+                      ),
+                  )
+              }
+
+              fun failRecoverable(context: Context, message: String) {
+                  val current = current(context) ?: return
+                  val json = runCatching { JSONObject(current.data) }.getOrElse { JSONObject() }
+                  json.put("lastError", message.take(1000))
+                  save(
+                      context,
+                      current.copy(
+                          state = State.FAILED_RECOVERABLE,
+                          data = json.toString(),
+                          updatedAt = System.currentTimeMillis(),
+                      ),
+                  )
+              }
+
+              fun clear(context: Context) {
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY_TASK).apply()
+              }
+
+              private fun save(context: Context, task: Task) {
+                  val json = JSONObject()
+                      .put("id", task.id)
+                      .put("kind", task.kind)
+                      .put("goal", task.goal)
+                      .put("state", task.state.name)
+                      .put("data", task.data)
+                      .put("prompt", task.prompt)
+                      .put("createdAt", task.createdAt)
+                      .put("updatedAt", task.updatedAt)
+
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_TASK, json.toString()).apply()
+              }
+          }
+          KOTLIN
+
+          cat > "$SRC/GamaContextPolicy.kt" <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.content.Context
+          import java.text.Normalizer
+          import java.util.Calendar
+          import java.util.Locale
+
+          object GamaSilentContext {
+              private const val PREFS = "gama_silent_context"
+              private const val KEY_START = "start"
+              private const val KEY_END = "end"
+              private const val KEY_BREAK_START = "break_start"
+              private const val KEY_BREAK_END = "break_end"
+              private const val KEY_LABEL = "label"
+
+              private val rangeRegex = Regex("""(?:das|de)\s*(\d{1,2})(?::(\d{2}))?\s*(?:as|a)\s*(\d{1,2})(?::(\d{2}))?""")
+
+              fun handle(context: Context, raw: String): String? {
+                  val text = normalize(raw)
+
+                  val explicitSilence = listOf(
+                      "nao fale comigo",
+                      "nao me interrompa",
+                      "nao interrompa",
+                      "modo silencioso",
+                      "fique em silencio",
+                      "fica em silencio",
+                      "sem me interromper",
+                  ).any { it in text }
+
+                  if (!explicitSilence) return null
+
+                  val ranges = rangeRegex.findAll(text).toList()
+                  if (ranges.isEmpty()) return "Entendi que você quer silêncio, mas preciso saber o horário de início e fim."
+
+                  val offset = if ("amanha" in text) 1 else 0
+                  val main = toWindow(ranges.first(), offset) ?: return "Não consegui interpretar esse horário."
+
+                  var breakStart = 0L
+                  var breakEnd = 0L
+
+                  if ("intervalo" in text && ranges.size >= 2) {
+                      val pause = toWindow(ranges[1], offset)
+                      if (pause != null) {
+                          breakStart = pause.first
+                          breakEnd = pause.second
                       }
+                  }
 
-                  sections +=
-                      if (accessibility) {
-                          "O controle assistivo da tela está disponível."
-                      } else {
-                          "O controle assistivo da tela ainda não está ativo."
-                      }
+                  val label = when {
+                      "prova" in text -> "prova"
+                      "aula" in text -> "aula"
+                      "trabalho" in text -> "compromisso"
+                      else -> "período ocupado"
+                  }
 
-                  if (!locked) {
-                      val unread =
-                          GamaUnreadMessageStore
-                              .peekUnread(context)
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                      .putLong(KEY_START, main.first)
+                      .putLong(KEY_END, main.second)
+                      .putLong(KEY_BREAK_START, breakStart)
+                      .putLong(KEY_BREAK_END, breakEnd)
+                      .putString(KEY_LABEL, label)
+                      .apply()
 
-                      sections +=
-                          when (unread.size) {
-                              0 ->
-                                  "Não há mensagens não lidas registradas."
-
-                              1 ->
-                                  "Há uma mensagem não lida registrada."
-
-                              else ->
-                                  "Há ${unread.size} mensagens não lidas registradas."
-                          }
-
-                      GamaScreenContextService
-                          .currentPackageName()
-                          ?.takeIf {
-                              it.isNotBlank()
-                          }
-                          ?.let {
-                              sections +=
-                                  "O contexto atual da tela também está disponível."
-                          }
+                  return if (breakStart > 0L && breakEnd > breakStart) {
+                      "Certo. Vou evitar interrupções durante sua $label e volto ao comportamento normal no intervalo que você informou e depois do horário."
                   } else {
-                      sections +=
-                          "Detalhes privados ficam disponíveis depois da confirmação do Android."
+                      "Certo. Vou evitar interrupções não urgentes durante sua $label e volto ao normal automaticamente depois."
                   }
-
-                  return sections.joinToString(" ")
               }
 
-              private fun normalize(
-                  value: String,
-              ): String =
-                  Normalizer
-                      .normalize(
-                          value.lowercase(
-                              Locale("pt", "BR")
-                          ),
-                          Normalizer.Form.NFD,
-                      )
-                      .replace(
-                          Regex("\\p{M}+"),
-                          "",
-                      )
-                      .replace(
-                          Regex("[^a-z0-9 ]+"),
-                          " ",
-                      )
-                      .replace(
-                          Regex("\\s+"),
-                          " ",
-                      )
+              fun isSilentNow(context: Context, now: Long = System.currentTimeMillis()): Boolean {
+                  val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                  val start = prefs.getLong(KEY_START, 0L)
+                  val end = prefs.getLong(KEY_END, 0L)
+
+                  if (start <= 0L || end <= start || now !in start until end) return false
+
+                  val breakStart = prefs.getLong(KEY_BREAK_START, 0L)
+                  val breakEnd = prefs.getLong(KEY_BREAK_END, 0L)
+
+                  if (breakStart > 0L && breakEnd > breakStart && now in breakStart until breakEnd) return false
+                  return true
+              }
+
+              fun description(context: Context): String? {
+                  if (!isSilentNow(context)) return null
+                  val label = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LABEL, "período ocupado")
+                  return "Você está no período silencioso configurado para $label."
+              }
+
+              private fun toWindow(match: MatchResult, dayOffset: Int): Pair<Long, Long>? {
+                  val startHour = match.groupValues[1].toIntOrNull() ?: return null
+                  val startMinute = match.groupValues[2].toIntOrNull() ?: 0
+                  val endHour = match.groupValues[3].toIntOrNull() ?: return null
+                  val endMinute = match.groupValues[4].toIntOrNull() ?: 0
+
+                  if (startHour !in 0..23 || endHour !in 0..23 || startMinute !in 0..59 || endMinute !in 0..59) return null
+
+                  val start = Calendar.getInstance().apply {
+                      add(Calendar.DAY_OF_MONTH, dayOffset)
+                      set(Calendar.HOUR_OF_DAY, startHour)
+                      set(Calendar.MINUTE, startMinute)
+                      set(Calendar.SECOND, 0)
+                      set(Calendar.MILLISECOND, 0)
+                  }
+
+                  val end = Calendar.getInstance().apply {
+                      timeInMillis = start.timeInMillis
+                      set(Calendar.HOUR_OF_DAY, endHour)
+                      set(Calendar.MINUTE, endMinute)
+                      set(Calendar.SECOND, 0)
+                      set(Calendar.MILLISECOND, 0)
+                      if (timeInMillis <= start.timeInMillis) add(Calendar.DAY_OF_MONTH, 1)
+                  }
+
+                  return start.timeInMillis to end.timeInMillis
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9: ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+
+          object GamaNotificationIntelligence {
+              enum class Level {
+                  LOW,
+                  NORMAL,
+                  IMPORTANT,
+                  URGENT,
+              }
+
+              fun classify(context: Context, source: String, message: String, recentSameSender: Int = 0): Level {
+                  val text = normalize("$source $message")
+                  val owner = runCatching { normalize(OwnerIdentity.name(context)) }.getOrDefault("")
+                  val directlyMentionsOwner = owner.length >= 3 && (text.contains(owner) || text.contains("@$owner"))
+
+                  val urgentTerms = listOf(
+                      "urgente",
+                      "emergencia",
+                      "hospital",
+                      "acidente",
+                      "socorro",
+                      "me liga agora",
+                      "me ligue agora",
+                      "preciso falar agora",
+                      "preciso de voce agora",
+                  )
+
+                  if (urgentTerms.any { it in text }) return Level.URGENT
+
+                  val importantTerms = listOf(
+                      "prova",
+                      "atividade",
+                      "trabalho",
+                      "escola",
+                      "professor",
+                      "prazo",
+                      "entrega",
+                      "reuniao",
+                      "consulta",
+                      "familia",
+                      "mae",
+                      "pai",
+                      "irmao",
+                      "irma",
+                      "voce ja fez",
+                      "voce terminou",
+                      "preciso falar",
+                  )
+
+                  if (importantTerms.any { it in text } || directlyMentionsOwner || recentSameSender >= 3) return Level.IMPORTANT
+
+                  val lowTerms = listOf(
+                      "vamos jogar",
+                      "bora jogar",
+                      "partida",
+                      "game",
+                      "promoção",
+                      "promocao",
+                      "desconto",
+                      "oferta",
+                      "cupom",
+                      "propaganda",
+                  )
+
+                  if (lowTerms.any { it in text }) return Level.LOW
+                  return Level.NORMAL
+              }
+
+              fun eventPriority(context: Context, source: String, message: String, recentSameSender: Int = 0): GamaEventHub.Priority {
+                  return when (classify(context, source, message, recentSameSender)) {
+                      Level.LOW -> GamaEventHub.Priority.LOW
+                      Level.NORMAL -> GamaEventHub.Priority.NORMAL
+                      Level.IMPORTANT, Level.URGENT -> GamaEventHub.Priority.HIGH
+                  }
+              }
+
+              fun digest(context: Context): String {
+                  val unread = GamaUnreadMessageStore.peekUnread(context)
+                  if (unread.isEmpty()) return "Não há mensagens não lidas registradas."
+
+                  val classified = unread.map { item ->
+                      classify(context, item.title, item.text) to item
+                  }
+
+                  val urgent = classified.filter { it.first == Level.URGENT }
+                  val important = classified.filter { it.first == Level.IMPORTANT }
+                  val normal = classified.count { it.first == Level.NORMAL }
+                  val low = classified.count { it.first == Level.LOW }
+
+                  val details = (urgent + important).takeLast(6).map { pair ->
+                      val item = pair.second
+                      val sender = item.title.ifBlank { "um contato" }
+                      val preview = item.text.replace(Regex("\\s+"), " ").trim().take(180)
+                      if (preview.isBlank()) sender else "$sender: $preview"
+                  }
+
+                  return buildString {
+                      append("Enquanto você estava ocupado, ficaram registradas ${unread.size} mensagens.")
+                      if (urgent.isNotEmpty()) append(" ${urgent.size} são urgentes.")
+                      if (important.isNotEmpty()) append(" ${important.size} são importantes.")
+                      if (normal > 0) append(" $normal são normais.")
+                      if (low > 0) append(" $low são de baixa prioridade.")
+                      if (details.isNotEmpty()) append(" As principais são: ${details.joinToString("; ")}.")
+                  }
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9@ ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
                       .trim()
           }
           KOTLIN
 
-          # ============================================================
-          # WAKE DA TELA
-          #
-          # Acende a tela.
-          # NÃO remove PIN / biometria / Keyguard.
-          # ============================================================
-
-          cat > "$SRC/GamaScreenWake.kt" <<'KOTLIN'
-          package com.gama.assistant
-
-          import android.content.Context
-          import android.os.PowerManager
-
-          object GamaScreenWake {
-
-              @Suppress("DEPRECATION")
-              fun wake(
-                  context: Context,
-              ): Boolean {
-                  val power =
-                      context.getSystemService(
-                          PowerManager::class.java
-                      ) ?: return false
-
-                  if (power.isInteractive) {
-                      return true
-                  }
-
-                  return runCatching {
-                      val lock =
-                          power.newWakeLock(
-                              PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                                  PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                                  PowerManager.ON_AFTER_RELEASE,
-                              "Gama:VoiceWake",
-                          )
-
-                      lock.acquire(3_500L)
-
-                      if (lock.isHeld) {
-                          lock.release()
-                      }
-
-                      true
-                  }.getOrDefault(false)
-              }
-          }
-          KOTLIN
-
-          # ============================================================
-          # MÓDULO 2
-          # DIRETOR DE ACESSIBILIDADE
-          #
-          # Ações somente depois da autorização de Accessibility.
-          # Nada toca em campos de senha.
-          # Nada tenta burlar a tela segura.
-          # ============================================================
-
-          cat > "$SRC/GamaAccessibilityDirector.kt" <<'KOTLIN'
+          cat > "$SRC/GamaDeviceTools.kt" <<'KOTLIN'
           package com.gama.assistant
 
           import android.accessibilityservice.AccessibilityService
           import android.app.KeyguardManager
+          import android.content.Context
           import android.content.Intent
-          import android.os.Handler
-          import android.os.Looper
+          import android.net.ConnectivityManager
+          import android.net.NetworkCapabilities
+          import android.net.Uri
+          import android.os.BatteryManager
+          import android.provider.AlarmClock
           import java.text.Normalizer
           import java.util.Locale
 
-          object GamaAccessibilityDirector {
+          object GamaTimerRouter {
+              private val values = mapOf(
+                  "zero" to 0,
+                  "um" to 1,
+                  "uma" to 1,
+                  "dois" to 2,
+                  "duas" to 2,
+                  "tres" to 3,
+                  "quatro" to 4,
+                  "cinco" to 5,
+                  "seis" to 6,
+                  "sete" to 7,
+                  "oito" to 8,
+                  "nove" to 9,
+                  "dez" to 10,
+                  "onze" to 11,
+                  "doze" to 12,
+                  "treze" to 13,
+                  "catorze" to 14,
+                  "quatorze" to 14,
+                  "quinze" to 15,
+                  "dezesseis" to 16,
+                  "dezessete" to 17,
+                  "dezoito" to 18,
+                  "dezenove" to 19,
+                  "vinte" to 20,
+                  "trinta" to 30,
+                  "quarenta" to 40,
+                  "cinquenta" to 50,
+                  "sessenta" to 60,
+              )
 
-              private val handler =
-                  Handler(
-                      Looper.getMainLooper()
-                  )
+              fun recognizes(raw: String): Boolean {
+                  val text = normalize(raw)
+                  val hasUnit = listOf("segundo", "minuto", "hora").any { it in text }
+                  if (!hasUnit) return false
+                  return text.contains("timer") ||
+                      text.contains("me avisa") ||
+                      text.contains("me avise") ||
+                      text.contains("avisa daqui") ||
+                      text.contains("avise daqui") ||
+                      text.contains("daqui a") ||
+                      text.startsWith("deixa ") ||
+                      text.startsWith("deixe ")
+              }
 
-              fun handleAsync(
-                  service: GamaService,
-                  raw: String,
-                  callback: (String) -> Unit,
-              ): Boolean {
-                  val command =
-                      normalize(raw)
+              fun handle(service: GamaService, raw: String): String? {
+                  if (!recognizes(raw)) return null
+                  val seconds = parseSeconds(raw) ?: return "Entendi que você quer um timer, mas não consegui identificar a duração."
+                  if (seconds !in 1..86_400) return "Esse tempo ficou fora do limite que vou enviar ao relógio do Android."
 
-                  val looksLikeAction =
-                      command.contains("clique") ||
-                          command.contains("toque") ||
-                          command.contains("role") ||
-                          command.contains("rolar") ||
-                          command.contains("voltar") ||
-                          command.contains("ir para inicio") ||
-                          (
-                              command.contains("whatsapp") &&
-                                  command.contains("abr")
-                              )
+                  val intent = Intent(AlarmClock.ACTION_SET_TIMER)
+                      .putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                      .putExtra(AlarmClock.EXTRA_MESSAGE, "GAMA")
+                      .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-                  if (!looksLikeAction) {
-                      return false
+                  val dispatch = service.launchSafely(intent)
+                  if (!dispatch.startsWith("Abrindo", ignoreCase = true)) return dispatch
+
+                  return "Enviei ${formatDuration(seconds)} para o timer do Android."
+              }
+
+              private fun parseSeconds(raw: String): Int? {
+                  val text = normalize(raw)
+                  val tokens = text.split(" ").filter { it.isNotBlank() }
+                  var seconds = 0
+
+                  for (index in tokens.indices) {
+                      val token = tokens[index]
+
+                      if (token.startsWith("hora")) {
+                          if (index > 0 && tokens[index - 1] == "meia") {
+                              seconds += 30 * 60
+                          } else {
+                              quantityBefore(tokens, index)?.let { seconds += it * 3600 }
+                          }
+                      }
+
+                      if (token.startsWith("minuto")) {
+                          quantityBefore(tokens, index)?.let { seconds += it * 60 }
+                      }
+
+                      if (token.startsWith("segundo")) {
+                          quantityBefore(tokens, index)?.let { seconds += it }
+                      }
                   }
 
-                  val keyguard =
-                      service.getSystemService(
-                          KeyguardManager::class.java
-                      )
+                  if ("hora e meia" in text && seconds >= 3600) seconds += 30 * 60
+                  return seconds.takeIf { it > 0 }
+              }
 
-                  if (
-                      keyguard?.isDeviceLocked ==
-                      true
-                  ) {
-                      callback(
-                          "O celular está bloqueado. Confirme o desbloqueio pelo Android e eu continuo."
-                      )
+              private fun quantityBefore(tokens: List<String>, unitIndex: Int): Int? {
+                  if (unitIndex <= 0) return null
+                  val previous = tokens[unitIndex - 1]
+                  previous.toIntOrNull()?.let { return it }
 
-                      return true
+                  var result = 0
+                  var found = false
+                  var cursor = unitIndex - 1
+
+                  while (cursor >= 0 && unitIndex - cursor <= 5) {
+                      val token = tokens[cursor]
+                      if (token == "e") {
+                          cursor--
+                          continue
+                      }
+
+                      val value = values[token] ?: break
+                      result += value
+                      found = true
+                      cursor--
                   }
 
-                  if (
-                      !GamaScreenContextService
-                          .isConnected()
-                  ) {
-                      GamaScreenContextService
-                          .openSettings(service)
+                  return result.takeIf { found && it > 0 }
+              }
 
-                      callback(
-                          "Ative Gama Contexto da Tela uma vez para eu executar essa ação."
-                      )
+              private fun formatDuration(seconds: Int): String {
+                  val hours = seconds / 3600
+                  val minutes = (seconds % 3600) / 60
+                  val remaining = seconds % 60
 
-                      return true
+                  return buildString {
+                      if (hours > 0) append("$hours hora${if (hours == 1) "" else "s"}")
+                      if (minutes > 0) {
+                          if (isNotEmpty()) append(" e ")
+                          append("$minutes minuto${if (minutes == 1) "" else "s"}")
+                      }
+                      if (remaining > 0 && hours == 0) {
+                          if (isNotEmpty()) append(" e ")
+                          append("$remaining segundo${if (remaining == 1) "" else "s"}")
+                      }
+                  }
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9 ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+
+          object GamaWebsiteRouter {
+              private val knownSites = mapOf(
+                  "github" to "https://github.com",
+                  "google" to "https://www.google.com",
+                  "wikipedia" to "https://pt.wikipedia.org",
+                  "youtube" to "https://www.youtube.com",
+              )
+
+              fun recognizes(raw: String): Boolean {
+                  val text = normalize(raw)
+                  if (Regex("""https?://\S+""").containsMatchIn(raw)) return true
+                  if (Regex("""\b[a-z0-9.-]+\.(?:com|org|net|io|dev|br)\b""").containsMatchIn(text)) return true
+                  if (" no chrome" in text || " pelo chrome" in text) return knownSites.keys.any { it in text }
+                  return text.startsWith("abra o site ") || text.startsWith("abre o site ") || text.startsWith("acesse o site ")
+              }
+
+              fun handle(service: GamaService, raw: String): String? {
+                  if (!recognizes(raw)) return null
+
+                  val text = normalize(raw)
+                  val requestedChrome = "chrome" in text
+                  val explicit = Regex("""https?://[^\s]+""").find(raw)?.value
+                  val domain = Regex("""\b[a-z0-9.-]+\.(?:com|org|net|io|dev|br)(?:/[^\s]*)?""").find(text)?.value
+
+                  val url = when {
+                      !explicit.isNullOrBlank() -> explicit
+                      !domain.isNullOrBlank() -> "https://$domain"
+                      else -> knownSites.entries.firstOrNull { it.key in text }?.value
+                  } ?: return "Qual site você quer abrir?"
+
+                  var intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                  if (requestedChrome) {
+                      val chrome = "com.android.chrome"
+                      val chromeAvailable = runCatching {
+                          service.packageManager.getLaunchIntentForPackage(chrome) != null
+                      }.getOrDefault(false)
+
+                      if (chromeAvailable) intent = intent.setPackage(chrome)
                   }
 
-                  if (
-                      command == "voltar" ||
-                      command == "volte" ||
-                      command.contains(
-                          "volte para tela anterior"
-                      )
-                  ) {
-                      val done =
-                          GamaScreenContextService
-                              .performGlobal(
-                                  AccessibilityService.GLOBAL_ACTION_BACK
-                              )
+                  val dispatch = service.launchSafely(intent)
+                  if (!dispatch.startsWith("Abrindo", ignoreCase = true)) return dispatch
 
-                      callback(
-                          if (done) {
+                  return if (requestedChrome) "Abrindo o site no Chrome." else "Abrindo o site."
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9:/._ -]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+
+          object GamaSystemActionRouter {
+              fun recognizes(raw: String): Boolean {
+                  val text = normalize(raw)
+
+                  return listOf(
+                      "abra as notificacoes",
+                      "abrir notificacoes",
+                      "painel de notificacoes",
+                      "configuracoes rapidas",
+                      "quick settings",
+                      "voltar",
+                      "volte",
+                      "tela inicial",
+                      "ir para inicio",
+                      "recentes",
+                      "aplicativos recentes",
+                      "role para baixo",
+                      "rola para baixo",
+                      "role para cima",
+                      "rola para cima",
+                      "clique em ",
+                      "toque em ",
+                      "aperte ",
+                  ).any { it in text }
+              }
+
+              fun handle(context: Context, raw: String): String? {
+                  if (!recognizes(raw)) return null
+                  val text = normalize(raw)
+
+                  if (!GamaScreenContextService.isConnected()) {
+                      GamaScreenContextService.openSettings(context)
+                      return "Para controlar essa parte da interface, ative Gama Contexto da Tela na acessibilidade. Abri a configuração."
+                  }
+
+                  val keyguard = context.getSystemService(KeyguardManager::class.java)
+                  val locked = keyguard?.isDeviceLocked == true
+
+                  val privateUiAction = text.contains("clique") ||
+                      text.contains("toque") ||
+                      text.contains("aperte") ||
+                      text.contains("role") ||
+                      text.contains("rola") ||
+                      text.contains("recentes")
+
+                  if (locked && privateUiAction) return "Para concluir essa ação na interface, desbloqueie o celular."
+
+                  when {
+                      text.contains("notificacoes") -> {
+                          return if (GamaScreenContextService.performGlobal(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)) {
+                              "Abri o painel de notificações."
+                          } else {
+                              "Esta versão do Android não permitiu abrir o painel de notificações por esse caminho."
+                          }
+                      }
+
+                      text.contains("configuracoes rapidas") || text.contains("quick settings") -> {
+                          return if (GamaScreenContextService.performGlobal(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)) {
+                              "Abri as configurações rápidas."
+                          } else {
+                              "O Android não permitiu abrir as configurações rápidas agora."
+                          }
+                      }
+
+                      text == "voltar" || text == "volte" || text.contains("volte para tela anterior") -> {
+                          return if (GamaScreenContextService.performGlobal(AccessibilityService.GLOBAL_ACTION_BACK)) {
                               "Voltei."
                           } else {
                               "O Android não confirmou a ação de voltar."
                           }
-                      )
+                      }
 
-                      return true
-                  }
-
-                  if (
-                      command.contains(
-                          "ir para inicio"
-                      ) ||
-                      command.contains(
-                          "tela inicial"
-                      ) ||
-                      command == "inicio"
-                  ) {
-                      val done =
-                          GamaScreenContextService
-                              .performGlobal(
-                                  AccessibilityService.GLOBAL_ACTION_HOME
-                              )
-
-                      callback(
-                          if (done) {
-                              "Pronto."
+                      text.contains("tela inicial") || text.contains("ir para inicio") -> {
+                          return if (GamaScreenContextService.performGlobal(AccessibilityService.GLOBAL_ACTION_HOME)) {
+                              "Voltei para a tela inicial."
                           } else {
                               "O Android não confirmou a tela inicial."
                           }
-                      )
+                      }
 
-                      return true
-                  }
-
-                  if (
-                      command.contains(
-                          "role para baixo"
-                      ) ||
-                      command.contains(
-                          "rolar para baixo"
-                      )
-                  ) {
-                      val done =
-                          GamaScreenContextService
-                              .scroll(true)
-
-                      callback(
-                          if (done) {
-                              "Rolei a tela."
+                      text.contains("recentes") -> {
+                          return if (GamaScreenContextService.performGlobal(AccessibilityService.GLOBAL_ACTION_RECENTS)) {
+                              "Abri os aplicativos recentes."
                           } else {
-                              "Não encontrei uma área que pudesse rolar."
+                              "Este aparelho não permitiu abrir os aplicativos recentes agora."
                           }
-                      )
+                      }
 
-                      return true
-                  }
+                      text.contains("role para baixo") || text.contains("rola para baixo") -> {
+                          return if (GamaScreenContextService.scroll(true)) {
+                              "Rolei a tela para baixo."
+                          } else {
+                              "Não encontrei uma área acessível que pudesse rolar para baixo."
+                          }
+                      }
 
-                  if (
-                      command.contains(
-                          "role para cima"
-                      ) ||
-                      command.contains(
-                          "rolar para cima"
-                      )
-                  ) {
-                      val done =
-                          GamaScreenContextService
-                              .scroll(false)
-
-                      callback(
-                          if (done) {
+                      text.contains("role para cima") || text.contains("rola para cima") -> {
+                          return if (GamaScreenContextService.scroll(false)) {
                               "Rolei a tela para cima."
                           } else {
-                              "Não encontrei uma área que pudesse rolar."
+                              "Não encontrei uma área acessível que pudesse rolar para cima."
                           }
+                      }
+                  }
+
+                  val label = Regex("""(?:clique|toque|aperte)\s+(?:em|no|na)?\s*(.+)$""")
+                      .find(text)
+                      ?.groupValues
+                      ?.getOrNull(1)
+                      ?.trim()
+                      .orEmpty()
+
+                  if (label.isNotBlank()) {
+                      return if (GamaScreenContextService.clickByLabel(label)) {
+                          "Pronto."
+                      } else {
+                          "Não encontrei um elemento acessível chamado $label na tela atual."
+                      }
+                  }
+
+                  return null
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9 ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+
+          object GamaSystemStatus {
+              fun handle(context: Context, raw: String): String? {
+                  val text = normalize(raw)
+
+                  if (text !in setOf(
+                          "como estamos",
+                          "gama como estamos",
+                          "como esta o sistema",
+                          "como esta o celular",
+                          "status do sistema",
+                          "status do celular",
+                      )
+                  ) return null
+
+                  val batteryManager = context.getSystemService(BatteryManager::class.java)
+                  val battery = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+                  val charging = batteryManager?.isCharging == true
+
+                  val connectivity = context.getSystemService(ConnectivityManager::class.java)
+                  val capabilities = connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+
+                  val network = when {
+                      capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "Wi-Fi"
+                      capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "dados móveis"
+                      capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true -> "Internet"
+                      else -> "sem conexão"
+                  }
+
+                  val unread = GamaUnreadMessageStore.peekUnread(context).size
+                  val task = GamaTaskStateStore.current(context)
+
+                  return buildString {
+                      append("Estamos operacionais.")
+                      battery?.let {
+                          append(" A bateria está em $it por cento")
+                          if (charging) append(" e carregando")
+                          append(".")
+                      }
+                      append(" A conexão atual é $network.")
+                      append(" Há $unread mensagem${if (unread == 1) "" else "s"} não lida${if (unread == 1) "" else "s"} registrada${if (unread == 1) "" else "s"}.")
+                      GamaSilentContext.description(context)?.let { append(" $it") }
+                      if (task != null && task.state !in setOf(GamaTaskStateStore.State.COMPLETED)) {
+                          append(" Existe uma tarefa ativa: ${task.goal}.")
+                      }
+                  }
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9 ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+          KOTLIN
+
+          cat > "$SRC/GamaDialogueCore.kt" <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.content.ContentUris
+          import android.content.Context
+          import android.provider.CalendarContract
+          import org.json.JSONObject
+          import java.text.Normalizer
+          import java.text.SimpleDateFormat
+          import java.util.Calendar
+          import java.util.Date
+          import java.util.Locale
+
+          object GamaMemoryConsentPolicy {
+              fun allowAdaptiveLearning(raw: String): Boolean {
+                  val text = normalize(raw)
+
+                  val explicitMemory = listOf(
+                      "lembre disso",
+                      "lembra disso",
+                      "guarde isso",
+                      "guarda isso",
+                      "quero que voce lembre",
+                      "pode guardar",
+                  ).any { it in text }
+
+                  if (explicitMemory) return true
+
+                  val sensitive = listOf(
+                      "segredo",
+                      "desabafo",
+                      "conversa intima",
+                      "relacionamento",
+                      "briga em casa",
+                      "problema de saude",
+                      "doenca",
+                      "medicamento",
+                      "senha",
+                      "pin",
+                      "documento pessoal",
+                  ).any { it in text }
+
+                  return !sensitive
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9 ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+
+          object GamaWhatsAppDialogue {
+              fun handleAsync(context: Context, raw: String, callback: (String) -> Unit): Boolean {
+                  val active = GamaTaskStateStore.current(context)
+
+                  if (active?.kind == "whatsapp_send" && active.state == GamaTaskStateStore.State.WAITING_USER) {
+                      return continueTask(context, active, raw, callback)
+                  }
+
+                  val parsed = WhatsAppCommandParser.parse(raw) ?: return false
+                  val recipient = parsed.target.trim()
+
+                  if (recipient.isBlank()) return false
+
+                  if (parsed.message.isNullOrBlank()) {
+                      val data = JSONObject()
+                          .put("stage", "message")
+                          .put("recipient", recipient)
+                          .toString()
+
+                      GamaTaskStateStore.start(
+                          context = context,
+                          kind = "whatsapp_send",
+                          goal = "Enviar uma mensagem para $recipient",
+                          data = data,
+                          prompt = "O que você quer mandar para $recipient?",
                       )
 
+                      GamaTaskStateStore.transition(context, GamaTaskStateStore.State.WAITING_USER)
+                      callback("Certo. O que você quer mandar para $recipient?")
                       return true
                   }
 
-                  val requestedLabel =
-                      extractLabel(command)
+                  prepareConfirmation(context, recipient, parsed.message, callback)
+                  return true
+              }
 
-                  val wantsWhatsApp =
-                      command.contains("whatsapp") ||
-                          command.contains("zap")
+              private fun continueTask(
+                  context: Context,
+                  task: GamaTaskStateStore.Task,
+                  raw: String,
+                  callback: (String) -> Unit,
+              ): Boolean {
+                  val data = runCatching { JSONObject(task.data) }.getOrElse { JSONObject() }
+                  val stage = data.optString("stage")
+                  val recipient = data.optString("recipient")
 
-                  if (
-                      wantsWhatsApp &&
-                      command.contains("abr")
-                  ) {
-                      val packageManager =
-                          service.packageManager
+                  if (recipient.isBlank()) {
+                      GamaTaskStateStore.clear(context)
+                      return false
+                  }
 
-                      val launch =
-                          packageManager
-                              .getLaunchIntentForPackage(
-                                  "com.whatsapp"
-                              )
-                              ?: packageManager
-                                  .getLaunchIntentForPackage(
-                                      "com.whatsapp.w4b"
-                                  )
+                  if (isCancellation(raw)) {
+                      GamaPendingProposalStore.clear(context)
+                      GamaTaskStateStore.clear(context)
+                      callback("Certo. Cancelei a mensagem.")
+                      return true
+                  }
 
-                      if (launch == null) {
-                          callback(
-                              "Não encontrei o WhatsApp instalado."
-                          )
-
+                  if (stage == "message") {
+                      val body = WhatsAppCommandParser.followUpBody(raw).trim()
+                      if (body.isBlank()) {
+                          callback("O que você quer mandar para $recipient?")
                           return true
                       }
 
-                      service.launchSafely(
-                          Intent(launch)
-                      )
+                      prepareConfirmation(context, recipient, body, callback)
+                      return true
+                  }
 
-                      if (
-                          requestedLabel.isNullOrBlank()
-                      ) {
-                          callback(
-                              "Abrindo WhatsApp."
-                          )
+                  if (stage == "confirm") {
+                      when (GamaConversationLanguage.confirmation(raw)) {
+                          GamaConversationLanguage.Confirmation.YES -> {
+                              val proposal = GamaPendingProposalStore.load(context)
 
-                          return true
-                      }
+                              if (proposal == null || proposal.tool != "whatsapp_send") {
+                                  GamaTaskStateStore.failRecoverable(context, "Confirmação perdeu a proposta de envio.")
+                                  callback("Perdi somente a etapa de confirmação. Diga a mensagem novamente e eu continuo.")
+                                  return true
+                              }
 
-                      if (
-                          requestedLabel ==
-                          "primeiro contato"
-                      ) {
-                          callback(
-                              "Abra o WhatsApp e diga o nome do contato. Assim eu não corro o risco de selecionar a pessoa errada."
-                          )
+                              val request = GamaWhatsAppSendParser.fromPayload(proposal.payload)
+                              if (request == null) {
+                                  GamaTaskStateStore.failRecoverable(context, "Payload de WhatsApp inválido.")
+                                  callback("Não consegui reconstruir a mensagem. Diga o texto novamente.")
+                                  return true
+                              }
 
-                          return true
-                      }
+                              GamaPendingProposalStore.clear(context)
+                              GamaTaskStateStore.transition(context, GamaTaskStateStore.State.RUNNING)
 
-                      handler.postDelayed(
-                          {
-                              val clicked =
-                                  GamaScreenContextService
-                                      .clickByLabel(
-                                          requestedLabel
+                              when (GamaNotificationListener.replyToWhatsApp(request.recipient, request.message)) {
+                                  GamaReplyStatus.SENT -> {
+                                      val result = "Mensagem enviada para ${request.recipient} pelo recurso de resposta do Android."
+                                      GamaTaskStateStore.complete(context, result)
+                                      callback(result)
+                                  }
+
+                                  GamaReplyStatus.NO_MATCH,
+                                  GamaReplyStatus.UNAVAILABLE,
+                                  GamaReplyStatus.FAILED -> {
+                                      val fallback = GamaPendingProposalStore.Proposal(
+                                          tool = "whatsapp_send",
+                                          payload = request.toPayload(),
+                                          prompt = request.confirmation(),
                                       )
 
-                              callback(
-                                  if (clicked) {
-                                      "Abri o WhatsApp e selecionei $requestedLabel."
-                                  } else {
-                                      "O WhatsApp abriu, mas não encontrei $requestedLabel na tela atual."
+                                      GamaToolExecutor.executeAsync(context, fallback) { result ->
+                                          if (result.contains("enviada", ignoreCase = true)) {
+                                              GamaTaskStateStore.complete(context, result)
+                                          } else {
+                                              GamaTaskStateStore.failRecoverable(context, result)
+                                          }
+                                          callback(result)
+                                      }
                                   }
-                              )
-                          },
-                          1_600L,
-                      )
+                              }
 
-                      return true
-                  }
-
-                  if (
-                      !requestedLabel.isNullOrBlank()
-                  ) {
-                      val clicked =
-                          GamaScreenContextService
-                              .clickByLabel(
-                                  requestedLabel
-                              )
-
-                      callback(
-                          if (clicked) {
-                              "Pronto."
-                          } else {
-                              "Não encontrei $requestedLabel na tela atual."
+                              return true
                           }
-                      )
 
-                      return true
+                          GamaConversationLanguage.Confirmation.NO -> {
+                              GamaPendingProposalStore.clear(context)
+                              GamaTaskStateStore.clear(context)
+                              callback("Certo. Não vou enviar.")
+                              return true
+                          }
+
+                          GamaConversationLanguage.Confirmation.UNKNOWN -> {
+                              if (raw.trim().length >= 4) {
+                                  prepareConfirmation(context, recipient, WhatsAppCommandParser.followUpBody(raw), callback)
+                              } else {
+                                  callback("Só preciso saber se posso enviar a mensagem preparada.")
+                              }
+                              return true
+                          }
+                      }
                   }
 
                   return false
               }
 
-              private fun extractLabel(
-                  command: String,
-              ): String? {
-                  val patterns =
-                      listOf(
-                          Regex(
-                              """(?:clique|clicar|toque|tocar)\s+(?:em|no|na)\s+(.+)$"""
-                          ),
-                          Regex(
-                              """(?:e\s+)?(?:clique|toque)\s+(.+)$"""
-                          ),
-                      )
+              private fun prepareConfirmation(context: Context, recipient: String, message: String, callback: (String) -> Unit) {
+                  val request = GamaWhatsAppSendParser.Request(
+                      recipient = recipient,
+                      message = GamaConversationRepair.latestClause(message).trim().take(4000),
+                  )
 
-                  return patterns
-                      .asSequence()
-                      .mapNotNull {
-                          it.find(command)
-                              ?.groupValues
-                              ?.getOrNull(1)
-                              ?.trim()
-                      }
-                      .firstOrNull {
-                          it.isNotBlank()
-                      }
+                  if (request.message.isBlank()) {
+                      callback("O que você quer mandar para $recipient?")
+                      return
+                  }
+
+                  val proposal = GamaPendingProposalStore.Proposal(
+                      tool = "whatsapp_send",
+                      payload = request.toPayload(),
+                      prompt = request.confirmation(),
+                  )
+
+                  GamaPendingProposalStore.save(context, proposal)
+
+                  val data = JSONObject()
+                      .put("stage", "confirm")
+                      .put("recipient", recipient)
+                      .put("message", request.message)
+                      .toString()
+
+                  if (GamaTaskStateStore.current(context)?.kind == "whatsapp_send") {
+                      GamaTaskStateStore.transition(context, GamaTaskStateStore.State.WAITING_USER, data, request.confirmation())
+                  } else {
+                      GamaTaskStateStore.start(context, "whatsapp_send", "Enviar uma mensagem para $recipient", data, request.confirmation())
+                      GamaTaskStateStore.transition(context, GamaTaskStateStore.State.WAITING_USER)
+                  }
+
+                  callback(request.confirmation())
               }
 
-              private fun normalize(
-                  value: String,
-              ): String =
-                  Normalizer
-                      .normalize(
-                          value.lowercase(
-                              Locale("pt", "BR")
-                          ),
-                          Normalizer.Form.NFD,
+              private fun isCancellation(raw: String): Boolean {
+                  val text = normalize(raw)
+                  return text in setOf("cancelar", "cancela", "cancele", "esquece", "deixa pra la", "deixa para la")
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9 ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
+          }
+
+          object GamaExamRouter {
+              fun handle(context: Context, raw: String): String? {
+                  val active = GamaTaskStateStore.current(context)
+
+                  if (active?.kind == "exam_calendar" && active.state == GamaTaskStateStore.State.WAITING_USER) {
+                      val data = runCatching { JSONObject(active.data) }.getOrElse { JSONObject() }
+                      val base = data.optString("base")
+
+                      if (base.isNotBlank()) {
+                          GamaTaskStateStore.clear(context)
+                          return handle(context, "$base ${raw.trim()}")
+                      }
+                  }
+
+                  val text = normalize(raw)
+                  val examWord = listOf("prova", "teste", "avaliacao", "simulado").any { it in text }
+                  if (!examWord) return null
+
+                  val query = listOf(
+                      "quando e minha prova",
+                      "quando eh minha prova",
+                      "quando vai ser minha prova",
+                      "qual dia e minha prova",
+                      "que dia e minha prova",
+                      "que horas e minha prova",
+                      "minhas provas",
+                      "proximas provas",
+                  ).any { it in text }
+
+                  if (query) return upcoming(context)
+
+                  val create = text.contains("tenho prova") ||
+                      text.contains("tenho teste") ||
+                      text.contains("tenho avaliacao") ||
+                      text.contains("tenho simulado") ||
+                      text.contains("vai ter prova") ||
+                      text.contains("minha prova e")
+
+                  if (!create) return null
+
+                  val hasDate = Regex("""\b(hoje|amanha|segunda|terca|quarta|quinta|sexta|sabado|domingo)\b""").containsMatchIn(text) ||
+                      Regex("""\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b""").containsMatchIn(text) ||
+                      Regex("""\bdia\s+\d{1,2}\b""").containsMatchIn(text)
+
+                  val hasTime = Regex("""\b(?:as\s+)?\d{1,2}(?::\d{2}|h\d{0,2})?\s*(?:horas?)?\b""").containsMatchIn(text)
+
+                  if (!hasDate || !hasTime) {
+                      val missing = when {
+                          !hasDate && !hasTime -> "data e horário"
+                          !hasDate -> "data"
+                          else -> "horário"
+                      }
+
+                      val data = JSONObject()
+                          .put("base", raw.trim())
+                          .put("missing", missing)
+                          .toString()
+
+                      GamaTaskStateStore.start(
+                          context = context,
+                          kind = "exam_calendar",
+                          goal = "Registrar uma prova na agenda",
+                          data = data,
+                          prompt = "Qual é $missing?",
                       )
-                      .replace(
-                          Regex("\\p{M}+"),
-                          "",
-                      )
-                      .replace(
-                          Regex("[^a-z0-9 ]+"),
-                          " ",
-                      )
-                      .replace(
-                          Regex("\\b(?:zap|zape|zapzap)\\b"),
-                          "whatsapp",
-                      )
-                      .replace(
-                          Regex("\\s+"),
-                          " ",
-                      )
+                      GamaTaskStateStore.transition(context, GamaTaskStateStore.State.WAITING_USER)
+
+                      return if (missing == "data e horário") {
+                          "Qual é o dia e o horário da prova?"
+                      } else {
+                          "Qual é a $missing da prova?"
+                      }
+                  }
+
+                  val cleaned = raw
+                      .replace(Regex("(?i)^\\s*gama[,:;.!?\\s-]*"), "")
+                      .replace(Regex("(?i)^\\s*(?:eu\\s+)?tenho\\s+"), "")
+                      .trim()
+
+                  val result = GamaCalendarManager.handle(context, "marque $cleaned")
+                      ?: return "Entendi a prova, mas não consegui converter a informação em um evento."
+
+                  if (result.startsWith("Pronto", ignoreCase = true)) {
+                      GamaTaskStateStore.complete(context, result)
+                  }
+
+                  return result
+              }
+
+              private fun upcoming(context: Context): String {
+                  if (!GamaCalendarManager.hasReadPermission(context)) {
+                      GamaCalendarManager.openPermissionScreen(context)
+                      return "Preciso da permissão de calendário para procurar suas próximas provas."
+                  }
+
+                  val now = System.currentTimeMillis()
+                  val end = Calendar.getInstance().apply {
+                      timeInMillis = now
+                      add(Calendar.DAY_OF_MONTH, 60)
+                  }.timeInMillis
+
+                  val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
+                      ContentUris.appendId(it, now)
+                      ContentUris.appendId(it, end)
+                  }.build()
+
+                  val projection = arrayOf(
+                      CalendarContract.Instances.TITLE,
+                      CalendarContract.Instances.BEGIN,
+                  )
+
+                  val exams = mutableListOf<Pair<Long, String>>()
+
+                  runCatching {
+                      context.contentResolver.query(
+                          uri,
+                          projection,
+                          null,
+                          null,
+                          "${CalendarContract.Instances.BEGIN} ASC",
+                      )?.use { cursor ->
+                          val titleIndex = cursor.getColumnIndex(CalendarContract.Instances.TITLE)
+                          val beginIndex = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
+
+                          while (cursor.moveToNext()) {
+                              val title = cursor.getString(titleIndex).orEmpty()
+                              val normalized = normalize(title)
+
+                              if (listOf("prova", "teste", "avaliacao", "simulado").any { it in normalized }) {
+                                  exams += cursor.getLong(beginIndex) to title
+                              }
+                          }
+                      }
+                  }
+
+                  if (exams.isEmpty()) return "Não encontrei nenhuma prova marcada nos próximos sessenta dias."
+
+                  val formatter = SimpleDateFormat("EEEE, dd/MM 'às' HH:mm", Locale("pt", "BR"))
+                  val descriptions = exams.take(4).map { (time, title) ->
+                      "$title em ${formatter.format(Date(time))}"
+                  }
+
+                  return "Suas próximas provas são: ${descriptions.joinToString("; ")}."
+              }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9:/ ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
                       .trim()
           }
           KOTLIN
 
-          # ============================================================
-          # VISUAL
-          # Volta à esfera vermelha confiável.
-          # ============================================================
-
-          cat > "$SRC/GamaEnergyView.kt" <<'KOTLIN'
+          cat > "$SRC/GamaNextRouter.kt" <<'KOTLIN'
           package com.gama.assistant
 
-          import android.animation.ValueAnimator
-          import android.content.Context
-          import android.graphics.Canvas
-          import android.graphics.Color
-          import android.graphics.Paint
-          import android.graphics.RadialGradient
-          import android.graphics.Shader
-          import android.util.AttributeSet
-          import android.view.View
-          import android.view.animation.LinearInterpolator
-          import kotlin.math.PI
-          import kotlin.math.abs
-          import kotlin.math.sin
+          import android.util.Log
+          import java.text.Normalizer
+          import java.util.Locale
 
-          class GamaEnergyView @JvmOverloads constructor(
-              context: Context,
-              attrs: AttributeSet? = null,
-          ) : View(context, attrs) {
+          object GamaNextRouter {
+              private const val TAG = "GamaNextRouter"
 
-              enum class Mode {
-                  LISTENING,
-                  THINKING,
-                  SPEAKING,
-              }
-
-              var mode =
-                  Mode.LISTENING
-                  set(value) {
-                      field = value
-                      invalidate()
-                  }
-
-              private val core =
-                  Paint(
-                      Paint.ANTI_ALIAS_FLAG
-                  )
-
-              private val glow =
-                  Paint(
-                      Paint.ANTI_ALIAS_FLAG
-                  )
-
-              private val ring =
-                  Paint(
-                      Paint.ANTI_ALIAS_FLAG
-                  ).apply {
-                      style =
-                          Paint.Style.STROKE
-                  }
-
-              private var phase =
-                  0f
-
-              private var released =
-                  false
-
-              private val animator =
-                  ValueAnimator
-                      .ofFloat(
-                          0f,
-                          1f,
-                      )
-                      .apply {
-                          duration =
-                              1_100L
-
-                          repeatCount =
-                              ValueAnimator.INFINITE
-
-                          interpolator =
-                              LinearInterpolator()
-
-                          addUpdateListener {
-                              phase =
-                                  it.animatedValue
-                                      as Float
-
-                              invalidate()
-                          }
-
-                          start()
+              fun handleAsync(service: GamaService, raw: String, callback: (String) -> Unit): Boolean {
+                  try {
+                      GamaSilentContext.handle(service, raw)?.let {
+                          callback(it)
+                          return true
                       }
 
-              override fun onDraw(
-                  canvas: Canvas,
-              ) {
-                  super.onDraw(canvas)
+                      if (GamaWhatsAppDialogue.handleAsync(service, raw, callback)) return true
 
-                  val size =
-                      minOf(
-                          width,
-                          height,
-                      ).toFloat()
-
-                  if (size <= 0f) {
-                      return
-                  }
-
-                  val cx =
-                      width / 2f
-
-                  val cy =
-                      height / 2f
-
-                  val t =
-                      phase *
-                          (
-                              PI *
-                                  2.0
-                              )
-
-                  val wave =
-                      when (mode) {
-                          Mode.LISTENING ->
-                              (
-                                  0.5 +
-                                      0.5 *
-                                      sin(
-                                          t * 1.2
-                                      )
-                                  ).toFloat()
-
-                          Mode.THINKING ->
-                              (
-                                  0.5 +
-                                      0.5 *
-                                      sin(
-                                          t * 3.0
-                                      )
-                                  ).toFloat()
-
-                          Mode.SPEAKING ->
-                              (
-                                  abs(
-                                      sin(
-                                          t * 4.0
-                                      )
-                                  ) *
-                                      0.65 +
-                                      abs(
-                                          sin(
-                                              t * 7.0
-                                          )
-                                      ) *
-                                      0.35
-                                  )
-                                  .toFloat()
+                      GamaExamRouter.handle(service, raw)?.let {
+                          callback(it)
+                          return true
                       }
 
-                  val radius =
-                      size *
-                          (
-                              0.20f +
-                                  wave *
-                                  if (
-                                      mode ==
-                                      Mode.SPEAKING
-                                  ) {
-                                      0.025f
-                                  } else {
-                                      0.010f
-                                  }
-                              )
+                      GamaSystemStatus.handle(service, raw)?.let {
+                          callback(it)
+                          return true
+                      }
 
-                  glow.color =
-                      Color.argb(
-                          65,
-                          235,
-                          10,
-                          30,
-                      )
+                      if (isNotificationDigestRequest(raw)) {
+                          callback(GamaNotificationIntelligence.digest(service))
+                          return true
+                      }
 
-                  glow.setShadowLayer(
-                      size *
-                          0.15f,
-                      0f,
-                      0f,
-                      Color.RED,
-                  )
+                      GamaTimerRouter.handle(service, raw)?.let {
+                          callback(it)
+                          return true
+                      }
 
-                  canvas.drawCircle(
-                      cx,
-                      cy,
-                      size *
-                          0.32f,
-                      glow,
-                  )
+                      GamaWebsiteRouter.handle(service, raw)?.let {
+                          callback(it)
+                          return true
+                      }
 
-                  glow.clearShadowLayer()
+                      GamaSystemActionRouter.handle(service, raw)?.let {
+                          callback(it)
+                          return true
+                      }
 
-                  core.shader =
-                      RadialGradient(
-                          cx -
-                              radius *
-                              0.22f,
-                          cy -
-                              radius *
-                              0.22f,
-                          radius *
-                              1.25f,
-                          intArrayOf(
-                              Color.WHITE,
-                              Color.rgb(
-                                  255,
-                                  90,
-                                  100,
-                              ),
-                              Color.rgb(
-                                  220,
-                                  5,
-                                  30,
-                              ),
-                              Color.rgb(
-                                  60,
-                                  0,
-                                  8,
-                              ),
-                          ),
-                          null,
-                          Shader.TileMode.CLAMP,
-                      )
-
-                  canvas.drawCircle(
-                      cx,
-                      cy,
-                      radius,
-                      core,
-                  )
-
-                  core.shader =
-                      null
-
-                  ring.strokeWidth =
-                      (
-                          size *
-                              0.012f
-                          )
-                          .coerceAtLeast(
-                              2f
-                          )
-
-                  ring.color =
-                      Color.argb(
-                          if (
-                              mode ==
-                              Mode.SPEAKING
-                          ) {
-                              230
-                          } else {
-                              150
-                          },
-                          255,
-                          40,
-                          55,
-                      )
-
-                  canvas.drawCircle(
-                      cx,
-                      cy,
-                      size *
-                          (
-                              0.285f +
-                                  wave *
-                                  0.01f
-                              ),
-                      ring,
-                  )
-              }
-
-              fun release() {
-                  if (!released) {
-                      released = true
-                      animator.cancel()
+                      return false
+                  } catch (error: Throwable) {
+                      Log.e(TAG, "Ferramenta isolada falhou", error)
+                      callback("Não consegui concluir essa parte, mas continuo ouvindo. Podemos tentar de outro jeito.")
+                      return true
                   }
               }
 
-              override fun onDetachedFromWindow() {
-                  release()
-                  super.onDetachedFromWindow()
+              private fun isNotificationDigestRequest(raw: String): Boolean {
+                  val text = normalize(raw)
+
+                  return listOf(
+                      "o que chegou enquanto eu estava ocupado",
+                      "o que chegou enquanto estava ocupado",
+                      "o que eu perdi enquanto estava ocupado",
+                      "o que chegou enquanto eu estava em aula",
+                      "o que chegou enquanto eu estava na prova",
+                      "resuma minhas notificacoes",
+                      "resumo das notificacoes",
+                  ).any { it in text }
               }
+
+              private fun normalize(value: String): String =
+                  Normalizer.normalize(value.lowercase(Locale("pt", "BR")), Normalizer.Form.NFD)
+                      .replace(Regex("\\p{M}+"), "")
+                      .replace(Regex("[^a-z0-9 ]+"), " ")
+                      .replace(Regex("\\s+"), " ")
+                      .trim()
           }
           KOTLIN
 
-      - name: Integrate Agent Core and continuity fixes
+      - name: Integrate Personal Android Core
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          python3 - <<'PY'
+          cat > /tmp/gama-personal-integrate.py <<'PY'
           from pathlib import Path
+          import os
+          import re
 
-          src = Path(
-              "app/src/main/java/com/gama/assistant"
-          )
+          src = Path("app/src/main/java/com/gama/assistant")
+          service_path = src / "GamaService.kt"
+          voice_path = src / "VoicePolicy.kt"
+          super_path = src / "GamaSuperAssistantCore.kt"
+          listener_path = src / "GamaNotificationListener.kt"
+          planner_path = src / "ZevronPlanner.kt"
+          manifest_path = Path("app/src/main/AndroidManifest.xml")
+          gradle_path = Path("app/build.gradle.kts")
 
-          service_path =
-              src / "GamaService.kt"
+          service = service_path.read_text(encoding="utf-8")
+          voice = voice_path.read_text(encoding="utf-8")
+          super_core = super_path.read_text(encoding="utf-8")
+          listener = listener_path.read_text(encoding="utf-8")
+          planner = planner_path.read_text(encoding="utf-8")
+          manifest = manifest_path.read_text(encoding="utf-8")
+          gradle = gradle_path.read_text(encoding="utf-8")
 
-          service =
-              service_path.read_text(
-                  encoding="utf-8"
-              )
-
-          face_gate_path =
-              src / "GamaFaceAccessGate.kt"
-
-          face_gate =
-              face_gate_path.read_text(
-                  encoding="utf-8"
-              )
-
-          morning_path =
-              src / "GamaMorningBriefing.kt"
-
-          morning =
-              morning_path.read_text(
-                  encoding="utf-8"
-              )
-
-          def replace_once(
-              value,
-              old,
-              new,
-              label,
-          ):
-              count =
-                  value.count(old)
-
+          def replace_once(value: str, old: str, new: str, label: str) -> str:
+              count = value.count(old)
               if count != 1:
-                  raise SystemExit(
-                      f"{label}: expected 1 occurrence, found {count}"
-                  )
+                  raise SystemExit(f"{label}: expected 1 occurrence, found {count}")
+              return value.replace(old, new, 1)
 
-              return value.replace(
-                  old,
-                  new,
-                  1,
-              )
+          route_marker = """        val gamaCommandSequence = userCommandSequence
+                  val gamaDirectCommand = norm(command)
 
-          # ------------------------------------------------------------
-          # JARVIS local status + Accessibility Director
-          # entram ANTES do fallback de IA.
-          # ------------------------------------------------------------
+                  // GAMA109_LOCKSCREEN_PUBLIC_FAST_LANE
+          """
 
-          marker = (
-              "        // GAMA109_LOCKSCREEN_PUBLIC_FAST_LANE"
-          )
-
-          routing = """
-                  GamaJarvisStatus
-                      .handle(
-                          this,
-                          command,
-                      )
-                      ?.let { jarvisStatus ->
-                          markResponseStarted()
-                          speak(
-                              jarvisStatus,
-                              false,
-                          )
-                          return
-                      }
+          route_replacement = """        val gamaCommandSequence = userCommandSequence
+                  val gamaDirectCommand = norm(command)
 
                   if (
-                      GamaAccessibilityDirector
-                          .handleAsync(
-                              this,
-                              command,
-                          ) { accessibilityReply ->
-                              uiHandler.post {
-                                  if (
-                                      userCommandSequence ==
-                                      gamaCommandSequence
-                                  ) {
-                                      speak(
-                                          accessibilityReply,
-                                          false,
-                                      )
-                                  }
+                      GamaNextRouter.handleAsync(
+                          this,
+                          command,
+                      ) { nextReply ->
+                          uiHandler.post {
+                              if (
+                                  running &&
+                                  gamaCommandSequence == userCommandSequence &&
+                                  nextReply.isNotBlank()
+                              ) {
+                                  GamaTaskMemory.rememberResult(this, nextReply)
+                                  speak(nextReply, closeAfter = false)
                               }
                           }
+                      }
                   ) {
                       return
                   }
 
+                  // GAMA109_LOCKSCREEN_PUBLIC_FAST_LANE
           """
 
-          if (
-              "GamaAccessibilityDirector.handleAsync" not in
-              service
-          ):
-              service =
-                  replace_once(
-                      service,
-                      marker,
-                      routing +
-                          marker,
-                      "Agent Core routing",
-                  )
+          if "GamaNextRouter.handleAsync" not in service:
+              service = replace_once(service, route_marker, route_replacement, "Personal Android router")
 
-          # ------------------------------------------------------------
-          # Ao ouvir "Gama", a tela pode acender.
-          # Isso NÃO desbloqueia o Keyguard.
-          # ------------------------------------------------------------
+          app_marker = """        if (openKnownAppFastLane(command, gamaCommandSequence)) return
 
-          wake_marker = (
-              "    private fun acknowledgeWake(speakAcknowledgement: Boolean = true) {\n"
-          )
+                  WhatsAppCommandParser.parse(command)?.let { request ->
+          """
 
-          if (
-              "GamaScreenWake.wake(this)" not in
-              service
-          ):
-              service =
-                  replace_once(
-                      service,
-                      wake_marker,
-                      wake_marker +
-                          "        GamaScreenWake.wake(this)\n",
-                      "screen wake",
-                  )
+          app_replacement = """        if (openKnownAppFastLane(command, gamaCommandSequence)) return
 
-          # ------------------------------------------------------------
-          # Continuidade lock/unlock
-          # ------------------------------------------------------------
+                  if (
+                      isOpenAppCommand(gamaDirectCommand) &&
+                      !GamaWebsiteRouter.recognizes(command)
+                  ) {
+                      val appQuery = extractAppQuery(gamaDirectCommand)
+                      val appReply = openByLabel(appQuery)
+                      GamaTaskMemory.rememberGoal(this, "Abrir $appQuery")
+                      GamaTaskMemory.rememberResult(this, appReply)
+                      speak(appReply, closeAfter = false)
+                      return
+                  }
 
-          unlock_field = (
-              "    @Volatile private var unlockPending = false\n"
-          )
+                  WhatsAppCommandParser.parse(command)?.let { request ->
+          """
 
-          if (
-              "lastScreenOffAt" not in
-              service
-          ):
-              service =
-                  replace_once(
-                      service,
-                      unlock_field,
-                      unlock_field +
-                          "    @Volatile private var lastScreenOffAt = 0L\n",
-                      "screen off epoch",
-                  )
+          if "val appQuery = extractAppQuery(gamaDirectCommand)" not in service:
+              service = replace_once(service, app_marker, app_replacement, "Installed-app fast lane")
+
+          unlock_field = "    @Volatile private var unlockPending = false\n"
+          if "lastScreenOffAt" not in service:
+              service = replace_once(
+                  service,
+                  unlock_field,
+                  unlock_field + "    @Volatile private var lastScreenOffAt = 0L\n",
+                  "Screen-off timestamp",
+              )
 
           old_screen_off = """                } else if (intent?.action == Intent.ACTION_SCREEN_OFF) {
                       recentOwnerSession = 0L
@@ -1126,418 +1464,313 @@ jobs:
                   }
           """
 
-          if (
-              old_screen_off in
-              service
-          ):
-              service =
-                  service.replace(
-                      old_screen_off,
-                      new_screen_off,
-                      1,
-                  )
+          if old_screen_off in service:
+              service = service.replace(old_screen_off, new_screen_off, 1)
 
-          old_close = """        if (!zevronPlanRunning) {
-              conversation.close()
-              GamaSupervisor.onConversationClosed()
-              conversationIdleToken++
-              conversationLastActivityAt = 0L
-          }
-          """
+          lock_start = service.find("    private fun lockScreenReply(): String {")
+          lock_end = service.find("\n    private fun performDeviceLockNow()", lock_start)
 
-          new_close = """        if (!zevronPlanRunning) {
-              // Bloquear a tela suspende a interação,
-              // mas não destrói o contexto.
-              conversationIdleToken++
-              conversationLastActivityAt = SystemClock.elapsedRealtime()
-          }
-          """
+          if lock_start < 0 or lock_end < 0:
+              raise SystemExit("lockScreenReply region not found")
 
-          if (
-              old_close in
-              service
-          ):
-              service =
-                  service.replace(
-                      old_close,
-                      new_close,
-                      1,
-                  )
+          lock_region = service[lock_start:lock_end]
+          lock_region = lock_region.replace("            conversation.close()\n", "")
+          lock_region = lock_region.replace("            conversation.suspend()\n", "")
+          lock_region = lock_region.replace("            GamaSupervisor.onConversationClosed()\n", "")
+          lock_region = lock_region.replace("            conversationLastActivityAt = 0L\n", "            conversationLastActivityAt = SystemClock.elapsedRealtime()\n")
+          service = service[:lock_start] + lock_region + service[lock_end:]
 
-          old_supervisor = (
-              "                val staleAudio = "
-              "lastAudioReadAt > 0L && "
-              "now - lastAudioReadAt > 5_000L"
-          )
+          unlock_start = service.find("    private fun ensureVoicePipelineAfterUnlock() {")
+          unlock_end = service.find("\n    fun cancelRequest()", unlock_start)
 
-          new_supervisor = (
-              "                val staleAudio = "
-              "!textMode && voiceReady && "
-              "(lastAudioReadAt <= 0L || "
-              "now - lastAudioReadAt > 5_000L)"
-          )
+          if unlock_start < 0 or unlock_end < 0:
+              raise SystemExit("ensureVoicePipelineAfterUnlock region not found")
 
-          if (
-              old_supervisor in
-              service
-          ):
-              service =
-                  service.replace(
-                      old_supervisor,
-                      new_supervisor,
-                      1,
-                  )
+          unlock_function = r'''    private fun ensureVoicePipelineAfterUnlock() {
+              val now = SystemClock.elapsedRealtime()
 
-          old_unlock_stale = """        val stale = listenerThread?.isAlive != true || !voiceReady ||
-              (lastAudioReadAt > 0L && now - lastAudioReadAt > 3_000L)
-          """
-
-          new_unlock_stale = """        val stale =
-              listenerThread?.isAlive != true ||
-                  !voiceReady ||
-                  !running ||
-                  textMode ||
-                  (lastScreenOffAt > 0L && lastAudioReadAt <= lastScreenOffAt) ||
-                  (lastAudioReadAt > 0L && now - lastAudioReadAt > 3_000L)
-          """
-
-          if (
-              old_unlock_stale in
-              service
-          ):
-              service =
-                  service.replace(
-                      old_unlock_stale,
-                      new_unlock_stale,
-                      1,
-                  )
-
-          old_still_stale = """            val stillStale = listenerThread?.isAlive != true || !voiceReady ||
-                  (lastAudioReadAt > 0L && checkNow - lastAudioReadAt > 3_500L)
-          """
-
-          new_still_stale = """            val stillStale =
+              val stale =
                   listenerThread?.isAlive != true ||
                       !voiceReady ||
                       !running ||
                       textMode ||
-                      (lastScreenOffAt > 0L && lastAudioReadAt <= lastScreenOffAt) ||
-                      (lastAudioReadAt > 0L && checkNow - lastAudioReadAt > 3_500L)
-          """
+                      (
+                          lastScreenOffAt > 0L &&
+                              lastAudioReadAt <= lastScreenOffAt
+                          ) ||
+                      (
+                          lastAudioReadAt > 0L &&
+                              now - lastAudioReadAt > 3_000L
+                          )
 
-          if (
-              old_still_stale in
-              service
-          ):
-              service =
-                  service.replace(
-                      old_still_stale,
-                      new_still_stale,
-                      1,
-                  )
-
-          hard_marker = """        }, 1_800L)
+              if (stale) {
+                  recoverMicrophoneOnly("unlock")
+              } else {
+                  postAudio {
+                      recognizer?.reset()
+                      decoderActive = false
+                      voicedBlocks = 0
+                      preRoll = ByteArray(0)
+                      bargePreRoll = ByteArray(0)
+                      speechHoldUntil = 0L
+                      ignoreAudioUntil = SystemClock.elapsedRealtime() + 350L
+                  }
               }
-              fun cancelRequest() {
-          """
 
-          hard_watchdog = """        }, 1_800L)
+              listOf(1_800L, 6_000L).forEachIndexed { index, delayMs ->
+                  uiHandler.postDelayed({
+                      if (
+                          !running ||
+                          isDeviceLocked() ||
+                          !BackgroundMode.enabled(this)
+                      ) {
+                          return@postDelayed
+                      }
 
-              uiHandler.postDelayed({
-                  if (
-                      !isDeviceLocked() &&
-                      BackgroundMode.enabled(this)
-                  ) {
-                      val now =
-                          SystemClock.elapsedRealtime()
-
+                      val checkNow = SystemClock.elapsedRealtime()
                       val freshAudio =
                           lastAudioReadAt > 0L &&
                               (
                                   lastScreenOffAt <= 0L ||
-                                      lastAudioReadAt >
-                                      lastScreenOffAt
+                                      lastAudioReadAt > lastScreenOffAt
                                   ) &&
-                              now -
-                                  lastAudioReadAt <
-                                  4_500L
+                              checkNow - lastAudioReadAt < 4_500L
 
-                      if (!freshAudio) {
+                      if (!freshAudio || listenerThread?.isAlive != true || !voiceReady) {
                           recoverMicrophoneOnly(
-                              "unlock-hard-watchdog"
+                              if (index == 0) {
+                                  "unlock-watchdog"
+                              } else {
+                                  "unlock-hard-watchdog"
+                              }
                           )
                       }
-                  }
-              }, 6_000L)
+                  }, delayMs)
               }
-              fun cancelRequest() {
-          """
-
-          if (
-              hard_marker in
-              service &&
-              "unlock-hard-watchdog" not in
-              service
-          ):
-              service =
-                  service.replace(
-                      hard_marker,
-                      hard_watchdog,
-                      1,
-                  )
-
-          # ------------------------------------------------------------
-          # FACE GATE como porta real da confirmação privada.
-          # ------------------------------------------------------------
-
-          start =
-              service.find(
-                  "    private fun requestOwnerAndroidProof(command: String) {"
-              )
-
-          end =
-              service.find(
-                  "\n    /** Called only by the app's Activity after a successful Android credential result. */",
-                  start,
-              )
-
-          if (
-              start < 0 or
-              end < 0
-          ):
-              raise SystemExit(
-                  "requestOwnerAndroidProof region not found"
-              )
-
-          replacement = r'''    private fun requestOwnerAndroidProof(
-              command: String,
-          ) {
-              ownerAuthResumeConversation =
-                  conversation.active
-
-              conversation.close()
-
-              GamaSupervisor
-                  .onConversationClosed()
-
-              ownerAuthCommand =
-                  command
-
-              ownerAuthUntil =
-                  SystemClock.elapsedRealtime() +
-                      90_000L
-
-              finishCommandListening()
-
-              GamaFaceSessionCoordinator
-                  .beginPrivateCommand(
-                      command = command,
-                      onApproved = {
-                          completeOwnerAndroidProof()
-                      },
-                      onStatus = { status ->
-                          uiHandler.post {
-                              updateNotification(
-                                  status
-                              )
-
-                              val lower =
-                                  status.lowercase()
-
-                              val fallback =
-                                  lower.contains(
-                                      "camera"
-                                  ) ||
-                                      lower.contains(
-                                          "câmera"
-                                      ) ||
-                                      lower.contains(
-                                          "biometria"
-                                      ) ||
-                                      lower.contains(
-                                          "nao consegui"
-                                      ) ||
-                                      lower.contains(
-                                          "não consegui"
-                                      )
-
-                              if (
-                                  fallback &&
-                                  ownerAuthCommand != null
-                              ) {
-                                  val official =
-                                      Intent(
-                                          this,
-                                          MainActivity::class.java,
-                                      ).setAction(
-                                          "com.gama.assistant.AUTH_OWNER"
-                                      )
-
-                                  launchSafely(
-                                      official
-                                  )
-                              }
-                          }
-                      },
-                  )
-
-              val face =
-                  Intent(
-                      this,
-                      GamaFaceGateActivity::class.java,
-                  ).addFlags(
-                      Intent.FLAG_ACTIVITY_NEW_TASK or
-                          Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                          Intent.FLAG_ACTIVITY_SINGLE_TOP
-                  )
-
-              launchSafely(
-                  face
-              )
-
-              updateNotification(
-                  "Confirmando sua identidade."
-              )
-
-              speak(
-                  "Vou confirmar sua identidade pelo rosto e pelo sistema seguro do Android.",
-                  true,
-              )
           }
           '''
 
-          service =
-              service[:start] +
-              replacement +
-              service[end:]
+          service = service[:unlock_start] + unlock_function + service[unlock_end:]
 
-          # ------------------------------------------------------------
-          # Face Gate também vale para pedido sensível desbloqueado,
-          # caso a autenticação ainda não esteja fresca.
-          # ------------------------------------------------------------
-
-          old_face_condition = """            GamaFaceCommandPolicy.isSensitiveCommand(raw) &&
-                  isLocked(context) &&
-                  !GamaFaceAuthSession.isFresh()
+          proactive_marker = """    private fun handleProactiveEvent(event: GamaEventHub.Event) {
+                  if (!running || event.priority != GamaEventHub.Priority.HIGH) return
           """
 
-          new_face_condition = """            GamaFaceCommandPolicy.isSensitiveCommand(raw) &&
-                  !GamaFaceAuthSession.isFresh()
+          proactive_replacement = """    private fun handleProactiveEvent(event: GamaEventHub.Event) {
+                  if (!running || event.priority != GamaEventHub.Priority.HIGH) return
+
+                  if (event.kind == GamaEventHub.Kind.MESSAGE) {
+                      val semanticPriority = GamaNotificationIntelligence.classify(
+                          this,
+                          event.source,
+                          event.summary,
+                      )
+
+                      if (semanticPriority == GamaNotificationIntelligence.Level.LOW) {
+                          return
+                      }
+
+                      if (
+                          GamaSilentContext.isSilentNow(this) &&
+                          semanticPriority != GamaNotificationIntelligence.Level.URGENT
+                      ) {
+                          updateNotification("Mensagem importante guardada para depois do período silencioso.")
+                          return
+                      }
+                  }
           """
 
-          if (
-              old_face_condition in
-              face_gate
-          ):
-              face_gate =
-                  face_gate.replace(
-                      old_face_condition,
-                      new_face_condition,
-                      1,
-                  )
+          if "semanticPriority = GamaNotificationIntelligence.classify" not in service:
+              service = replace_once(service, proactive_marker, proactive_replacement, "Proactive silent-context gate")
 
-          # ------------------------------------------------------------
-          # Fala mais natural no briefing.
-          # Não inventamos clima se não houver fonte real.
-          # ------------------------------------------------------------
+          barge_start = voice.find("    fun shouldBargeIn(partial: String, spoken: String?, headphones: Boolean): Boolean {")
+          barge_end = voice.find("\n    fun looksLikePostActionNoise", barge_start)
 
-          morning =
-              morning.replace(
-                  'return "Bom dia. Hoje é $date, são $time.',
-                  'return "Bom dia, senhor. Hoje é $date, são $time.',
-                  1,
+          if barge_start < 0 or barge_end < 0:
+              raise SystemExit("VoicePolicy.shouldBargeIn region not found")
+
+          barge_function = r'''    fun shouldBargeIn(partial: String, spoken: String?, headphones: Boolean): Boolean {
+              val p = normalize(partial)
+              if (p.isBlank()) return false
+              if (hasWake(p)) return true
+              if (looksLikeTtsEcho(p, spoken)) return false
+
+              val backchannels = setOf(
+                  "sim",
+                  "uhum",
+                  "aham",
+                  "certo",
+                  "entendi",
+                  "beleza",
+                  "ok",
+                  "okay",
+                  "ta",
               )
 
-          service_path.write_text(
-              service,
-              encoding="utf-8",
-          )
+              if (p in backchannels) return false
 
-          face_gate_path.write_text(
-              face_gate,
-              encoding="utf-8",
-          )
+              val explicitInterrupt =
+                  p == "nao" ||
+                      p == "espera" ||
+                      p == "pare" ||
+                      p == "para" ||
+                      p.startsWith("nao e isso") ||
+                      p.startsWith("nao foi isso") ||
+                      p.startsWith("voce entendeu errado") ||
+                      p.startsWith("espera ai") ||
+                      p.startsWith("na verdade")
 
-          morning_path.write_text(
-              morning,
-              encoding="utf-8",
-          )
+              if (explicitInterrupt) return true
 
-          required = [
-              "GamaJarvisStatus",
-              "GamaAccessibilityDirector",
-              "GamaScreenWake.wake(this)",
-              "lastScreenOffAt",
-              "unlock-hard-watchdog",
-              "GamaFaceGateActivity::class.java",
-              "completeOwnerAndroidProof()",
-          ]
+              val words = p.split(' ').filter { it.isNotBlank() }
+              if (headphones) return p.length >= 3
+              return words.size >= 2 || p.length >= 8
+          }
+          '''
 
-          final_service =
-              service_path.read_text(
-                  encoding="utf-8"
+          voice = voice[:barge_start] + barge_function + voice[barge_end:]
+
+          if "GamaMemoryConsentPolicy.allowAdaptiveLearning(raw)" not in super_core:
+              super_core = replace_once(
+                  super_core,
+                  "        GamaAdaptiveMemory.observe(context, raw)\n",
+                  "        if (GamaMemoryConsentPolicy.allowAdaptiveLearning(raw)) GamaAdaptiveMemory.observe(context, raw)\n",
+                  "Sensitive long-term memory guard",
               )
 
-          for token in required:
-              if token not in final_service:
-                  raise SystemExit(
-                      f"Missing integration token: {token}"
-                  )
+          old_priority = "        val priority = GamaProactivePolicy.messagePriority(body, recent)\n"
+          new_priority = "        val priority = GamaNotificationIntelligence.eventPriority(this, source, body, recent)\n"
 
-          print(
-              "PASS: JARVIS Agent Core integrado."
+          if new_priority not in listener:
+              listener = replace_once(listener, old_priority, new_priority, "Semantic notification priority")
+
+          planner_marker = """        if (MessageCommandRouter.isReadRequest(c)) return true
+                  return false
+          """
+
+          planner_replacement = """        if (MessageCommandRouter.isReadRequest(c)) return true
+                  if (GamaTimerRouter.recognizes(raw)) return true
+                  if (GamaWebsiteRouter.recognizes(raw)) return true
+                  if (GamaSystemActionRouter.recognizes(raw)) return true
+                  return false
+          """
+
+          if "GamaTimerRouter.recognizes(raw)" not in planner:
+              planner = replace_once(planner, planner_marker, planner_replacement, "Planner deterministic tools")
+
+          if 'com.android.alarm.permission.SET_ALARM' not in manifest:
+              application_index = manifest.find("<application")
+              if application_index < 0:
+                  raise SystemExit("AndroidManifest application tag not found")
+              manifest = (
+                  manifest[:application_index]
+                  + '<uses-permission android:name="com.android.alarm.permission.SET_ALARM" />\n\n    '
+                  + manifest[application_index:]
+              )
+
+          version_code = 25_300_000 + int(os.environ["GITHUB_RUN_NUMBER"])
+
+          gradle, code_count = re.subn(
+              r"versionCode\s*=\s*\d+",
+              f"versionCode = {version_code}",
+              gradle,
+              count=1,
           )
+
+          gradle, name_count = re.subn(
+              r'versionName\s*=\s*"[^"]*"',
+              'versionName = "Gama 10.3.0 Personal Android Core"',
+              gradle,
+              count=1,
+          )
+
+          if code_count != 1 or name_count != 1:
+              raise SystemExit("Could not set Gama 10.3 version")
+
+          service_path.write_text(service, encoding="utf-8")
+          voice_path.write_text(voice, encoding="utf-8")
+          super_path.write_text(super_core, encoding="utf-8")
+          listener_path.write_text(listener, encoding="utf-8")
+          planner_path.write_text(planner, encoding="utf-8")
+          manifest_path.write_text(manifest, encoding="utf-8")
+          gradle_path.write_text(gradle, encoding="utf-8")
+
+          checks = {
+              service_path: [
+                  "GamaNextRouter.handleAsync",
+                  "unlock-hard-watchdog",
+                  "GamaSilentContext.isSilentNow",
+                  "val appQuery = extractAppQuery",
+              ],
+              voice_path: [
+                  'p == "nao"',
+                  '"uhum"',
+                  "explicitInterrupt",
+              ],
+              super_path: [
+                  "GamaMemoryConsentPolicy.allowAdaptiveLearning(raw)",
+              ],
+              listener_path: [
+                  "GamaNotificationIntelligence.eventPriority",
+              ],
+              planner_path: [
+                  "GamaTimerRouter.recognizes(raw)",
+                  "GamaWebsiteRouter.recognizes(raw)",
+                  "GamaSystemActionRouter.recognizes(raw)",
+              ],
+          }
+
+          for path, tokens in checks.items():
+              value = path.read_text(encoding="utf-8")
+              for token in tokens:
+                  if token not in value:
+                      raise SystemExit(f"Integration invariant missing in {path}: {token}")
+
+          print(f"PASS: GAMA Personal Android Core integrated. versionCode={version_code}")
           PY
 
-      - name: Audit source before build
+          python3 -m py_compile /tmp/gama-personal-integrate.py
+          python3 /tmp/gama-personal-integrate.py
+          rm -f /tmp/gama-personal-integrate.py
+
+      - name: Audit Personal Android Core
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           SRC="app/src/main/java/com/gama/assistant"
 
-          test -s "$SRC/GamaJarvisStatus.kt"
-          test -s "$SRC/GamaAccessibilityDirector.kt"
-          test -s "$SRC/GamaScreenWake.kt"
-          test -s "$SRC/GamaEnergyView.kt"
-
-          grep -Fq \
-            "GamaJarvisStatus" \
+          required=(
+            "$SRC/GamaTaskStateStore.kt"
+            "$SRC/GamaContextPolicy.kt"
+            "$SRC/GamaDeviceTools.kt"
+            "$SRC/GamaDialogueCore.kt"
+            "$SRC/GamaNextRouter.kt"
             "$SRC/GamaService.kt"
-
-          grep -Fq \
-            "GamaAccessibilityDirector" \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            "GamaScreenWake.wake(this)" \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            "unlock-hard-watchdog" \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            "GamaFaceGateActivity::class.java" \
-            "$SRC/GamaService.kt"
-
-          grep -Fq \
-            "GamaPersonalAICore" \
-            "$SRC/GamaPersonalCore.kt"
-
-          grep -Fq \
-            "GamaUnreadMessageStore" \
             "$SRC/GamaNotificationListener.kt"
-
-          grep -Fq \
-            "dispatchGesture" \
             "$SRC/GamaScreenContextService.kt"
+            "$SRC/GamaCalendarManager.kt"
+            "$SRC/GamaMissionStore.kt"
+            "$SRC/GamaPersonalCore.kt"
+            "$SRC/VoicePolicy.kt"
+          )
 
-          grep -Fq \
-            "isDebuggable = false" \
-            app/build.gradle.kts
+          for file in "${required[@]}"; do
+            test -s "$file"
+          done
 
-          echo "PASS: auditoria pré-build concluída."
+          grep -Fq 'GamaNextRouter.handleAsync' "$SRC/GamaService.kt"
+          grep -Fq 'unlock-hard-watchdog' "$SRC/GamaService.kt"
+          grep -Fq 'GamaNotificationIntelligence.eventPriority' "$SRC/GamaNotificationListener.kt"
+          grep -Fq 'dispatchGesture' "$SRC/GamaScreenContextService.kt"
+          grep -Fq 'queryIntentActivities' "$SRC/GamaService.kt"
+          grep -Fq 'getInstalledApplications' "$SRC/GamaService.kt"
+          grep -Fq 'GamaMissionStore' "$SRC/GamaService.kt"
+          grep -Fq 'GamaMemoryConsentPolicy.allowAdaptiveLearning' "$SRC/GamaSuperAssistantCore.kt"
+          grep -Fq 'isDebuggable = false' app/build.gradle.kts
+          grep -Fq 'versionName = "Gama 10.3.0 Personal Android Core"' app/build.gradle.kts
+
+          echo "PASS: arquitetura consolidada encontrada."
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -1550,6 +1783,7 @@ jobs:
           set -euo pipefail
 
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_ROOT"
 
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
@@ -1572,72 +1806,13 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Set Gama 10.2 version
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import re
-
-          path =
-              Path(
-                  "app/build.gradle.kts"
-              )
-
-          value =
-              path.read_text(
-                  encoding="utf-8"
-              )
-
-          version_code =
-              25_200_000 +
-              int(
-                  os.environ[
-                      "GITHUB_RUN_NUMBER"
-                  ]
-              )
-
-          value, code_count =
-              re.subn(
-                  r"versionCode\s*=\s*\d+",
-                  f"versionCode = {version_code}",
-                  value,
-                  count=1,
-              )
-
-          value, name_count =
-              re.subn(
-                  r'versionName\s*=\s*"[^"]*"',
-                  'versionName = "Gama 10.2.0 JARVIS Agent Core"',
-                  value,
-                  count=1,
-              )
-
-          if (
-              code_count != 1 or
-              name_count != 1
-          ):
-              raise SystemExit(
-                  "Could not set version"
-              )
-
-          path.write_text(
-              value,
-              encoding="utf-8",
-          )
-          PY
-
       - name: Prepare Gradle wrapper
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           if [ ! -f gradlew ]; then
-            gradle wrapper \
-              --gradle-version 8.9
+            gradle wrapper --gradle-version 8.9
           fi
 
           chmod +x gradlew
@@ -1659,6 +1834,23 @@ jobs:
             --no-daemon \
             --stacktrace \
             2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+
+      - name: Upload compile diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.3.0-compile-debug-${{ github.run_number }}
+          path: |
+            gama-compile.log
+            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaTaskStateStore.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaContextPolicy.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaDeviceTools.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaDialogueCore.kt
+            _gama_build/app/src/main/java/com/gama/assistant/GamaNextRouter.kt
+            _gama_build/app/src/main/java/com/gama/assistant/VoicePolicy.kt
+            _gama_build/app/src/main/AndroidManifest.xml
+          if-no-files-found: warn
 
       - name: Unit tests
         working-directory: _gama_build
@@ -1702,65 +1894,156 @@ jobs:
             --stacktrace \
             2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
 
-      - name: Sign fresh-install Release APK
+      - name: Sign Release APK
         working-directory: _gama_build
+        env:
+          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
+          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
         run: |
           set -euo pipefail
 
           mkdir -p dist
 
-          APK="$(
+          input_apk="$(
             find \
               app/build/outputs/apk/release \
               -maxdepth 1 \
               -type f \
-              -name "*.apk" \
+              -name '*.apk' \
               -print \
               | head -n 1
           )"
 
-          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
-            echo "::error::assembleRelease terminou sem gerar APK."
+          if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
+            echo "::error::APK Release não encontrado."
             exit 1
           fi
 
-          ALIGNED="dist/Gama-aligned.apk"
+          aligned="dist/Gama-aligned.apk"
 
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
             -f \
             4 \
-            "$APK" \
-            "$ALIGNED"
+            "$input_apk" \
+            "$aligned"
 
-          rm -f /tmp/gama-10-2.jks
+          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
+            mkdir -p .gama-signing
+            chmod 700 .gama-signing
 
-          keytool \
-            -genkeypair \
-            -keystore /tmp/gama-10-2.jks \
-            -storepass GamaFresh2026 \
-            -keypass GamaFresh2026 \
-            -alias gama \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 3650 \
-            -dname "CN=Gama 10.2,O=Gama,C=BR"
+            printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            sign \
-            --ks /tmp/gama-10-2.jks \
-            --ks-key-alias gama \
-            --ks-pass pass:GamaFresh2026 \
-            --key-pass pass:GamaFresh2026 \
-            --out dist/Gama.apk \
-            "$ALIGNED"
+            python3 - "$GAMA_SIGNING_SEED" .gama-signing/key.der <<'PY'
+          import sys
 
-          rm -f "$ALIGNED"
+          raw = bytes.fromhex(sys.argv[1])
 
-          echo "fresh-install-only" \
-            > dist/install-mode.txt
+          order = int(
+              "FFFFFFFF00000000"
+              "FFFFFFFFFFFFFFFF"
+              "BCE6FAADA7179E84"
+              "F3B9CAC2FC632551",
+              16,
+          )
 
-      - name: Verify APK exists and is valid
+          d = (int.from_bytes(raw, "big") % (order - 1)) + 1
+          key = d.to_bytes(32, "big")
+
+          der = bytes.fromhex("30310201010420") + key + bytes.fromhex("A00A06082A8648CE3D030107")
+
+          with open(sys.argv[2], "wb") as handle:
+              handle.write(der)
+          PY
+
+            openssl ec \
+              -inform DER \
+              -in .gama-signing/key.der \
+              -out .gama-signing/key.pem \
+              >/dev/null 2>&1
+
+            printf '%s' \
+              'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ1ekNDQVdHZ0F3SUJBZ0lFQVRVb1FEQUtCZ2dxaGtqT1BRUURBakE2TVJ3d0dnWURWUVFEREJOSFlXMWgKSUZOMFlXSnNaU0JUYVdkdWFXNW5NUTB3Q3dZRFZRUUtEQVJIWVcxaE1Rc3dDUVlEVlFRR0V3SkNVakFnRncweQpOakE1TWpneE5UTTROREJhR0E4eU1USTJNRGt3TkRFMU16ZzBNRm93T2pFY01Cb0dBMVVFQXd3VFIyRnRZU0JUCmRHRmliR1VnVTJsbmJtbHVaekVOTUFzR0ExVUVDZ3dFUjJGdFlURUxNQWtHQTFVRUJoTUNRbEl3V1RBVEJnY3EKaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUV2FNc3krYm84OEorSFcxQktpVGVJUU56REEzd29SQUo0Q0hXZAp4QndQN0NLR0F4QWFZK3Z4d0dBTFZTN1FNU2Zoa0VYd294NElya0kxZUhRck5tTzNvMU13VVRBZEJnTlZIUTRFCkZnUVU4a2ZjczhxMC9MQlA5NHRJTS8yVXZXbXRTZzh3SHdZRFZSMGpCQmd3Rm9BVThrZmNzOHEwL0xCUDk0dEkKTS8yVXZXbXRTZzh3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUVBajZmZQpEcyszSDZQQTRqRk1jS0FQR2pEY0E3amc1cU9WZjg4SkU0UDRvK1VDSURLS3BGMlZ2MTVHdTdaTTgyRlBPZFhtCmNQTHNDOUlkd1NzOUpLM05ZclhKCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K' \
+              | base64 --decode \
+              > .gama-signing/cert.pem
+
+            keyhash="$(
+              openssl pkey \
+                -in .gama-signing/key.pem \
+                -pubout \
+                -outform DER \
+                | sha256sum \
+                | cut -d' ' -f1
+            )"
+
+            certhash="$(
+              openssl x509 \
+                -in .gama-signing/cert.pem \
+                -pubkey \
+                -noout \
+                | openssl pkey \
+                    -pubin \
+                    -outform DER \
+                | sha256sum \
+                | cut -d' ' -f1
+            )"
+
+            if [ "$keyhash" != "$certhash" ]; then
+              echo "::error::GAMA_SIGNING_SEED não corresponde ao certificado estável."
+              exit 1
+            fi
+
+            openssl pkcs12 \
+              -export \
+              -inkey .gama-signing/key.pem \
+              -in .gama-signing/cert.pem \
+              -out .gama-signing/gama.p12 \
+              -name gama \
+              -passout pass:GamaStable2026
+
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+              sign \
+              --ks .gama-signing/gama.p12 \
+              --ks-type PKCS12 \
+              --ks-key-alias gama \
+              --ks-pass pass:GamaStable2026 \
+              --key-pass pass:GamaStable2026 \
+              --out dist/Gama.apk \
+              "$aligned"
+
+            echo "stable-update-capable" > dist/install-mode.txt
+            rm -rf .gama-signing
+          else
+            rm -f /tmp/gama-fresh.jks
+
+            keytool \
+              -genkeypair \
+              -keystore /tmp/gama-fresh.jks \
+              -storepass GamaFresh2026 \
+              -keypass GamaFresh2026 \
+              -alias gama \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 3650 \
+              -dname "CN=Gama Fresh Test,O=Gama,C=BR"
+
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+              sign \
+              --ks /tmp/gama-fresh.jks \
+              --ks-key-alias gama \
+              --ks-pass pass:GamaFresh2026 \
+              --key-pass pass:GamaFresh2026 \
+              --out dist/Gama.apk \
+              "$aligned"
+
+            echo "fresh-install-only" > dist/install-mode.txt
+          fi
+
+          rm -f "$aligned"
+
+      - name: Verify final APK
         working-directory: _gama_build
+        env:
+          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
         run: |
           set -euo pipefail
 
@@ -1778,81 +2061,148 @@ jobs:
             dist/Gama.apk \
             > dist/apk-info.txt
 
-          grep -q \
-            "name='com.gama.assistant'" \
-            dist/apk-info.txt
+          grep -q "name='com.gama.assistant'" dist/apk-info.txt
+          grep -q "versionName='Gama 10.3.0 Personal Android Core'" dist/apk-info.txt
 
-          grep -q \
-            "versionName='Gama 10.2.0 JARVIS Agent Core'" \
-            dist/apk-info.txt
+          EXPECTED_VERSION_CODE="$((25300000 + GITHUB_RUN_NUMBER))"
+          grep -q "versionCode='$EXPECTED_VERSION_CODE'" dist/apk-info.txt
 
-          if grep -q \
-            "application-debuggable" \
-            dist/apk-info.txt
-          then
-            echo "::error::APK saiu debuggable."
+          if grep -q 'application-debuggable' dist/apk-info.txt; then
+            echo "::error::APK Release ainda está debuggable."
             exit 1
+          fi
+
+          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
+            actual_cert="$(
+              awk -F': ' \
+                '/certificate SHA-256 digest/ { print $2; exit }' \
+                dist/signature-info.txt \
+                | tr -d ':' \
+                | tr '[:lower:]' '[:upper:]'
+            )"
+
+            if [ "$actual_cert" != "$GAMA_EXPECTED_CERT_SHA256" ]; then
+              echo "::error::Certificado final diferente da assinatura estável."
+              echo "expected=$GAMA_EXPECTED_CERT_SHA256"
+              echo "actual=$actual_cert"
+              exit 1
+            fi
           fi
 
           (
             cd dist
-            sha256sum Gama.apk \
-              > Gama.apk.sha256
+            sha256sum Gama.apk > Gama.apk.sha256
             sha256sum -c Gama.apk.sha256
           )
 
-          echo "======================================"
-          echo " GAMA APK REALMENTE GERADO"
-          echo "======================================"
+          echo "PASS: Gama.apk existe, está assinado e foi verificado."
 
-          ls -lh dist/Gama.apk
-
-      - name: Generate report
+      - name: Generate engineering report
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
           mkdir -p reports
 
-          cat > reports/GAMA-10.2.0-JARVIS-AGENT.md <<'REPORT'
-          # GAMA 10.2.0 JARVIS Agent Core
+          cat > reports/GAMA-10.3.0-PERSONAL-ANDROID-CORE.md <<'REPORT'
+          # GAMA 10.3.0 Personal Android Core
 
-          Base: source verde do GAMA 10 / run #156.
+          Base:
+          source verde do GAMA 10, run #156.
 
-          Implementado:
+          A arquitetura deixa de tentar reproduzir um personagem fictício.
+          O GAMA passa a ser tratado como uma IA pessoal própria para Android.
 
-          - contexto e Personal Intelligence Core preservados;
-          - briefing matinal local existente preservado;
-          - "Como estamos?" agora gera status local;
-          - bateria;
-          - carregamento;
-          - rede;
-          - mensagens não lidas;
-          - estado da voz;
-          - estado da acessibilidade;
-          - NotificationListener local;
-          - Accessibility Director;
-          - clique por rótulo;
-          - voltar;
-          - home;
+          Preservado:
+          - cérebro local;
+          - Vosk;
+          - conversa contínua;
+          - Personal Intelligence Core;
+          - memória;
+          - aliases;
+          - GamaMissionStore;
+          - planner;
+          - NotificationListener;
+          - AccessibilityService;
+          - app index real por PackageManager;
+          - fuzzy matching;
+          - WhatsApp;
+          - RemoteInput;
+          - recuperação de TTS;
+          - recuperação do cérebro local;
+          - supervisão do microfone;
+          - pesquisa atual via Internet quando necessário;
+          - Android SDK 35;
+          - Java 17;
+          - Gradle 8.9;
+          - build Release;
+          - assinatura Fix154.
+
+          Adicionado:
+          - GamaTaskStateStore;
+          - estados PENDING/RUNNING/WAITING_USER/COMPLETED/FAILED_RECOVERABLE;
+          - WhatsApp em múltiplos turnos;
+          - confirmação antes de envio;
+          - RemoteInput primeiro e Accessibility como fallback;
+          - contexto silencioso por horários;
+          - intervalo dentro do período silencioso;
+          - quatro níveis semânticos de notificação;
+          - digest posterior;
+          - timer por Intent oficial;
+          - abertura de sites;
+          - painel de notificações;
+          - Quick Settings;
+          - Home;
+          - Back;
+          - Recents;
+          - clique por texto;
           - rolagem;
-          - WhatsApp + seleção por nome;
-          - WakeLock para acender tela;
-          - não há bypass de PIN/biometria;
-          - Face Gate usado em autenticações privadas;
-          - conversa preservada durante lock/unlock;
-          - watchdog de AudioRecord/Vosk após desbloqueio;
-          - esfera vermelha restaurada;
-          - Gemma/Vosk/local-first preservados;
-          - fallback de conhecimento público do GAMA 10 preservado.
+          - provas com pergunta somente da informação ausente;
+          - busca de próximas provas;
+          - proteção de memória adaptativa para conteúdo sensível;
+          - backchannel sem interromper TTS;
+          - interrupção explícita de TTS;
+          - watchdog reforçado após desbloqueio;
+          - contexto conversacional preservado durante o bloqueio.
 
-          Este APK é fresh-install-only porque a chave estável não foi fornecida.
+          Critério:
+          build verde não significa comportamento físico aprovado.
+          A versão deve ser testada no aparelho.
           REPORT
+
+      - name: Final architecture audit
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          SRC="app/src/main/java/com/gama/assistant"
+
+          test -s dist/Gama.apk
+          test -s reports/GAMA-10.3.0-PERSONAL-ANDROID-CORE.md
+
+          grep -Fq 'enum class State' "$SRC/GamaTaskStateStore.kt"
+          grep -Fq 'WAITING_USER' "$SRC/GamaTaskStateStore.kt"
+          grep -Fq 'GamaNotificationIntelligence' "$SRC/GamaContextPolicy.kt"
+          grep -Fq 'GamaSilentContext' "$SRC/GamaContextPolicy.kt"
+          grep -Fq 'AlarmClock.ACTION_SET_TIMER' "$SRC/GamaDeviceTools.kt"
+          grep -Fq 'GLOBAL_ACTION_NOTIFICATIONS' "$SRC/GamaDeviceTools.kt"
+          grep -Fq 'GLOBAL_ACTION_QUICK_SETTINGS' "$SRC/GamaDeviceTools.kt"
+          grep -Fq 'GamaNotificationListener.replyToWhatsApp' "$SRC/GamaDialogueCore.kt"
+          grep -Fq 'GamaCalendarManager.handle' "$SRC/GamaDialogueCore.kt"
+          grep -Fq 'GamaNextRouter.handleAsync' "$SRC/GamaService.kt"
+          grep -Fq 'queryIntentActivities' "$SRC/GamaService.kt"
+          grep -Fq 'getInstalledApplications' "$SRC/GamaService.kt"
+          grep -Fq 'GamaMissionStore' "$SRC/GamaService.kt"
+          grep -Fq 'GamaSelfSpeechGuard' "$SRC/GamaService.kt"
+          grep -Fq 'unlock-hard-watchdog' "$SRC/GamaService.kt"
+          grep -Fq 'isDebuggable = false' app/build.gradle.kts
+
+          echo "PASS: GAMA Personal Android Core auditado."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.2.0-JARVIS-AGENT-FRESH-INSTALL-ONLY
+          name: ${{ steps.signing.outputs.artifact }}
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1864,7 +2214,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.2.0-JARVIS-AGENT-source
+          name: Gama-10.3.0-PERSONAL-ANDROID-CORE-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -1876,7 +2226,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.2.0-engineering-reports
+          name: Gama-10.3.0-engineering-reports
           path: |
             _gama_build/reports/**
             gama-compile.log
@@ -1896,15 +2246,15 @@ jobs:
 
           test -s _gama_build/dist/Gama.apk
 
-          TAG="gama-v10.2.0-jarvis-agent-${{ github.run_number }}"
+          TAG="gama-v10.3.0-personal-android-core-${{ github.run_number }}"
 
           gh release create \
             "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
-            "_gama_build/reports/GAMA-10.2.0-JARVIS-AGENT.md#GAMA-10.2.0-JARVIS-AGENT.md" \
+            "_gama_build/reports/GAMA-10.3.0-PERSONAL-ANDROID-CORE.md#GAMA-10.3.0-PERSONAL-ANDROID-CORE.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 10.2.0 JARVIS Agent Core" \
-            --notes "Mega upgrade baseado diretamente no source verde do #156. Inclui status contextual local, briefing preservado, Accessibility Director, wake de tela sem bypass de segurança, Face Gate, continuidade pós-unlock, recuperação do pipeline de voz e Red Orb." \
+            --title "Gama 10.3.0 Personal Android Core" \
+            --notes "Nova geração própria do GAMA, construída sobre a base verde do run #156. Foco em conversa contínua, tarefas persistentes, WhatsApp em múltiplos turnos, ações Android determinísticas, contexto temporal, notificações semânticas, timer, sites, Accessibility e recuperação pós-bloqueio." \
             --latest
