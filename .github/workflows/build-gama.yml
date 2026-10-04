@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX152
+name: Build Gama 9.5.0 Personal Intelligence Core FIX153
 
 on:
   workflow_dispatch:
@@ -1122,12 +1122,29 @@ jobs:
 
           face_path = src / "GamaFaceGateActivity.kt"
           face = read(face_path)
-          face = replace_once(
-              face,
-              "    @OptIn(ExperimentalGetImage::class)\n    private fun analyzeFace(",
-              "    @ExperimentalGetImage\n    private fun analyzeFace(",
-              "GamaFaceGateActivity ExperimentalGetImage",
+
+          # FIX153: preserve Kotlin @OptIn instead of propagating the
+          # experimental marker to every caller of analyzeFace().
+          propagated = (
+              "    @ExperimentalGetImage\n"
+              "    private fun analyzeFace("
           )
+          local_opt_in = (
+              "    @OptIn(ExperimentalGetImage::class)\n"
+              "    private fun analyzeFace("
+          )
+
+          if propagated in face:
+              face = face.replace(
+                  propagated,
+                  local_opt_in,
+                  1,
+              )
+          elif local_opt_in not in face:
+              raise SystemExit(
+                  "FIX153: analyzeFace sem @OptIn(ExperimentalGetImage::class)."
+              )
+
           write(face_path, face)
 
           manifest_path = Path("app/src/main/AndroidManifest.xml")
@@ -1169,7 +1186,7 @@ jobs:
                   '@android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")',
               ],
               face_path: [
-                  "@ExperimentalGetImage",
+                  "@OptIn(ExperimentalGetImage::class)",
               ],
               manifest_path: [
                   "android.intent.category.LAUNCHER",
@@ -1220,7 +1237,7 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX152
+          # GAMA 9.5.0 Personal Intelligence Core FIX153
 
           ## CORREÇÕES DE BUILD
 
@@ -1785,6 +1802,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX152" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX153" \
             --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
