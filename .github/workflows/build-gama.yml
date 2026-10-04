@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX146
+name: Build Gama 9.5.0 Personal Intelligence Core FIX147
 
 on:
   workflow_dispatch:
@@ -351,6 +351,12 @@ jobs:
               "        if count == 1:",
               "            path.write_text(result, encoding=\"utf-8\")",
               "            return",
+              "    if r\"lastAudioReadAt\\ =\\ now\" in pattern:",
+              "        special = re.compile(r\"(val\\s+rec\\s*=\\s*recognizer\\s*\\?:\\s*break\\s+val\\s+now\\s*=\\s*SystemClock\\.elapsedRealtime\\(\\))\", re.S)",
+              "        result, count = special.subn(replacement, value, count=1)",
+              "        if count == 1:",
+              "            path.write_text(result, encoding=\"utf-8\")",
+              "            return",
               "    raise SystemExit(f\"{path}: regex não encontrado após normalização: {pattern!r}\")",
           ]) + "\n"
 
@@ -366,7 +372,7 @@ jobs:
               count=1,
           )
           if helper_count != 1:
-              raise SystemExit(f"FIX146: helper 9.4 encontrado {helper_count} vezes.")
+              raise SystemExit(f"FIX147: helper 9.4 encontrado {helper_count} vezes.")
 
           ast.parse(
               script,
@@ -386,7 +392,7 @@ jobs:
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
-          # FIX146: prova que o regex flexível casa com a fonte auditada #136.
+          # FIX147: prova que o regex flexível casa com a fonte auditada #136.
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -408,10 +414,10 @@ jobs:
 
           if re.search(flexible, source, flags=re.S) is None:
               raise SystemExit(
-                  "FIX146: preflight não encontrou o bloco de timeouts na fonte #136."
+                  "FIX147: preflight não encontrou o bloco de timeouts na fonte #136."
               )
 
-          print("PASS: FIX146 preflight regex/source #136.")
+          print("PASS: FIX147 preflight regex/source #136.")
           PY
 
           python3 \
@@ -650,7 +656,7 @@ jobs:
               count=1,
           )
           if helper_i_count != 1:
-              raise SystemExit(f"FIX146: helper 9.5 encontrado {helper_i_count} vezes.")
+              raise SystemExit(f"FIX147: helper 9.5 encontrado {helper_i_count} vezes.")
 
           ast.parse(integration, filename="gama95-integrate.py")
 
@@ -677,12 +683,12 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX146
+          # GAMA 9.5.0 Personal Intelligence Core FIX147
 
           ## CORREÇÕES DE BUILD
 
           - Corrigidas as 9 atribuições Python quebradas do transformador 9.4.
-          - Corrigidos os regex rígidos do #144 e o truncamento do workflow observado no #145.
+          - Corrigidos os regex rígidos dos runs anteriores e a incompatibilidade real do #147 no ponto de endpointing do loop de áudio.
           - O transformador 9.4 agora passa por `ast.parse` e `py_compile` antes de tocar no source Android.
           - O núcleo 9.5 é recuperado exatamente do commit do #142, reduzindo o risco de corrupção por copiar milhares de linhas dentro do YAML.
           - Corrigido o segundo `companion object` inválido de `GamaPersonalDatabase`.
@@ -1225,6 +1231,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX146" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX147" \
             --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
