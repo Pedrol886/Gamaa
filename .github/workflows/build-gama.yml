@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX144
+name: Build Gama 9.5.0 Personal Intelligence Core FIX145
 
 on:
   workflow_dispatch:
@@ -47,7 +47,6 @@ jobs:
           if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
             echo "mode=fresh" >> "$GITHUB_OUTPUT"
             echo "artifact=Gama-9.5.0-PERSONAL-INTELLIGENCE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
-
             echo "::warning::GAMA_SIGNING_SEED não está configurado."
             echo "::warning::O APK será Release, mas será FRESH-INSTALL-ONLY."
           elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
@@ -95,7 +94,6 @@ jobs:
             local actual
 
             test -s "$file"
-
             actual="$(git hash-object "$file")"
 
             if [ "$actual" != "$expected" ]; then
@@ -166,21 +164,6 @@ jobs:
             "$ROOT/app/src/main/AndroidManifest.xml" \
             "e898888312d7c1355cf751b9dc391ca1aa3a48ea"
 
-      # ==============================================================
-      # GAMA 9.4 CONTINUOUS CORE
-      #
-      # FIX144:
-      # O #144 falhou nesta etapa porque os regex recuperados do #139
-      # escapavam espaços literalmente.
-      #
-      # Agora:
-      # - as 9 quebras sintáticas antigas são corrigidas;
-      # - padrões regex multilinha são dedentados;
-      # - "\ " dos regex antigos vira "\s+";
-      # - replace_once possui fallback tolerante a whitespace;
-      # - Python é validado antes de modificar o source.
-      # ==============================================================
-
       - name: Recover corrected Gama 9.4 Continuous Core
         run: |
           set -euo pipefail
@@ -196,14 +179,10 @@ jobs:
           import ast
           import re
           import sys
-          import textwrap
 
           workflow_path = Path(sys.argv[1])
           output_path = Path(sys.argv[2])
-
-          workflow = workflow_path.read_text(
-              encoding="utf-8"
-          ).splitlines()
+          workflow = workflow_path.read_text(encoding="utf-8").splitlines()
 
           step = next(
               (
@@ -233,23 +212,12 @@ jobs:
                   "Transformação Python Continuous Core não encontrada."
               )
 
-          indent = (
-              len(workflow[start])
-              - len(workflow[start].lstrip(" "))
-          )
-
+          indent = len(workflow[start]) - len(workflow[start].lstrip(" "))
           end = None
 
           for i in range(start + 1, len(workflow)):
-              current_indent = (
-                  len(workflow[i])
-                  - len(workflow[i].lstrip(" "))
-              )
-
-              if (
-                  workflow[i].strip() == "PY"
-                  and current_indent == indent
-              ):
+              current_indent = len(workflow[i]) - len(workflow[i].lstrip(" "))
+              if workflow[i].strip() == "PY" and current_indent == indent:
                   end = i
                   break
 
@@ -270,10 +238,9 @@ jobs:
 
           script = "\n".join(body) + "\n"
 
-          # ----------------------------------------------------------
-          # FIXES DE SINTAXE HERDADOS DOS RUNS #139-#142
-          # ----------------------------------------------------------
-
+          # O #142 corrigia seis quebras, mas o transformador do #139
+          # contém nove atribuições Python quebradas fora de strings Kotlin.
+          # As três últimas abaixo são exatamente o que derrubou o #142.
           repairs = [
               (
                   re.compile(
@@ -292,7 +259,7 @@ jobs:
               (
                   re.compile(
                       r'(?m)^value\s*=\s*\n'
-                      r'\s*service\.read_text$'
+                      r'\s*service\.read_text\($'
                   ),
                   'value = service.read_text(',
               ),
@@ -335,16 +302,13 @@ jobs:
               (
                   re.compile(
                       r'(?m)^    pos\s*=\s*\n'
-                      r'        value\.rfind\(marker$'
+                      r'        value\.rfind\(marker\)$'
                   ),
                   '    pos = value.rfind(marker)',
               ),
           ]
 
-          for index, (pattern, replacement) in enumerate(
-              repairs,
-              1,
-          ):
+          for index, (pattern, replacement) in enumerate(repairs, 1):
               script, count = pattern.subn(
                   replacement,
                   script,
@@ -353,79 +317,873 @@ jobs:
 
               if count != 1:
                   raise SystemExit(
-                      f"Reparo Continuous Core {index} "
-                      f"não encontrou exatamente uma ocorrência. "
-                      f"count={count}"
+                      f"Reparo Continuous Core {index} não encontrou "
+                      f"exatamente uma ocorrência. count={count}"
                   )
 
-          # ----------------------------------------------------------
-          # FIX144
-          #
-          # O erro real do #144 ocorreu porque padrões do #139 tinham
-          # construções como:
-          #
-          # private\ const\ val
-          #
-          # Um espaço escapado dessa forma era rígido demais.
-          #
-          # Agora sub_once cria uma terceira versão do regex:
-          #
-          # private\s+const\s+val
-          #
-          # permitindo espaços e indentação reais do Kotlin.
-          # ----------------------------------------------------------
+          # FIX #145: substitui os helpers frágeis do #139 antes de executar.
+          robust_helper = "\n".join([
+              "def replace_once(path: Path, old: str, new: str):",
+              "    value = path.read_text(encoding=\"utf-8\")",
+              "    count = value.count(old)",
+              "    if count == 1:",
+              "        path.write_text(value.replace(old, new, 1), encoding=\"utf-8\")",
+              "        return",
+              "    tokens = [t for t in re.split(r\"\\s+\", old.strip()) if t]",
+              "    pattern2 = r\"\\s+\".join(re.escape(t) for t in tokens)",
+              "    matches = list(re.finditer(pattern2, value, flags=re.S))",
+              "    if len(matches) != 1:",
+              "        raise SystemExit(f\"{path}: literal flexível esperava 1 ocorrência, encontrou {len(matches)}: {old[:120]!r}\")",
+              "    m = matches[0]",
+              "    value = value[:m.start()] + textwrap.dedent(new).strip(\"\\n\") + value[m.end():]",
+              "    path.write_text(value, encoding=\"utf-8\")",
+              "",
+              "def sub_once(path: Path, pattern: str, replacement: str):",
+              "    value = path.read_text(encoding=\"utf-8\")",
+              "    normalized = textwrap.dedent(pattern).strip()",
+              "    candidates = [pattern]",
+              "    if normalized not in candidates: candidates.append(normalized)",
+              "    flexible = normalized.replace(r\"\\ \", r\"\\s+\")",
+              "    if flexible not in candidates: candidates.append(flexible)",
+              "    for candidate in candidates:",
+              "        result, count = re.subn(candidate, replacement, value, count=1, flags=re.S)",
+              "        if count == 1:",
+              "            path.write_text(result, encoding=\"utf-8\")",
+              "            return",
+              "    raise SystemExit(f\"{path}: regex não encontrado após normalização: {pattern!r}\")",
+          ]) + "\n"
 
-          robust_helpers = r'''def replace_once(path: Path, old: str, new: str):
-              value = path.read_text(encoding="utf-8")
+          helper_pattern = re.compile(
+              r'def replace_once\(path: Path, old: str, new: str\):\n'
+              r'.*?'
+              r'(?=\n# =+\n# ACTIVE TASK CONTEXT)',
+              re.S,
+          )
+          script, helper_count = helper_pattern.subn(
+              lambda _m: robust_helper.rstrip("\n"),
+              script,
+              count=1,
+          )
+          if helper_count != 1:
+              raise SystemExit(f"FIX145: helper 9.4 encontrado {helper_count} vezes.")
 
-              exact_count = value.count(old)
+          ast.parse(
+              script,
+              filename="gama94-transform.py",
+          )
 
-              if exact_count == 1:
-                  path.write_text(
-                      value.replace(
-                          old,
-                          new,
-                          1,
-                      ),
-                      encoding="utf-8",
-                  )
-                  return
+          output_path.write_text(
+              script,
+              encoding="utf-8",
+          )
 
-              if exact_count > 1:
-                  raise SystemExit(
-                      f"{path}: literal possui múltiplas ocorrências: "
-                      f"{old[:120]!r}"
-                  )
+          print(
+              "PASS: transformação Continuous Core reparada com os 9 consertos e validada pelo AST."
+          )
+          PY
 
-              tokens = [
-                  token
-                  for token in re.split(
-                      r"\s+",
-                      old.strip(),
-                  )
-                  if token
-              ]
+          python3 -m py_compile \
+            /tmp/gama94-transform.py
 
-              if not tokens:
-                  raise SystemExit(
-                      f"{path}: literal vazio recebido em replace_once."
-                  )
+          python3 \
+            /tmp/gama94-transform.py
 
-              flexible_pattern = r"\s+".join(
-                  re.escape(token)
-                  for token in tokens
+          echo "PASS: Gama 9.4 Continuous Core aplicado."
+
+      - name: Import Gama 9.5 Personal Intelligence Core from exact 142 source
+        run: |
+          set -euo pipefail
+
+          git show \
+            "$GAMA_95_TEMPLATE_COMMIT:.github/workflows/build-gama.yml" \
+            > /tmp/gama142.yml
+
+          python3 - /tmp/gama142.yml <<'PY'
+          from pathlib import Path
+          import ast
+          import sys
+
+          template = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          root = Path("_gama_build")
+          src = root / "app/src/main/java/com/gama/assistant"
+          tests = root / "app/src/test/java/com/gama/assistant"
+
+          src.mkdir(parents=True, exist_ok=True)
+          tests.mkdir(parents=True, exist_ok=True)
+
+          targets = {
+              'cat > "$SRC/GamaPersonalCore.kt" <<\'KOTLIN\'':
+                  src / "GamaPersonalCore.kt",
+              'cat > "$SRC/SemanticEndpointer.kt" <<\'KOTLIN\'':
+                  src / "SemanticEndpointer.kt",
+              'cat > "$SRC/ContextSanityCheck.kt" <<\'KOTLIN\'':
+                  src / "ContextSanityCheck.kt",
+              'cat > "$SRC/AssistantStateController.kt" <<\'KOTLIN\'':
+                  src / "AssistantStateController.kt",
+              'cat > "$SRC/GamaSupervisor.kt" <<\'KOTLIN\'':
+                  src / "GamaSupervisor.kt",
+              'cat > "$SRC/GamaEnergyView.kt" <<\'KOTLIN\'':
+                  src / "GamaEnergyView.kt",
+              'cat > "$TEST/GamaPersonalIntelligenceCoreTest.kt" <<\'KOTLIN\'':
+                  tests / "GamaPersonalIntelligenceCoreTest.kt",
+          }
+
+          def extract_heredoc(marker: str, destination: Path) -> None:
+              start = next(
+                  (
+                      i
+                      for i, line in enumerate(template)
+                      if line.strip() == marker
+                  ),
+                  None,
               )
 
-              match = re.search(
-                  flexible_pattern,
-                  value,
-                  flags=re.S,
-              )
+              if start is None:
+                  raise SystemExit(f"Bloco não encontrado no #142: {marker}")
 
-              if match is None:
-                  raise SystemExit(
-                      f"{path}: literal não encontrado nem com "
-                      f"normalização de whitespace: {old[:120]!r}"
+              indent = len(template[start]) - len(template[start].lstrip(" "))
+              prefix = " " * indent
+              end = None
+
+              for i in range(start + 1, len(template)):
+                  current_indent = len(template[i]) - len(template[i].lstrip(" "))
+                  if template[i].strip() == "KOTLIN" and current_indent == indent:
+                      end = i
+                      break
+
+              if end is None:
+                  raise SystemExit(f"Fim KOTLIN não encontrado: {marker}")
+
+              body = []
+              for line in template[start + 1:end]:
+                  body.append(
+                      line[indent:]
+                      if line.startswith(prefix)
+                      else line
                   )
 
-              second_match = re
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_text(
+                  "\n".join(body) + "\n",
+                  encoding="utf-8",
+              )
+
+          for marker, destination in targets.items():
+              extract_heredoc(marker, destination)
+              if not destination.is_file() or destination.stat().st_size == 0:
+                  raise SystemExit(f"Arquivo 9.5 vazio: {destination}")
+              print(f"PASS imported {destination}")
+
+          # Corrige um erro Kotlin que ainda existia dentro do código do #142:
+          # a classe GamaPersonalDatabase possuía dois companion objects.
+          personal = src / "GamaPersonalCore.kt"
+          value = personal.read_text(encoding="utf-8")
+
+          old_limits = "private companion object Limits {"
+          if value.count(old_limits) != 1:
+              raise SystemExit(
+                  "GamaPersonalCore.kt: companion object Limits inesperado."
+              )
+
+          value = value.replace(
+              old_limits,
+              "private object Limits {",
+              1,
+          )
+
+          old_depth = "0..MAX_EVENT_DEPTH"
+          if value.count(old_depth) != 1:
+              raise SystemExit(
+                  "GamaPersonalCore.kt: uso MAX_EVENT_DEPTH inesperado."
+              )
+
+          value = value.replace(
+              old_depth,
+              "0..Limits.MAX_EVENT_DEPTH",
+              1,
+          )
+
+          # Compatibilidade com toolchains Kotlin que ainda não aceitam enum.entries.
+          value = value.replace(
+              "entries.firstOrNull {",
+              "values().firstOrNull {",
+          )
+
+          personal.write_text(value, encoding="utf-8")
+
+          # Extrai a integração 9.5 original do #142 para um arquivo Python real,
+          # evitando milhares de linhas embutidas neste novo YAML.
+          step = next(
+              (
+                  i
+                  for i, line in enumerate(template)
+                  if "name: Integrate Personal Intelligence Core" in line
+              ),
+              None,
+          )
+
+          if step is None:
+              raise SystemExit("Etapa de integração 9.5 não encontrada no #142.")
+
+          start = next(
+              (
+                  i
+                  for i in range(step + 1, len(template))
+                  if template[i].strip() == "python3 - <<'PY'"
+              ),
+              None,
+          )
+
+          if start is None:
+              raise SystemExit("Python de integração 9.5 não encontrado.")
+
+          indent = len(template[start]) - len(template[start].lstrip(" "))
+          prefix = " " * indent
+          end = None
+
+          for i in range(start + 1, len(template)):
+              current_indent = len(template[i]) - len(template[i].lstrip(" "))
+              if template[i].strip() == "PY" and current_indent == indent:
+                  end = i
+                  break
+
+          if end is None:
+              raise SystemExit("Fim da integração 9.5 não encontrado.")
+
+          body = []
+          for line in template[start + 1:end]:
+              body.append(
+                  line[indent:]
+                  if line.startswith(prefix)
+                  else line
+              )
+
+          integration = "\n".join(body) + "\n"
+          if "import textwrap" not in integration:
+              integration = integration.replace(
+                  "import re\n",
+                  "import re\nimport textwrap\n",
+                  1,
+              )
+
+          robust_i = "\n".join([
+              "def sub_once(path, pattern, replacement):",
+              "    text = path.read_text(encoding=\"utf-8\")",
+              "    normalized = textwrap.dedent(pattern).strip()",
+              "    candidates = [pattern]",
+              "    if normalized not in candidates: candidates.append(normalized)",
+              "    flexible = normalized.replace(r\"\\ \", r\"\\s+\")",
+              "    if flexible not in candidates: candidates.append(flexible)",
+              "    for candidate in candidates:",
+              "        updated, count = re.subn(candidate, replacement, text, count=1, flags=re.S)",
+              "        if count == 1:",
+              "            path.write_text(updated, encoding=\"utf-8\")",
+              "            return",
+              "    raise SystemExit(f\"{path}: regex 9.5 não encontrado: {pattern!r}\")",
+              "",
+              "def replace_once(path, old, new):",
+              "    text = path.read_text(encoding=\"utf-8\")",
+              "    count = text.count(old)",
+              "    if count == 1:",
+              "        path.write_text(text.replace(old, new, 1), encoding=\"utf-8\")",
+              "        return",
+              "    tokens = [t for t in re.split(r\"\\s+\", old.strip()) if t]",
+              "    pattern2 = r\"\\s+\".join(re.escape(t) for t in tokens)",
+              "    matches = list(re.finditer(pattern2, text, flags=re.S))",
+              "    if len(matches) != 1:",
+              "        raise SystemExit(f\"{path}: literal 9.5 flexível esperava 1 ocorrência, encontrou {len(matches)}: {old[:120]!r}\")",
+              "    m = matches[0]",
+              "    updated = text[:m.start()] + textwrap.dedent(new).strip(\"\\n\") + text[m.end():]",
+              "    path.write_text(updated, encoding=\"utf-8\")",
+          ]) + "\n"
+
+          helper_i_pattern = re.compile(
+              r'def sub_once\(path, pattern, replacement\):\n'
+              r'.*?'
+              r'(?=\n# -+\n# Initialize persistent personal core\.)',
+              re.S,
+          )
+          integration, helper_i_count = helper_i_pattern.subn(
+              lambda _m: robust_i.rstrip("\n"),
+              integration,
+              count=1,
+          )
+          if helper_i_count != 1:
+              raise SystemExit(f"FIX145: helper 9.5 encontrado {helper_i_count} vezes.")
+
+          ast.parse(integration, filename="gama95-integrate.py")
+
+          Path("/tmp/gama95-integrate.py").write_text(
+              integration,
+              encoding="utf-8",
+          )
+
+          print("PASS: núcleo 9.5 extraído do #142 e corrigido.")
+          PY
+
+          python3 -m py_compile \
+            /tmp/gama95-integrate.py
+
+          python3 \
+            /tmp/gama95-integrate.py
+
+          echo "PASS: Gama 9.5 Personal Intelligence Core integrado."
+
+      - name: Generate engineering report
+        run: |
+          set -euo pipefail
+
+          mkdir -p _gama_build/reports
+
+          cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
+          # GAMA 9.5.0 Personal Intelligence Core FIX145
+
+          ## CORREÇÕES DE BUILD
+
+          - Corrigidas as 9 atribuições Python quebradas do transformador 9.4.
+          - Corrigidos os regex rígidos do #144 e o truncamento do workflow observado no #145.
+          - O transformador 9.4 agora passa por `ast.parse` e `py_compile` antes de tocar no source Android.
+          - O núcleo 9.5 é recuperado exatamente do commit do #142, reduzindo o risco de corrupção por copiar milhares de linhas dentro do YAML.
+          - Corrigido o segundo `companion object` inválido de `GamaPersonalDatabase`.
+          - Adicionada compatibilidade `values()` para enum em toolchains Kotlin mais antigos.
+
+          ## IMPLEMENTADO NO NÚCLEO 9.5
+
+          - conversa contínua e ActiveTaskContext;
+          - semantic endpointing adaptativo;
+          - proteção contra self-speech;
+          - barge-in validado;
+          - geração/turn/request IDs contra resposta velha;
+          - memória pessoal SQLite;
+          - policies permanentes;
+          - prioridade de notificações;
+          - Study Mode;
+          - aliases persistentes;
+          - SelfOptimizer com rollback;
+          - PermissionManager e CapabilityRegistry;
+          - IntentRouter V2;
+          - animação da boca da logo;
+          - ReliableAppLauncher e rotas de WhatsApp herdadas do Continuous Core.
+
+          ## TESTE FÍSICO AINDA OBRIGATÓRIO
+
+          CI verde prova compilação, testes e assinatura. Ainda é necessário testar em aparelho real:
+          WhatsApp, conversa longa, barge-in, ruído, memória após reboot, notificações, bateria e comportamento Samsung/One UI.
+          REPORT
+
+      - name: Personal Intelligence structural audit
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          SRC="app/src/main/java/com/gama/assistant"
+          TEST="app/src/test/java/com/gama/assistant"
+
+          required=(
+            "$SRC/GamaPersonalCore.kt"
+            "$SRC/ActiveTaskContext.kt"
+            "$SRC/GamaTurnCoordinator.kt"
+            "$SRC/GamaOrchestrator.kt"
+            "$SRC/SemanticEndpointer.kt"
+            "$SRC/AssistantStateController.kt"
+            "$SRC/GamaSelfSpeechGuard.kt"
+            "$SRC/ContextSanityCheck.kt"
+            "$SRC/GamaRecoveryManager.kt"
+            "$SRC/GamaReliableAppLauncher.kt"
+            "$SRC/GamaEnergyView.kt"
+            "$TEST/GamaPersonalIntelligenceCoreTest.kt"
+          )
+
+          for file in "${required[@]}"; do
+            if [ ! -s "$file" ]; then
+              echo "::error::Arquivo obrigatório ausente: $file"
+              exit 1
+            fi
+            echo "PASS $file"
+          done
+
+          grep -Fq 'GamaPersonalAICore.initialize(this)' "$SRC/GamaService.kt"
+          grep -Fq 'GamaPersonalAICore' "$SRC/GamaNotificationListener.kt"
+          grep -Fq 'GamaOptimizationRuntime' "$SRC/SemanticEndpointer.kt"
+          grep -Fq 'PLANNING' "$SRC/AssistantStateController.kt"
+          grep -Fq 'PolicyMemory' "$SRC/GamaPersonalCore.kt"
+          grep -Fq 'SELF_OPTIMIZATION_ROLLBACK' "$SRC/GamaPersonalCore.kt"
+          grep -Fq 'MAX_EVENT_DEPTH' "$SRC/GamaPersonalCore.kt"
+          grep -Fq 'getLaunchIntentSenderForPackage' "$SRC/GamaReliableAppLauncher.kt"
+          grep -Fq 'com.whatsapp' app/src/main/AndroidManifest.xml
+          grep -Fq 'com.whatsapp.w4b' app/src/main/AndroidManifest.xml
+          grep -Fq 'mouthLift' "$SRC/GamaEnergyView.kt"
+
+          if grep -Fq 'private companion object Limits' "$SRC/GamaPersonalCore.kt"; then
+            echo "::error::Segundo companion object inválido ainda existe."
+            exit 1
+          fi
+
+          if grep -Fq 'jawTopPx' "$SRC/GamaEnergyView.kt"; then
+            echo "::error::Animação antiga da mandíbula ainda existe."
+            exit 1
+          fi
+
+          for file in \
+            "$SRC/GamaPersonalCore.kt" \
+            "$SRC/SemanticEndpointer.kt" \
+            "$SRC/ContextSanityCheck.kt" \
+            "$SRC/GamaEnergyView.kt"
+          do
+            if grep -Eq 'TODO|NotImplementedError|UnsupportedOperationException\("TODO' "$file"; then
+              echo "::error::Stub/TODO funcional encontrado em $file"
+              exit 1
+            fi
+          done
+
+          grep -Fq 'isDebuggable = false' app/build.gradle.kts
+
+          echo "PASS: auditoria arquitetural pré-build concluída."
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK 35
+        run: |
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_ROOT"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+
+          test -x "$SDKMANAGER"
+
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Set Gama 9.5.0 version
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path("app/build.gradle.kts")
+          text = path.read_text(encoding="utf-8")
+
+          version_code = 24_600_000 + int(os.environ["GITHUB_RUN_NUMBER"])
+
+          text, code_count = re.subn(
+              r'versionCode\s*=\s*\d+',
+              f'versionCode = {version_code}',
+              text,
+              count=1,
+          )
+
+          text, name_count = re.subn(
+              r'versionName\s*=\s*"[^"]*"',
+              'versionName = "Gama 9.5.0 Personal Intelligence Core"',
+              text,
+              count=1,
+          )
+
+          if code_count != 1 or name_count != 1:
+              raise SystemExit("Falha ao configurar versão 9.5.0.")
+
+          path.write_text(text, encoding="utf-8")
+          print(f"versionCode={version_code}")
+          PY
+
+      - name: Prepare Gradle wrapper
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.9
+          fi
+
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Clean
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew clean --no-daemon --stacktrace
+
+      - name: Compile Release Kotlin
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            :app:compileReleaseKotlin \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+
+      - name: Unit tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            test \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+
+      - name: Android lint
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            lint \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-lint.log"
+
+      - name: Prepare offline models
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          if [ -x tools/download_models.sh ]; then
+            bash tools/download_models.sh
+          fi
+
+      - name: Assemble Release
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
+
+      - name: Sign Release APK
+        working-directory: _gama_build
+        env:
+          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
+          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          input_apk="$(
+            find \
+              app/build/outputs/apk/release \
+              -maxdepth 1 \
+              -type f \
+              -name '*.apk' \
+              -print \
+              | head -n 1
+          )"
+
+          if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
+            echo "::error::APK Release não encontrado."
+            exit 1
+          fi
+
+          aligned="dist/Gama-aligned.apk"
+
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            -f \
+            4 \
+            "$input_apk" \
+            "$aligned"
+
+          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
+            mkdir -p .gama-signing
+            chmod 700 .gama-signing
+
+            printf '%s' "$GAMA_SIGNING_SEED" \
+              | grep -Eq '^[0-9A-Fa-f]{64}$'
+
+            python3 - \
+              "$GAMA_SIGNING_SEED" \
+              .gama-signing/key.der <<'PY'
+          import sys
+
+          raw = bytes.fromhex(sys.argv[1])
+
+          order = int(
+              "FFFFFFFF00000000"
+              "FFFFFFFFFFFFFFFF"
+              "BCE6FAADA7179E84"
+              "F3B9CAC2FC632551",
+              16,
+          )
+
+          d = (int.from_bytes(raw, "big") % (order - 1)) + 1
+          key = d.to_bytes(32, "big")
+
+          der = (
+              bytes.fromhex("30310201010420")
+              + key
+              + bytes.fromhex("A00A06082A8648CE3D030107")
+          )
+
+          with open(sys.argv[2], "wb") as handle:
+              handle.write(der)
+          PY
+
+            openssl ec \
+              -inform DER \
+              -in .gama-signing/key.der \
+              -out .gama-signing/key.pem \
+              >/dev/null 2>&1
+
+            printf '%s' \
+              'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ1ekNDQVdHZ0F3SUJBZ0lFQVRVb1FEQUtCZ2dxaGtqT1BRUURBakE2TVJ3d0dnWURWUVFEREJOSFlXMWgKSUZOMFlXSnNaU0JUYVdkdWFXNW5NUTB3Q3dZRFZRUUtEQVJIWVcxaE1Rc3dDUVlEVlFRR0V3SkNVakFnRncweQpOakE1TWpneE5UTTROREJhR0E4eU1USTJNRGt3TkRFMU16ZzBNRm93T2pFY01Cb0dBMVVFQXd3VFIyRnRZU0JUCmRHRmliR1VnVTJsbmJtbHVaekVOTUFzR0ExVUVDZ3dFUjJGdFlURUxNQWtHQTFVRUJoTUNRbEl3V1RBVEJnY3EKaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFUV2FNc3krYm84OEorSFcxQktpVGVJUU56REEzd29SQUo0Q0hXZAp4QndQN0NLR0F4QWFZK3Z4d0dBTFZTN1FNU2Zoa0VYd294NElya0kxZUhRck5tTzNvMU13VVRBZEJnTlZIUTRFCkZnUVU4a2ZjczhxMC9MQlA5NHRJTS8yVXZXbXRTZzh3SHdZRFZSMGpCQmd3Rm9BVThrZmNzOHEwL0xCUDk0dEkKTS8yVXZXbXRTZzh3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUVBajZmZQpEcyszSDZQQTRqRk1jS0FQR2pEY0E3amc1cU9WZjg4SkU0UDRvK1VDSURLS3BGMlZ2MTVHdTdaTTgyRlBPZFhtCmNQTHNDOUlkd1NzOUpLM05ZclhKCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K' \
+              | base64 --decode \
+              > .gama-signing/cert.pem
+
+            keyhash="$(
+              openssl pkey \
+                -in .gama-signing/key.pem \
+                -pubout \
+                -outform DER \
+                | sha256sum \
+                | cut -d' ' -f1
+            )"
+
+            certhash="$(
+              openssl x509 \
+                -in .gama-signing/cert.pem \
+                -pubkey \
+                -noout \
+                | openssl pkey \
+                    -pubin \
+                    -outform DER \
+                | sha256sum \
+                | cut -d' ' -f1
+            )"
+
+            if [ "$keyhash" != "$certhash" ]; then
+              echo "::error::GAMA_SIGNING_SEED não corresponde ao certificado estável."
+              exit 1
+            fi
+
+            openssl pkcs12 \
+              -export \
+              -inkey .gama-signing/key.pem \
+              -in .gama-signing/cert.pem \
+              -out .gama-signing/gama.p12 \
+              -name gama \
+              -passout pass:GamaStable2026
+
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+              sign \
+              --ks .gama-signing/gama.p12 \
+              --ks-type PKCS12 \
+              --ks-key-alias gama \
+              --ks-pass pass:GamaStable2026 \
+              --key-pass pass:GamaStable2026 \
+              --out dist/Gama.apk \
+              "$aligned"
+
+            echo "stable-update-capable" > dist/install-mode.txt
+            rm -rf .gama-signing
+          else
+            rm -f /tmp/gama-fresh.jks
+
+            keytool \
+              -genkeypair \
+              -keystore /tmp/gama-fresh.jks \
+              -storepass GamaFresh2026 \
+              -keypass GamaFresh2026 \
+              -alias gama \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 3650 \
+              -dname "CN=Gama Fresh Test,O=Gama,C=BR"
+
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+              sign \
+              --ks /tmp/gama-fresh.jks \
+              --ks-key-alias gama \
+              --ks-pass pass:GamaFresh2026 \
+              --key-pass pass:GamaFresh2026 \
+              --out dist/Gama.apk \
+              "$aligned"
+
+            echo "fresh-install-only" > dist/install-mode.txt
+          fi
+
+          rm -f "$aligned"
+
+      - name: Verify final Release APK
+        working-directory: _gama_build
+        env:
+          GAMA_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          set -euo pipefail
+
+          test -s dist/Gama.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            --verbose \
+            --print-certs \
+            dist/Gama.apk \
+            | tee dist/signature-info.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            dump badging \
+            dist/Gama.apk \
+            > dist/apk-info.txt
+
+          grep -q "name='com.gama.assistant'" dist/apk-info.txt
+          grep -q "versionName='Gama 9.5.0 Personal Intelligence Core'" dist/apk-info.txt
+
+          EXPECTED_VERSION_CODE="$((24600000 + GITHUB_RUN_NUMBER))"
+          grep -q "versionCode='$EXPECTED_VERSION_CODE'" dist/apk-info.txt
+
+          if grep -q 'application-debuggable' dist/apk-info.txt; then
+            echo "::error::APK Release ainda está debuggable."
+            exit 1
+          fi
+
+          if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
+            actual_cert="$(
+              awk -F': ' \
+                '/certificate SHA-256 digest/ { print $2; exit }' \
+                dist/signature-info.txt \
+                | tr -d ':' \
+                | tr '[:lower:]' '[:upper:]'
+            )"
+
+            if [ "$actual_cert" != "$GAMA_EXPECTED_CERT_SHA256" ]; then
+              echo "::error::Certificado final diferente da assinatura estável."
+              echo "expected=$GAMA_EXPECTED_CERT_SHA256"
+              echo "actual=$actual_cert"
+              exit 1
+            fi
+          fi
+
+          (
+            cd dist
+            sha256sum Gama.apk > Gama.apk.sha256
+            sha256sum -c Gama.apk.sha256
+          )
+
+          echo "PASS: APK Release assinado e verificado."
+
+      - name: Second complete architecture audit
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          SRC="app/src/main/java/com/gama/assistant"
+
+          test -s dist/Gama.apk
+          test -s reports/GAMA-9.5.0-SUPER-AI.md
+
+          checks=(
+            "GamaPersonalAICore"
+            "GamaPersonalDatabase"
+            "GamaPolicyMemory"
+            "GamaRuleEngine"
+            "GamaEventEngine"
+            "GamaPriorityEngine"
+            "GamaLearningEngine"
+            "GamaSelfOptimizer"
+            "GamaCapabilityRegistry"
+            "GamaPermissionManager"
+            "GamaAuditTrail"
+            "GamaIntentRouterV2"
+          )
+
+          for symbol in "${checks[@]}"; do
+            if ! grep -R -Fq "$symbol" "$SRC"; then
+              echo "::error::Responsabilidade arquitetural ausente: $symbol"
+              exit 1
+            fi
+          done
+
+          grep -Fq 'ActiveTaskContext' "$SRC/ConversationSession.kt"
+          grep -Fq 'GamaTurnCoordinator' "$SRC/GamaOrchestrator.kt"
+          grep -Fq 'PLANNING' "$SRC/AssistantStateController.kt"
+          grep -Fq 'sessionId != stamp.sessionId' "$SRC/GamaService.kt"
+          grep -Fq 'generationId !=' "$SRC/GamaService.kt"
+          grep -Fq 'GamaSelfSpeechGuard' "$SRC/GamaService.kt"
+          grep -Fq 'GamaReliableAppLauncher' "$SRC/GamaService.kt"
+          grep -Fq 'GamaPersonalAICore' "$SRC/GamaNotificationListener.kt"
+          grep -Fq 'mouthLift' "$SRC/GamaEnergyView.kt"
+
+          echo "PASS: segunda auditoria arquitetural concluída."
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.signing.outputs.artifact }}
+          path: |
+            _gama_build/dist/Gama.apk
+            _gama_build/dist/Gama.apk.sha256
+            _gama_build/dist/apk-info.txt
+            _gama_build/dist/signature-info.txt
+            _gama_build/dist/install-mode.txt
+          if-no-files-found: error
+
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-9.5.0-PERSONAL-INTELLIGENCE-source
+          path: |
+            _gama_build/**
+            !_gama_build/.gradle/**
+            !_gama_build/**/build/**
+            !_gama_build/dist/**
+          if-no-files-found: error
+
+      - name: Upload engineering reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-9.5.0-engineering-reports
+          path: |
+            _gama_build/reports/**
+            gama-compile.log
+            gama-tests.log
+            gama-lint.log
+            gama-release.log
+            _gama_build/app/build/reports/**
+            _gama_build/app/build/test-results/**
+          if-no-files-found: warn
+
+      - name: Publish Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG="gama-v9.5.0-personal-intelligence-${{ github.run_number }}"
+
+          gh release create \
+            "$TAG" \
+            "_gama_build/dist/Gama.apk#Gama.apk" \
+            "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
+            "_gama_build/dist/install-mode.txt#install-mode.txt" \
+            "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX145" \
+            --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
+            --latest
