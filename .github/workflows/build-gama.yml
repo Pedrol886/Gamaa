@@ -1,4 +1,4 @@
-name: Build Gama 9.5.0 Personal Intelligence Core FIX142
+name: Build Gama 9.5.0 Personal Intelligence Core FIX143
 
 on:
   workflow_dispatch:
@@ -47,6 +47,7 @@ jobs:
           if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
             echo "mode=fresh" >> "$GITHUB_OUTPUT"
             echo "artifact=Gama-9.5.0-PERSONAL-INTELLIGENCE-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
+
             echo "::warning::GAMA_SIGNING_SEED não está configurado."
             echo "::warning::O APK será Release, mas será FRESH-INSTALL-ONLY."
           elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
@@ -94,6 +95,7 @@ jobs:
             local actual
 
             test -s "$file"
+
             actual="$(git hash-object "$file")"
 
             if [ "$actual" != "$expected" ]; then
@@ -164,6 +166,21 @@ jobs:
             "$ROOT/app/src/main/AndroidManifest.xml" \
             "e898888312d7c1355cf751b9dc391ca1aa3a48ea"
 
+      # ==============================================================
+      # GAMA 9.4 CONTINUOUS CORE
+      #
+      # FIX143:
+      # O #143 chegou até esta etapa e falhou porque os helpers
+      # sub_once/replace_once recuperados do #139 preservavam
+      # indentação do YAML dentro das strings Python.
+      #
+      # Agora:
+      # - as 9 quebras sintáticas antigas são corrigidas;
+      # - padrões regex multilinha são dedentados;
+      # - replace_once possui fallback tolerante a whitespace;
+      # - Python é validado antes de modificar o source.
+      # ==============================================================
+
       - name: Recover corrected Gama 9.4 Continuous Core
         run: |
           set -euo pipefail
@@ -179,10 +196,14 @@ jobs:
           import ast
           import re
           import sys
+          import textwrap
 
           workflow_path = Path(sys.argv[1])
           output_path = Path(sys.argv[2])
-          workflow = workflow_path.read_text(encoding="utf-8").splitlines()
+
+          workflow = workflow_path.read_text(
+              encoding="utf-8"
+          ).splitlines()
 
           step = next(
               (
@@ -212,12 +233,23 @@ jobs:
                   "Transformação Python Continuous Core não encontrada."
               )
 
-          indent = len(workflow[start]) - len(workflow[start].lstrip(" "))
+          indent = (
+              len(workflow[start])
+              - len(workflow[start].lstrip(" "))
+          )
+
           end = None
 
           for i in range(start + 1, len(workflow)):
-              current_indent = len(workflow[i]) - len(workflow[i].lstrip(" "))
-              if workflow[i].strip() == "PY" and current_indent == indent:
+              current_indent = (
+                  len(workflow[i])
+                  - len(workflow[i].lstrip(" "))
+              )
+
+              if (
+                  workflow[i].strip() == "PY"
+                  and current_indent == indent
+              ):
                   end = i
                   break
 
@@ -238,9 +270,10 @@ jobs:
 
           script = "\n".join(body) + "\n"
 
-          # O #142 corrigia seis quebras, mas o transformador do #139
-          # contém nove atribuições Python quebradas fora de strings Kotlin.
-          # As três últimas abaixo são exatamente o que derrubou o #142.
+          # ----------------------------------------------------------
+          # FIXES DE SINTAXE HERDADOS DOS RUNS #139-#142
+          # ----------------------------------------------------------
+
           repairs = [
               (
                   re.compile(
@@ -308,7 +341,10 @@ jobs:
               ),
           ]
 
-          for index, (pattern, replacement) in enumerate(repairs, 1):
+          for index, (pattern, replacement) in enumerate(
+              repairs,
+              1,
+          ):
               script, count = pattern.subn(
                   replacement,
                   script,
@@ -317,9 +353,224 @@ jobs:
 
               if count != 1:
                   raise SystemExit(
-                      f"Reparo Continuous Core {index} não encontrou "
-                      f"exatamente uma ocorrência. count={count}"
+                      f"Reparo Continuous Core {index} "
+                      f"não encontrou exatamente uma ocorrência. "
+                      f"count={count}"
                   )
+
+          # ----------------------------------------------------------
+          # FIX143
+          #
+          # O Python agora está sintaticamente válido, mas os helpers
+          # originais do #139 ainda carregavam indentação da própria
+          # formatação do workflow dentro de regex/literais.
+          #
+          # Exemplo do erro real do #143:
+          #
+          # expected exactly one regex match ...
+          # COMMAND_START_TIMEOUT_MS = 2000L
+          # found 0
+          #
+          # A constante EXISTE na fonte #136.
+          # O problema era a indentação embutida no regex.
+          # ----------------------------------------------------------
+
+          robust_helpers = r'''def replace_once(path: Path, old: str, new: str):
+              value = path.read_text(encoding="utf-8")
+
+              exact_count = value.count(old)
+
+              if exact_count == 1:
+                  path.write_text(
+                      value.replace(
+                          old,
+                          new,
+                          1,
+                      ),
+                      encoding="utf-8",
+                  )
+                  return
+
+              if exact_count > 1:
+                  raise SystemExit(
+                      f"{path}: literal possui múltiplas ocorrências: "
+                      f"{old[:120]!r}"
+                  )
+
+              tokens = [
+                  token
+                  for token in re.split(
+                      r"\s+",
+                      old.strip(),
+                  )
+                  if token
+              ]
+
+              if not tokens:
+                  raise SystemExit(
+                      f"{path}: literal vazio recebido em replace_once."
+                  )
+
+              flexible_pattern = r"\s+".join(
+                  re.escape(token)
+                  for token in tokens
+              )
+
+              match = re.search(
+                  flexible_pattern,
+                  value,
+                  flags=re.S,
+              )
+
+              if match is None:
+                  raise SystemExit(
+                      f"{path}: literal não encontrado nem com "
+                      f"normalização de whitespace: {old[:120]!r}"
+                  )
+
+              second_match = re.search(
+                  flexible_pattern,
+                  value[match.end():],
+                  flags=re.S,
+              )
+
+              if second_match is not None:
+                  raise SystemExit(
+                      f"{path}: fallback flexível encontrou "
+                      f"mais de uma ocorrência: {old[:120]!r}"
+                  )
+
+              line_start = value.rfind(
+                  "\n",
+                  0,
+                  match.start(),
+              ) + 1
+
+              base_indent = value[
+                  line_start:match.start()
+              ]
+
+              if base_indent.strip():
+                  base_indent = ""
+
+              replacement = textwrap.dedent(
+                  new
+              ).strip("\n")
+
+              if (
+                  base_indent
+                  and "\n" in replacement
+              ):
+                  lines = replacement.splitlines()
+
+                  replacement = (
+                      lines[0]
+                      + "\n"
+                      + "\n".join(
+                          (
+                              base_indent + line
+                              if line
+                              else ""
+                          )
+                          for line in lines[1:]
+                      )
+                  )
+
+              result = (
+                  value[:match.start()]
+                  + replacement
+                  + value[match.end():]
+              )
+
+              path.write_text(
+                  result,
+                  encoding="utf-8",
+              )
+
+
+          def sub_once(path: Path, pattern: str, replacement: str):
+              value = path.read_text(
+                  encoding="utf-8"
+              )
+
+              candidates = [pattern]
+
+              normalized = textwrap.dedent(
+                  pattern
+              ).strip()
+
+              if normalized != pattern:
+                  candidates.append(
+                      normalized
+                  )
+
+              attempted = []
+
+              for candidate in candidates:
+                  updated, count = re.subn(
+                      candidate,
+                      replacement,
+                      value,
+                      count=1,
+                      flags=re.S,
+                  )
+
+                  attempted.append(
+                      (
+                          candidate,
+                          count,
+                      )
+                  )
+
+                  if count == 1:
+                      path.write_text(
+                          updated,
+                          encoding="utf-8",
+                      )
+                      return
+
+              description = " | ".join(
+                  f"{candidate!r}: {count}"
+                  for candidate, count in attempted
+              )
+
+              raise SystemExit(
+                  f"{path}: regex não encontrado após "
+                  f"normalização de indentação. "
+                  f"Tentativas: {description}"
+              )
+          '''
+
+          helper_region = re.compile(
+              r'def replace_once\(path: Path, old: str, new: str\):\n'
+              r'.*?'
+              r'(?=\n# =+\n# ACTIVE TASK CONTEXT)',
+              re.S,
+          )
+
+          script, helper_count = helper_region.subn(
+              lambda _match: robust_helpers,
+              script,
+              count=1,
+          )
+
+          if helper_count != 1:
+              raise SystemExit(
+                  "FIX143: não foi possível substituir "
+                  "os helpers frágeis do transformador #139."
+              )
+
+          # Garante que textwrap esteja disponível no script extraído.
+          if "import textwrap" not in script:
+              script = script.replace(
+                  "import re\n",
+                  "import re\nimport textwrap\n",
+                  1,
+              )
+
+          # ----------------------------------------------------------
+          # VALIDAÇÃO REAL DO TRANSFORMADOR
+          # ----------------------------------------------------------
 
           ast.parse(
               script,
@@ -332,17 +583,30 @@ jobs:
           )
 
           print(
-              "PASS: transformação Continuous Core reparada com os 9 consertos e validada pelo AST."
+              "PASS: Continuous Core reparado, "
+              "helpers normalizados e Python validado."
           )
           PY
 
           python3 -m py_compile \
             /tmp/gama94-transform.py
 
+          echo "PASS: py_compile da transformação 9.4."
+
           python3 \
             /tmp/gama94-transform.py
 
           echo "PASS: Gama 9.4 Continuous Core aplicado."
+
+      # ==============================================================
+      # GAMA 9.5 PERSONAL INTELLIGENCE CORE
+      #
+      # Recupera o código completo do #142, mas sem copiar milhares
+      # de linhas novamente para este workflow.
+      #
+      # FIX143 também protege a integração 9.5 contra o mesmo problema
+      # de indentação em replace_once/sub_once.
+      # ==============================================================
 
       - name: Import Gama 9.5 Personal Intelligence Core from exact 142 source
         run: |
@@ -355,34 +619,65 @@ jobs:
           python3 - /tmp/gama142.yml <<'PY'
           from pathlib import Path
           import ast
+          import re
           import sys
+          import textwrap
 
-          template = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+          template = Path(
+              sys.argv[1]
+          ).read_text(
+              encoding="utf-8"
+          ).splitlines()
+
           root = Path("_gama_build")
-          src = root / "app/src/main/java/com/gama/assistant"
-          tests = root / "app/src/test/java/com/gama/assistant"
 
-          src.mkdir(parents=True, exist_ok=True)
-          tests.mkdir(parents=True, exist_ok=True)
+          src = (
+              root
+              / "app/src/main/java/com/gama/assistant"
+          )
+
+          tests = (
+              root
+              / "app/src/test/java/com/gama/assistant"
+          )
+
+          src.mkdir(
+              parents=True,
+              exist_ok=True,
+          )
+
+          tests.mkdir(
+              parents=True,
+              exist_ok=True,
+          )
 
           targets = {
               'cat > "$SRC/GamaPersonalCore.kt" <<\'KOTLIN\'':
                   src / "GamaPersonalCore.kt",
+
               'cat > "$SRC/SemanticEndpointer.kt" <<\'KOTLIN\'':
                   src / "SemanticEndpointer.kt",
+
               'cat > "$SRC/ContextSanityCheck.kt" <<\'KOTLIN\'':
                   src / "ContextSanityCheck.kt",
+
               'cat > "$SRC/AssistantStateController.kt" <<\'KOTLIN\'':
                   src / "AssistantStateController.kt",
+
               'cat > "$SRC/GamaSupervisor.kt" <<\'KOTLIN\'':
                   src / "GamaSupervisor.kt",
+
               'cat > "$SRC/GamaEnergyView.kt" <<\'KOTLIN\'':
                   src / "GamaEnergyView.kt",
+
               'cat > "$TEST/GamaPersonalIntelligenceCoreTest.kt" <<\'KOTLIN\'':
                   tests / "GamaPersonalIntelligenceCoreTest.kt",
           }
 
-          def extract_heredoc(marker: str, destination: Path) -> None:
+          def extract_heredoc(
+              marker: str,
+              destination: Path,
+          ) -> None:
               start = next(
                   (
                       i
@@ -393,50 +688,102 @@ jobs:
               )
 
               if start is None:
-                  raise SystemExit(f"Bloco não encontrado no #142: {marker}")
+                  raise SystemExit(
+                      f"Bloco não encontrado no #142: {marker}"
+                  )
 
-              indent = len(template[start]) - len(template[start].lstrip(" "))
+              indent = (
+                  len(template[start])
+                  - len(template[start].lstrip(" "))
+              )
+
               prefix = " " * indent
               end = None
 
-              for i in range(start + 1, len(template)):
-                  current_indent = len(template[i]) - len(template[i].lstrip(" "))
-                  if template[i].strip() == "KOTLIN" and current_indent == indent:
+              for i in range(
+                  start + 1,
+                  len(template),
+              ):
+                  current_indent = (
+                      len(template[i])
+                      - len(template[i].lstrip(" "))
+                  )
+
+                  if (
+                      template[i].strip() == "KOTLIN"
+                      and current_indent == indent
+                  ):
                       end = i
                       break
 
               if end is None:
-                  raise SystemExit(f"Fim KOTLIN não encontrado: {marker}")
+                  raise SystemExit(
+                      f"Fim KOTLIN não encontrado: {marker}"
+                  )
 
               body = []
-              for line in template[start + 1:end]:
+
+              for line in template[
+                  start + 1:end
+              ]:
                   body.append(
                       line[indent:]
                       if line.startswith(prefix)
                       else line
                   )
 
-              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.parent.mkdir(
+                  parents=True,
+                  exist_ok=True,
+              )
+
               destination.write_text(
                   "\n".join(body) + "\n",
                   encoding="utf-8",
               )
 
           for marker, destination in targets.items():
-              extract_heredoc(marker, destination)
-              if not destination.is_file() or destination.stat().st_size == 0:
-                  raise SystemExit(f"Arquivo 9.5 vazio: {destination}")
-              print(f"PASS imported {destination}")
+              extract_heredoc(
+                  marker,
+                  destination,
+              )
 
-          # Corrige um erro Kotlin que ainda existia dentro do código do #142:
-          # a classe GamaPersonalDatabase possuía dois companion objects.
-          personal = src / "GamaPersonalCore.kt"
-          value = personal.read_text(encoding="utf-8")
+              if (
+                  not destination.is_file()
+                  or destination.stat().st_size == 0
+              ):
+                  raise SystemExit(
+                      f"Arquivo 9.5 vazio: {destination}"
+                  )
 
-          old_limits = "private companion object Limits {"
+              print(
+                  f"PASS imported {destination}"
+              )
+
+          # ----------------------------------------------------------
+          # CORREÇÃO DO BANCO PESSOAL
+          #
+          # A classe possuía dois companion objects no código do #142.
+          # Kotlin não permite isso.
+          # ----------------------------------------------------------
+
+          personal = (
+              src
+              / "GamaPersonalCore.kt"
+          )
+
+          value = personal.read_text(
+              encoding="utf-8"
+          )
+
+          old_limits = (
+              "private companion object Limits {"
+          )
+
           if value.count(old_limits) != 1:
               raise SystemExit(
-                  "GamaPersonalCore.kt: companion object Limits inesperado."
+                  "GamaPersonalCore.kt: "
+                  "companion object Limits inesperado."
               )
 
           value = value.replace(
@@ -445,10 +792,14 @@ jobs:
               1,
           )
 
-          old_depth = "0..MAX_EVENT_DEPTH"
+          old_depth = (
+              "0..MAX_EVENT_DEPTH"
+          )
+
           if value.count(old_depth) != 1:
               raise SystemExit(
-                  "GamaPersonalCore.kt: uso MAX_EVENT_DEPTH inesperado."
+                  "GamaPersonalCore.kt: "
+                  "uso MAX_EVENT_DEPTH inesperado."
               )
 
           value = value.replace(
@@ -457,79 +808,332 @@ jobs:
               1,
           )
 
-          # Compatibilidade com toolchains Kotlin que ainda não aceitam enum.entries.
+          # Compatibilidade Kotlin.
           value = value.replace(
               "entries.firstOrNull {",
               "values().firstOrNull {",
           )
 
-          personal.write_text(value, encoding="utf-8")
+          personal.write_text(
+              value,
+              encoding="utf-8",
+          )
 
-          # Extrai a integração 9.5 original do #142 para um arquivo Python real,
-          # evitando milhares de linhas embutidas neste novo YAML.
+          # ----------------------------------------------------------
+          # EXTRAI INTEGRAÇÃO 9.5
+          # ----------------------------------------------------------
+
           step = next(
               (
                   i
                   for i, line in enumerate(template)
-                  if "name: Integrate Personal Intelligence Core" in line
+                  if (
+                      "name: Integrate Personal Intelligence Core"
+                      in line
+                  )
               ),
               None,
           )
 
           if step is None:
-              raise SystemExit("Etapa de integração 9.5 não encontrada no #142.")
+              raise SystemExit(
+                  "Etapa de integração 9.5 "
+                  "não encontrada no #142."
+              )
 
           start = next(
               (
                   i
-                  for i in range(step + 1, len(template))
-                  if template[i].strip() == "python3 - <<'PY'"
+                  for i in range(
+                      step + 1,
+                      len(template),
+                  )
+                  if (
+                      template[i].strip()
+                      == "python3 - <<'PY'"
+                  )
               ),
               None,
           )
 
           if start is None:
-              raise SystemExit("Python de integração 9.5 não encontrado.")
+              raise SystemExit(
+                  "Python de integração 9.5 não encontrado."
+              )
 
-          indent = len(template[start]) - len(template[start].lstrip(" "))
+          indent = (
+              len(template[start])
+              - len(template[start].lstrip(" "))
+          )
+
           prefix = " " * indent
           end = None
 
-          for i in range(start + 1, len(template)):
-              current_indent = len(template[i]) - len(template[i].lstrip(" "))
-              if template[i].strip() == "PY" and current_indent == indent:
+          for i in range(
+              start + 1,
+              len(template),
+          ):
+              current_indent = (
+                  len(template[i])
+                  - len(template[i].lstrip(" "))
+              )
+
+              if (
+                  template[i].strip() == "PY"
+                  and current_indent == indent
+              ):
                   end = i
                   break
 
           if end is None:
-              raise SystemExit("Fim da integração 9.5 não encontrado.")
+              raise SystemExit(
+                  "Fim da integração 9.5 não encontrado."
+              )
 
           body = []
-          for line in template[start + 1:end]:
+
+          for line in template[
+              start + 1:end
+          ]:
               body.append(
                   line[indent:]
                   if line.startswith(prefix)
                   else line
               )
 
-          integration = "\n".join(body) + "\n"
-          ast.parse(integration, filename="gama95-integrate.py")
+          integration = (
+              "\n".join(body)
+              + "\n"
+          )
 
-          Path("/tmp/gama95-integrate.py").write_text(
+          # ----------------------------------------------------------
+          # FIX143 PARA A INTEGRAÇÃO 9.5
+          #
+          # O integration.py do #142 também usa replace_once e
+          # sub_once com strings multilinha formatadas no YAML.
+          # Aplicamos a mesma proteção aqui antes de executá-lo.
+          # ----------------------------------------------------------
+
+          if "import textwrap" not in integration:
+              integration = integration.replace(
+                  "import re\n",
+                  "import re\nimport textwrap\n",
+                  1,
+              )
+
+          robust_integration_helpers = r'''def sub_once(path, pattern, replacement):
+              text = path.read_text(
+                  encoding="utf-8"
+              )
+
+              candidates = [pattern]
+
+              normalized = textwrap.dedent(
+                  pattern
+              ).strip()
+
+              if normalized != pattern:
+                  candidates.append(
+                      normalized
+                  )
+
+              for candidate in candidates:
+                  updated, count = re.subn(
+                      candidate,
+                      replacement,
+                      text,
+                      count=1,
+                      flags=re.S,
+                  )
+
+                  if count == 1:
+                      path.write_text(
+                          updated,
+                          encoding="utf-8",
+                      )
+                      return
+
+              raise SystemExit(
+                  f"{path}: regex 9.5 não encontrado: "
+                  f"{pattern!r}"
+              )
+
+
+          def replace_once(path, old, new):
+              text = path.read_text(
+                  encoding="utf-8"
+              )
+
+              exact_count = text.count(
+                  old
+              )
+
+              if exact_count == 1:
+                  path.write_text(
+                      text.replace(
+                          old,
+                          new,
+                          1,
+                      ),
+                      encoding="utf-8",
+                  )
+                  return
+
+              if exact_count > 1:
+                  raise SystemExit(
+                      f"{path}: literal 9.5 possui "
+                      f"mais de uma ocorrência: "
+                      f"{old[:120]!r}"
+                  )
+
+              tokens = [
+                  token
+                  for token in re.split(
+                      r"\s+",
+                      old.strip(),
+                  )
+                  if token
+              ]
+
+              if not tokens:
+                  raise SystemExit(
+                      f"{path}: literal 9.5 vazio."
+                  )
+
+              flexible_pattern = r"\s+".join(
+                  re.escape(token)
+                  for token in tokens
+              )
+
+              match = re.search(
+                  flexible_pattern,
+                  text,
+                  flags=re.S,
+              )
+
+              if match is None:
+                  raise SystemExit(
+                      f"{path}: literal 9.5 não encontrado "
+                      f"nem com whitespace flexível: "
+                      f"{old[:120]!r}"
+                  )
+
+              second_match = re.search(
+                  flexible_pattern,
+                  text[match.end():],
+                  flags=re.S,
+              )
+
+              if second_match is not None:
+                  raise SystemExit(
+                      f"{path}: fallback 9.5 encontrou "
+                      f"mais de uma ocorrência."
+                  )
+
+              line_start = text.rfind(
+                  "\n",
+                  0,
+                  match.start(),
+              ) + 1
+
+              base_indent = text[
+                  line_start:match.start()
+              ]
+
+              if base_indent.strip():
+                  base_indent = ""
+
+              replacement = textwrap.dedent(
+                  new
+              ).strip("\n")
+
+              if (
+                  base_indent
+                  and "\n" in replacement
+              ):
+                  lines = (
+                      replacement.splitlines()
+                  )
+
+                  replacement = (
+                      lines[0]
+                      + "\n"
+                      + "\n".join(
+                          (
+                              base_indent + line
+                              if line
+                              else ""
+                          )
+                          for line in lines[1:]
+                      )
+                  )
+
+              updated = (
+                  text[:match.start()]
+                  + replacement
+                  + text[match.end():]
+              )
+
+              path.write_text(
+                  updated,
+                  encoding="utf-8",
+              )
+          '''
+
+          integration_helpers_region = re.compile(
+              r'def sub_once\(path, pattern, replacement\):\n'
+              r'.*?'
+              r'(?=\n# -+\n# Initialize persistent personal core\.)',
+              re.S,
+          )
+
+          integration, helper_count = (
+              integration_helpers_region.subn(
+                  lambda _match: (
+                      robust_integration_helpers
+                  ),
+                  integration,
+                  count=1,
+              )
+          )
+
+          if helper_count != 1:
+              raise SystemExit(
+                  "FIX143: helpers da integração 9.5 "
+                  "não puderam ser substituídos."
+              )
+
+          ast.parse(
+              integration,
+              filename="gama95-integrate.py",
+          )
+
+          Path(
+              "/tmp/gama95-integrate.py"
+          ).write_text(
               integration,
               encoding="utf-8",
           )
 
-          print("PASS: núcleo 9.5 extraído do #142 e corrigido.")
+          print(
+              "PASS: núcleo 9.5 extraído, "
+              "corrigido e integração robusta criada."
+          )
           PY
 
           python3 -m py_compile \
             /tmp/gama95-integrate.py
 
+          echo "PASS: py_compile da integração 9.5."
+
           python3 \
             /tmp/gama95-integrate.py
 
           echo "PASS: Gama 9.5 Personal Intelligence Core integrado."
+
+      # ==============================================================
+      # ENGINEERING REPORT
+      # ==============================================================
 
       - name: Generate engineering report
         run: |
@@ -538,40 +1142,58 @@ jobs:
           mkdir -p _gama_build/reports
 
           cat > _gama_build/reports/GAMA-9.5.0-SUPER-AI.md <<'REPORT'
-          # GAMA 9.5.0 Personal Intelligence Core FIX142
+          # GAMA 9.5.0 Personal Intelligence Core FIX143
 
           ## CORREÇÕES DE BUILD
 
+          - Preservada a fonte exata e auditada do Gama 9.3.0 #136.
           - Corrigidas as 9 atribuições Python quebradas do transformador 9.4.
-          - Corrigido o SyntaxError que derrubou o run #142 na linha `value =`.
-          - O transformador 9.4 agora passa por `ast.parse` e `py_compile` antes de tocar no source Android.
-          - O núcleo 9.5 é recuperado exatamente do commit do #142, reduzindo o risco de corrupção por copiar milhares de linhas dentro do YAML.
-          - Corrigido o segundo `companion object` inválido de `GamaPersonalDatabase`.
-          - Adicionada compatibilidade `values()` para enum em toolchains Kotlin mais antigos.
+          - Corrigida a causa real do erro do #143.
+          - Regex multilinha do #139 agora remove indentação artificial do YAML.
+          - replace_once possui fallback de whitespace controlado.
+          - sub_once tenta padrão original e padrão dedentado.
+          - Transformação 9.4 passa por AST e py_compile.
+          - Integração 9.5 também recebe helpers resistentes à indentação.
+          - Integração 9.5 passa por AST e py_compile.
+          - Corrigido o segundo companion object inválido do banco pessoal.
+          - Mantida compatibilidade values() para enum Kotlin.
 
-          ## IMPLEMENTADO NO NÚCLEO 9.5
+          ## PERSONAL INTELLIGENCE
 
-          - conversa contínua e ActiveTaskContext;
-          - semantic endpointing adaptativo;
-          - proteção contra self-speech;
-          - barge-in validado;
-          - geração/turn/request IDs contra resposta velha;
-          - memória pessoal SQLite;
-          - policies permanentes;
-          - prioridade de notificações;
-          - Study Mode;
-          - aliases persistentes;
-          - SelfOptimizer com rollback;
-          - PermissionManager e CapabilityRegistry;
-          - IntentRouter V2;
-          - animação da boca da logo;
-          - ReliableAppLauncher e rotas de WhatsApp herdadas do Continuous Core.
+          - Continuous Conversation Core.
+          - ActiveTaskContext.
+          - Semantic endpointing.
+          - Self-speech protection.
+          - Barge-in.
+          - Turn/generation/request identity.
+          - Memória pessoal SQLite.
+          - PolicyMemory.
+          - RuleEngine.
+          - EventEngine.
+          - PriorityEngine.
+          - Study Mode.
+          - AuditTrail.
+          - Aliases persistentes.
+          - SelfOptimizer com rollback.
+          - PermissionManager.
+          - CapabilityRegistry.
+          - IntentRouter V2.
+          - ReliableAppLauncher.
+          - WhatsApp routes.
+          - Animação da boca da logo.
 
-          ## TESTE FÍSICO AINDA OBRIGATÓRIO
+          ## ACEITAÇÃO
 
-          CI verde prova compilação, testes e assinatura. Ainda é necessário testar em aparelho real:
-          WhatsApp, conversa longa, barge-in, ruído, memória após reboot, notificações, bateria e comportamento Samsung/One UI.
+          Um CI verde valida compilação, testes e APK.
+
+          Ainda são obrigatórios testes físicos em aparelho real para:
+          WhatsApp, conversa contínua, ruído, barge-in, memória após reboot,
+          notificações, bateria, foreground/background e Samsung One UI.
           REPORT
+
+      # ==============================================================
+      # STRUCTURAL AUDIT
+      # ==============================================================
 
       - name: Personal Intelligence structural audit
         working-directory: _gama_build
@@ -601,27 +1223,64 @@ jobs:
               echo "::error::Arquivo obrigatório ausente: $file"
               exit 1
             fi
+
             echo "PASS $file"
           done
 
-          grep -Fq 'GamaPersonalAICore.initialize(this)' "$SRC/GamaService.kt"
-          grep -Fq 'GamaPersonalAICore' "$SRC/GamaNotificationListener.kt"
-          grep -Fq 'GamaOptimizationRuntime' "$SRC/SemanticEndpointer.kt"
-          grep -Fq 'PLANNING' "$SRC/AssistantStateController.kt"
-          grep -Fq 'PolicyMemory' "$SRC/GamaPersonalCore.kt"
-          grep -Fq 'SELF_OPTIMIZATION_ROLLBACK' "$SRC/GamaPersonalCore.kt"
-          grep -Fq 'MAX_EVENT_DEPTH' "$SRC/GamaPersonalCore.kt"
-          grep -Fq 'getLaunchIntentSenderForPackage' "$SRC/GamaReliableAppLauncher.kt"
-          grep -Fq 'com.whatsapp' app/src/main/AndroidManifest.xml
-          grep -Fq 'com.whatsapp.w4b' app/src/main/AndroidManifest.xml
-          grep -Fq 'mouthLift' "$SRC/GamaEnergyView.kt"
+          grep -Fq \
+            'GamaPersonalAICore.initialize(this)' \
+            "$SRC/GamaService.kt"
 
-          if grep -Fq 'private companion object Limits' "$SRC/GamaPersonalCore.kt"; then
+          grep -Fq \
+            'GamaPersonalAICore' \
+            "$SRC/GamaNotificationListener.kt"
+
+          grep -Fq \
+            'GamaOptimizationRuntime' \
+            "$SRC/SemanticEndpointer.kt"
+
+          grep -Fq \
+            'PLANNING' \
+            "$SRC/AssistantStateController.kt"
+
+          grep -Fq \
+            'PolicyMemory' \
+            "$SRC/GamaPersonalCore.kt"
+
+          grep -Fq \
+            'SELF_OPTIMIZATION_ROLLBACK' \
+            "$SRC/GamaPersonalCore.kt"
+
+          grep -Fq \
+            'MAX_EVENT_DEPTH' \
+            "$SRC/GamaPersonalCore.kt"
+
+          grep -Fq \
+            'getLaunchIntentSenderForPackage' \
+            "$SRC/GamaReliableAppLauncher.kt"
+
+          grep -Fq \
+            'com.whatsapp' \
+            app/src/main/AndroidManifest.xml
+
+          grep -Fq \
+            'com.whatsapp.w4b' \
+            app/src/main/AndroidManifest.xml
+
+          grep -Fq \
+            'mouthLift' \
+            "$SRC/GamaEnergyView.kt"
+
+          if grep -Fq \
+            'private companion object Limits' \
+            "$SRC/GamaPersonalCore.kt"; then
             echo "::error::Segundo companion object inválido ainda existe."
             exit 1
           fi
 
-          if grep -Fq 'jawTopPx' "$SRC/GamaEnergyView.kt"; then
+          if grep -Fq \
+            'jawTopPx' \
+            "$SRC/GamaEnergyView.kt"; then
             echo "::error::Animação antiga da mandíbula ainda existe."
             exit 1
           fi
@@ -632,15 +1291,24 @@ jobs:
             "$SRC/ContextSanityCheck.kt" \
             "$SRC/GamaEnergyView.kt"
           do
-            if grep -Eq 'TODO|NotImplementedError|UnsupportedOperationException\("TODO' "$file"; then
+            if grep -Eq \
+              'TODO|NotImplementedError|UnsupportedOperationException\("TODO' \
+              "$file"; then
+
               echo "::error::Stub/TODO funcional encontrado em $file"
               exit 1
             fi
           done
 
-          grep -Fq 'isDebuggable = false' app/build.gradle.kts
+          grep -Fq \
+            'isDebuggable = false' \
+            app/build.gradle.kts
 
           echo "PASS: auditoria arquitetural pré-build concluída."
+
+      # ==============================================================
+      # JAVA / ANDROID / GRADLE
+      # ==============================================================
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -653,12 +1321,17 @@ jobs:
           set -euo pipefail
 
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+
           test -d "$SDK_ROOT"
 
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
+
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" \
+            >> "$GITHUB_ENV"
 
           SDKMANAGER="$(command -v sdkmanager || true)"
+
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
@@ -675,6 +1348,10 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      # ==============================================================
+      # VERSION
+      # ==============================================================
+
       - name: Set Gama 9.5.0 version
         working-directory: _gama_build
         run: |
@@ -685,10 +1362,22 @@ jobs:
           import os
           import re
 
-          path = Path("app/build.gradle.kts")
-          text = path.read_text(encoding="utf-8")
+          path = Path(
+              "app/build.gradle.kts"
+          )
 
-          version_code = 24_600_000 + int(os.environ["GITHUB_RUN_NUMBER"])
+          text = path.read_text(
+              encoding="utf-8"
+          )
+
+          version_code = (
+              24_600_000
+              + int(
+                  os.environ[
+                      "GITHUB_RUN_NUMBER"
+                  ]
+              )
+          )
 
           text, code_count = re.subn(
               r'versionCode\s*=\s*\d+',
@@ -704,11 +1393,22 @@ jobs:
               count=1,
           )
 
-          if code_count != 1 or name_count != 1:
-              raise SystemExit("Falha ao configurar versão 9.5.0.")
+          if (
+              code_count != 1
+              or name_count != 1
+          ):
+              raise SystemExit(
+                  "Falha ao configurar versão 9.5.0."
+              )
 
-          path.write_text(text, encoding="utf-8")
-          print(f"versionCode={version_code}")
+          path.write_text(
+              text,
+              encoding="utf-8",
+          )
+
+          print(
+              f"versionCode={version_code}"
+          )
           PY
 
       - name: Prepare Gradle wrapper
@@ -717,47 +1417,63 @@ jobs:
           set -euo pipefail
 
           if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 8.9
+            gradle wrapper \
+              --gradle-version 8.9
           fi
 
           chmod +x gradlew
+
           ./gradlew --version
+
+      # ==============================================================
+      # BUILD VALIDATION
+      # ==============================================================
 
       - name: Clean
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew clean --no-daemon --stacktrace
+
+          ./gradlew \
+            clean \
+            --no-daemon \
+            --stacktrace
 
       - name: Compile Release Kotlin
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
           ./gradlew \
             :app:compileReleaseKotlin \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-compile.log"
 
       - name: Unit tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
           ./gradlew \
             test \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
       - name: Android lint
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
           ./gradlew \
             lint \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-lint.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-lint.log"
 
       - name: Prepare offline models
         working-directory: _gama_build
@@ -772,11 +1488,17 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
+
           ./gradlew \
             assembleRelease \
             --no-daemon \
             --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
+            2>&1 \
+            | tee "$GITHUB_WORKSPACE/gama-release.log"
+
+      # ==============================================================
+      # SIGN APK
+      # ==============================================================
 
       - name: Sign Release APK
         working-directory: _gama_build
@@ -815,7 +1537,8 @@ jobs:
             mkdir -p .gama-signing
             chmod 700 .gama-signing
 
-            printf '%s' "$GAMA_SIGNING_SEED" \
+            printf '%s' \
+              "$GAMA_SIGNING_SEED" \
               | grep -Eq '^[0-9A-Fa-f]{64}$'
 
             python3 - \
@@ -823,7 +1546,9 @@ jobs:
               .gama-signing/key.der <<'PY'
           import sys
 
-          raw = bytes.fromhex(sys.argv[1])
+          raw = bytes.fromhex(
+              sys.argv[1]
+          )
 
           order = int(
               "FFFFFFFF00000000"
@@ -833,17 +1558,36 @@ jobs:
               16,
           )
 
-          d = (int.from_bytes(raw, "big") % (order - 1)) + 1
-          key = d.to_bytes(32, "big")
+          d = (
+              int.from_bytes(
+                  raw,
+                  "big",
+              )
+              % (order - 1)
+          ) + 1
 
-          der = (
-              bytes.fromhex("30310201010420")
-              + key
-              + bytes.fromhex("A00A06082A8648CE3D030107")
+          key = d.to_bytes(
+              32,
+              "big",
           )
 
-          with open(sys.argv[2], "wb") as handle:
-              handle.write(der)
+          der = (
+              bytes.fromhex(
+                  "30310201010420"
+              )
+              + key
+              + bytes.fromhex(
+                  "A00A06082A8648CE3D030107"
+              )
+          )
+
+          with open(
+              sys.argv[2],
+              "wb",
+          ) as handle:
+              handle.write(
+                  der
+              )
           PY
 
             openssl ec \
@@ -901,10 +1645,14 @@ jobs:
               --out dist/Gama.apk \
               "$aligned"
 
-            echo "stable-update-capable" > dist/install-mode.txt
+            echo \
+              "stable-update-capable" \
+              > dist/install-mode.txt
+
             rm -rf .gama-signing
           else
-            rm -f /tmp/gama-fresh.jks
+            rm -f \
+              /tmp/gama-fresh.jks
 
             keytool \
               -genkeypair \
@@ -926,10 +1674,17 @@ jobs:
               --out dist/Gama.apk \
               "$aligned"
 
-            echo "fresh-install-only" > dist/install-mode.txt
+            echo \
+              "fresh-install-only" \
+              > dist/install-mode.txt
           fi
 
-          rm -f "$aligned"
+          rm -f \
+            "$aligned"
+
+      # ==============================================================
+      # VERIFY APK
+      # ==============================================================
 
       - name: Verify final Release APK
         working-directory: _gama_build
@@ -938,7 +1693,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -s dist/Gama.apk
+          test -s \
+            dist/Gama.apk
 
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
             verify \
@@ -952,13 +1708,24 @@ jobs:
             dist/Gama.apk \
             > dist/apk-info.txt
 
-          grep -q "name='com.gama.assistant'" dist/apk-info.txt
-          grep -q "versionName='Gama 9.5.0 Personal Intelligence Core'" dist/apk-info.txt
+          grep -q \
+            "name='com.gama.assistant'" \
+            dist/apk-info.txt
+
+          grep -q \
+            "versionName='Gama 9.5.0 Personal Intelligence Core'" \
+            dist/apk-info.txt
 
           EXPECTED_VERSION_CODE="$((24600000 + GITHUB_RUN_NUMBER))"
-          grep -q "versionCode='$EXPECTED_VERSION_CODE'" dist/apk-info.txt
 
-          if grep -q 'application-debuggable' dist/apk-info.txt; then
+          grep -q \
+            "versionCode='$EXPECTED_VERSION_CODE'" \
+            dist/apk-info.txt
+
+          if grep -q \
+            'application-debuggable' \
+            dist/apk-info.txt; then
+
             echo "::error::APK Release ainda está debuggable."
             exit 1
           fi
@@ -966,7 +1733,10 @@ jobs:
           if [ "$GAMA_SIGNING_MODE" = "stable" ]; then
             actual_cert="$(
               awk -F': ' \
-                '/certificate SHA-256 digest/ { print $2; exit }' \
+                '/certificate SHA-256 digest/ {
+                  print $2
+                  exit
+                }' \
                 dist/signature-info.txt \
                 | tr -d ':' \
                 | tr '[:lower:]' '[:upper:]'
@@ -982,11 +1752,21 @@ jobs:
 
           (
             cd dist
-            sha256sum Gama.apk > Gama.apk.sha256
-            sha256sum -c Gama.apk.sha256
+
+            sha256sum \
+              Gama.apk \
+              > Gama.apk.sha256
+
+            sha256sum \
+              -c \
+              Gama.apk.sha256
           )
 
           echo "PASS: APK Release assinado e verificado."
+
+      # ==============================================================
+      # SECOND AUDIT
+      # ==============================================================
 
       - name: Second complete architecture audit
         working-directory: _gama_build
@@ -995,8 +1775,11 @@ jobs:
 
           SRC="app/src/main/java/com/gama/assistant"
 
-          test -s dist/Gama.apk
-          test -s reports/GAMA-9.5.0-SUPER-AI.md
+          test -s \
+            dist/Gama.apk
+
+          test -s \
+            reports/GAMA-9.5.0-SUPER-AI.md
 
           checks=(
             "GamaPersonalAICore"
@@ -1014,23 +1797,56 @@ jobs:
           )
 
           for symbol in "${checks[@]}"; do
-            if ! grep -R -Fq "$symbol" "$SRC"; then
+            if ! grep -R -Fq \
+              "$symbol" \
+              "$SRC"; then
+
               echo "::error::Responsabilidade arquitetural ausente: $symbol"
               exit 1
             fi
           done
 
-          grep -Fq 'ActiveTaskContext' "$SRC/ConversationSession.kt"
-          grep -Fq 'GamaTurnCoordinator' "$SRC/GamaOrchestrator.kt"
-          grep -Fq 'PLANNING' "$SRC/AssistantStateController.kt"
-          grep -Fq 'sessionId != stamp.sessionId' "$SRC/GamaService.kt"
-          grep -Fq 'generationId !=' "$SRC/GamaService.kt"
-          grep -Fq 'GamaSelfSpeechGuard' "$SRC/GamaService.kt"
-          grep -Fq 'GamaReliableAppLauncher' "$SRC/GamaService.kt"
-          grep -Fq 'GamaPersonalAICore' "$SRC/GamaNotificationListener.kt"
-          grep -Fq 'mouthLift' "$SRC/GamaEnergyView.kt"
+          grep -Fq \
+            'ActiveTaskContext' \
+            "$SRC/ConversationSession.kt"
+
+          grep -Fq \
+            'GamaTurnCoordinator' \
+            "$SRC/GamaOrchestrator.kt"
+
+          grep -Fq \
+            'PLANNING' \
+            "$SRC/AssistantStateController.kt"
+
+          grep -Fq \
+            'sessionId != stamp.sessionId' \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            'generationId !=' \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            'GamaSelfSpeechGuard' \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            'GamaReliableAppLauncher' \
+            "$SRC/GamaService.kt"
+
+          grep -Fq \
+            'GamaPersonalAICore' \
+            "$SRC/GamaNotificationListener.kt"
+
+          grep -Fq \
+            'mouthLift' \
+            "$SRC/GamaEnergyView.kt"
 
           echo "PASS: segunda auditoria arquitetural concluída."
+
+      # ==============================================================
+      # ARTIFACTS
+      # ==============================================================
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -1070,6 +1886,10 @@ jobs:
             _gama_build/app/build/test-results/**
           if-no-files-found: warn
 
+      # ==============================================================
+      # RELEASE
+      # ==============================================================
+
       - name: Publish Release
         if: success()
         env:
@@ -1086,6 +1906,6 @@ jobs:
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             "_gama_build/reports/GAMA-9.5.0-SUPER-AI.md#GAMA-9.5.0-SUPER-AI.md" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 9.5.0 Personal Intelligence Core FIX142" \
-            --notes "Correção completa do #142. O transformador 9.4 agora repara as 9 atribuições Python quebradas, passa por AST e py_compile, e o núcleo 9.5 é recuperado do source exato do #142 com correção adicional do companion object Kotlin. Testes físicos continuam obrigatórios antes da aceitação final." \
+            --title "Gama 9.5.0 Personal Intelligence Core FIX143" \
+            --notes "Correção completa do erro observado no run #143. O workflow mantém a fonte auditada do #136, repara o transformador Continuous Core do #139, normaliza regex e literais multilinha contra problemas de indentação, protege também a integração 9.5 do #142, valida ambos os scripts com AST e py_compile e então executa compileReleaseKotlin, testes, lint, assemble, assinatura e auditoria final. Testes físicos continuam obrigatórios antes da aceitação final." \
             --latest
