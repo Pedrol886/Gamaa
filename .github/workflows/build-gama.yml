@@ -169,8 +169,7 @@ jobs:
                   context: Context,
                   raw: String,
               ): String? {
-                  val text =
-                      normalize(raw)
+                  val text = normalize(raw)
 
                   if (
                       text !in setOf(
@@ -200,8 +199,7 @@ jobs:
                           }
 
                   val charging =
-                      batteryManager?.isCharging ==
-                          true
+                      batteryManager?.isCharging == true
 
                   val connectivity =
                       context.getSystemService(
@@ -241,9 +239,7 @@ jobs:
                           .size
 
                   return buildString {
-                      append(
-                          "Estamos operacionais."
-                      )
+                      append("Estamos operacionais.")
 
                       battery?.let {
                           append(
@@ -251,9 +247,7 @@ jobs:
                           )
 
                           if (charging) {
-                              append(
-                                  " e carregando"
-                              )
+                              append(" e carregando")
                           }
 
                           append(".")
@@ -278,9 +272,7 @@ jobs:
                       GamaSilentContext
                           .description(context)
                           ?.let {
-                              append(
-                                  " $it"
-                              )
+                              append(" $it")
                           }
                   }
               }
@@ -289,8 +281,7 @@ jobs:
                   context: Context,
                   raw: String,
               ): String? {
-                  val text =
-                      normalize(raw)
+                  val text = normalize(raw)
 
                   val requested =
                       listOf(
@@ -335,16 +326,14 @@ jobs:
                       )
 
                   val ranked =
-                      unread.sortedByDescending {
-                          item ->
+                      unread.sortedByDescending { item ->
                           val body =
                               normalize(
                                   "${item.title} ${item.text}"
                               )
 
                           if (
-                              importantTerms.any {
-                                  term ->
+                              importantTerms.any { term ->
                                   term in body
                               }
                           ) {
@@ -357,8 +346,7 @@ jobs:
                   val details =
                       ranked
                           .take(6)
-                          .map {
-                              item ->
+                          .map { item ->
                               val sender =
                                   item.title
                                       .ifBlank {
@@ -375,9 +363,7 @@ jobs:
                                       .trim()
                                       .take(180)
 
-                              if (
-                                  preview.isBlank()
-                              ) {
+                              if (preview.isBlank()) {
                                   sender
                               } else {
                                   "$sender: $preview"
@@ -389,17 +375,13 @@ jobs:
                           "Enquanto você estava ocupado, ficaram registradas ${unread.size} mensagens."
                       )
 
-                      if (
-                          details.isNotEmpty()
-                      ) {
+                      if (details.isNotEmpty()) {
                           append(
                               " As principais são: "
                           )
 
                           append(
-                              details.joinToString(
-                                  "; "
-                              )
+                              details.joinToString("; ")
                           )
 
                           append(".")
@@ -411,39 +393,22 @@ jobs:
                   service: GamaService,
                   raw: String,
               ): String? {
-                  val text =
-                      normalize(raw)
+                  val text = normalize(raw)
 
                   val requested =
-                      text.contains(
-                          "timer"
-                      ) ||
-                          text.contains(
-                              "me avisa daqui"
-                          ) ||
-                          text.contains(
-                              "me avise daqui"
-                          ) ||
-                          text.contains(
-                              "daqui a"
-                          ) ||
+                      text.contains("timer") ||
+                          text.contains("me avisa daqui") ||
+                          text.contains("me avise daqui") ||
+                          text.contains("daqui a") ||
                           (
                               (
-                                  text.startsWith(
-                                      "deixa "
-                                  ) ||
-                                      text.startsWith(
-                                          "deixe "
-                                      )
+                                  text.startsWith("deixa ") ||
+                                      text.startsWith("deixe ")
                                   ) &&
                                   (
-                                      text.contains(
-                                          " minuto"
-                                      ) ||
-                                      text.contains(
-                                          " hora"
+                                      text.contains(" minuto") ||
+                                          text.contains(" hora")
                                       )
-                                  )
                               )
 
                   if (!requested) {
@@ -451,15 +416,10 @@ jobs:
                   }
 
                   val seconds =
-                      parseDurationSeconds(
-                          text
-                      )
+                      parseDurationSeconds(text)
                           ?: return "Entendi o timer, mas não consegui identificar a duração."
 
-                  if (
-                      seconds !in
-                      1..86_400
-                  ) {
+                  if (seconds !in 1..86_400) {
                       return "Esse tempo ficou fora do limite que posso enviar ao relógio do Android."
                   }
 
@@ -484,9 +444,7 @@ jobs:
                           )
 
                   val reply =
-                      service.launchSafely(
-                          intent
-                      )
+                      service.launchSafely(intent)
 
                   return if (
                       reply.startsWith(
@@ -504,8 +462,7 @@ jobs:
                   service: GamaService,
                   raw: String,
               ): String? {
-                  val text =
-                      normalize(raw)
+                  val text = normalize(raw)
 
                   val explicitUrl =
                       Regex(
@@ -579,9 +536,7 @@ jobs:
                   }
 
                   val reply =
-                      service.launchSafely(
-                          intent
-                      )
+                      service.launchSafely(intent)
 
                   return if (
                       reply.startsWith(
@@ -589,9 +544,7 @@ jobs:
                           ignoreCase = true,
                       )
                   ) {
-                      if (
-                          "chrome" in text
-                      ) {
+                      if ("chrome" in text) {
                           "Abrindo o site no Chrome."
                       } else {
                           "Abrindo o site."
@@ -605,8 +558,7 @@ jobs:
                   context: Context,
                   raw: String,
               ): String? {
-                  val text =
-                      normalize(raw)
+                  val text = normalize(raw)
 
                   val recognized =
                       listOf(
@@ -641,9 +593,7 @@ jobs:
                           .isConnected()
                   ) {
                       GamaScreenContextService
-                          .openSettings(
-                              context
-                          )
+                          .openSettings(context)
 
                       return "Para controlar essa parte da interface, ative Gama Contexto da Tela na acessibilidade. Abri a configuração."
                   }
@@ -654,29 +604,15 @@ jobs:
                       )
 
                   val locked =
-                      keyguard
-                          ?.isDeviceLocked ==
-                          true
+                      keyguard?.isDeviceLocked == true
 
                   val privateAction =
-                      text.contains(
-                          "clique"
-                      ) ||
-                          text.contains(
-                              "toque"
-                          ) ||
-                          text.contains(
-                              "aperte"
-                          ) ||
-                          text.contains(
-                              "role"
-                          ) ||
-                          text.contains(
-                              "rola"
-                          ) ||
-                          text.contains(
-                              "recentes"
-                          )
+                      text.contains("clique") ||
+                          text.contains("toque") ||
+                          text.contains("aperte") ||
+                          text.contains("role") ||
+                          text.contains("rola") ||
+                          text.contains("recentes")
 
                   if (
                       locked &&
@@ -686,9 +622,7 @@ jobs:
                   }
 
                   when {
-                      text.contains(
-                          "notificacoes"
-                      ) -> {
+                      text.contains("notificacoes") -> {
                           return if (
                               GamaScreenContextService
                                   .performGlobal(
@@ -755,9 +689,7 @@ jobs:
                           }
                       }
 
-                      text.contains(
-                          "recentes"
-                      ) -> {
+                      text.contains("recentes") -> {
                           return if (
                               GamaScreenContextService
                                   .performGlobal(
@@ -779,9 +711,7 @@ jobs:
                           ) -> {
                           return if (
                               GamaScreenContextService
-                                  .scroll(
-                                      true
-                                  )
+                                  .scroll(true)
                           ) {
                               "Rolei a tela para baixo."
                           } else {
@@ -797,9 +727,7 @@ jobs:
                           ) -> {
                           return if (
                               GamaScreenContextService
-                                  .scroll(
-                                      false
-                                  )
+                                  .scroll(false)
                           ) {
                               "Rolei a tela para cima."
                           } else {
@@ -818,14 +746,10 @@ jobs:
                           ?.trim()
                           .orEmpty()
 
-                  if (
-                      label.isNotBlank()
-                  ) {
+                  if (label.isNotBlank()) {
                       return if (
                           GamaScreenContextService
-                              .clickByLabel(
-                                  label
-                              )
+                              .clickByLabel(label)
                       ) {
                           "Pronto."
                       } else {
@@ -839,9 +763,7 @@ jobs:
               private fun parseDurationSeconds(
                   text: String,
               ): Int? {
-                  if (
-                      "meia hora" in text
-                  ) {
+                  if ("meia hora" in text) {
                       return 30 * 60
                   }
 
@@ -851,9 +773,7 @@ jobs:
                       )
                           .find(text)
 
-                  if (
-                      digit != null
-                  ) {
+                  if (digit != null) {
                       val amount =
                           digit
                               .groupValues[1]
@@ -908,14 +828,9 @@ jobs:
                       )
 
                   val tokens =
-                      text.split(
-                          ' '
-                      )
+                      text.split(' ')
 
-                  for (
-                      index in
-                      tokens.indices
-                  ) {
+                  for (index in tokens.indices) {
                       val amount =
                           numbers[
                               tokens[index]
@@ -963,9 +878,7 @@ jobs:
                           Normalizer.Form.NFD,
                       )
                       .replace(
-                          Regex(
-                              "\\p{M}+"
-                          ),
+                          Regex("\\p{M}+"),
                           "",
                       )
                       .replace(
@@ -975,9 +888,7 @@ jobs:
                           " ",
                       )
                       .replace(
-                          Regex(
-                              "\\s+"
-                          ),
+                          Regex("\\s+"),
                           " ",
                       )
                       .trim()
@@ -1013,9 +924,7 @@ jobs:
                   raw: String,
               ): String? {
                   val text =
-                      normalize(
-                          raw
-                      )
+                      normalize(raw)
 
                   val requested =
                       listOf(
@@ -1030,29 +939,21 @@ jobs:
                           it in text
                       }
 
-                  if (
-                      !requested
-                  ) {
+                  if (!requested) {
                       return null
                   }
 
                   val ranges =
                       rangeRegex
-                          .findAll(
-                              text
-                          )
+                          .findAll(text)
                           .toList()
 
-                  if (
-                      ranges.isEmpty()
-                  ) {
+                  if (ranges.isEmpty()) {
                       return "Entendi que você quer silêncio, mas preciso saber o horário de início e fim."
                   }
 
                   val dayOffset =
-                      if (
-                          "amanha" in text
-                      ) {
+                      if ("amanha" in text) {
                           1
                       } else {
                           0
@@ -1065,11 +966,8 @@ jobs:
                       )
                           ?: return "Não consegui interpretar esse horário."
 
-                  var breakStart =
-                      0L
-
-                  var breakEnd =
-                      0L
+                  var breakStart = 0L
+                  var breakEnd = 0L
 
                   if (
                       "intervalo" in text &&
@@ -1081,9 +979,7 @@ jobs:
                               dayOffset,
                           )
 
-                      if (
-                          pause != null
-                      ) {
+                      if (pause != null) {
                           breakStart =
                               pause.first
 
@@ -1169,8 +1065,7 @@ jobs:
                   if (
                       start <= 0L ||
                       end <= start ||
-                      now !in
-                      start until end
+                      now !in start until end
                   ) {
                       return false
                   }
@@ -1189,22 +1084,15 @@ jobs:
 
                   return !(
                       breakStart > 0L &&
-                          breakEnd >
-                          breakStart &&
-                          now in
-                          breakStart until
-                          breakEnd
+                          breakEnd > breakStart &&
+                          now in breakStart until breakEnd
                       )
               }
 
               fun description(
                   context: Context,
               ): String? {
-                  if (
-                      !isSilentNow(
-                          context
-                      )
-                  ) {
+                  if (!isSilentNow(context)) {
                       return null
                   }
 
@@ -1251,14 +1139,10 @@ jobs:
                           ?: 0
 
                   if (
-                      startHour !in
-                      0..23 ||
-                      endHour !in
-                      0..23 ||
-                      startMinute !in
-                      0..59 ||
-                      endMinute !in
-                      0..59
+                      startHour !in 0..23 ||
+                      endHour !in 0..23 ||
+                      startMinute !in 0..59 ||
+                      endMinute !in 0..59
                   ) {
                       return null
                   }
@@ -1333,8 +1217,8 @@ jobs:
 
                   return (
                       start.timeInMillis
-                      to
-                      end.timeInMillis
+                          to
+                          end.timeInMillis
                       )
               }
 
@@ -1352,9 +1236,7 @@ jobs:
                           Normalizer.Form.NFD,
                       )
                       .replace(
-                          Regex(
-                              "\\p{M}+"
-                          ),
+                          Regex("\\p{M}+"),
                           "",
                       )
                       .replace(
@@ -1364,9 +1246,7 @@ jobs:
                           " ",
                       )
                       .replace(
-                          Regex(
-                              "\\s+"
-                          ),
+                          Regex("\\s+"),
                           " ",
                       )
                       .trim()
@@ -1411,17 +1291,20 @@ jobs:
               "        // GAMA109_LOCKSCREEN_PUBLIC_FAST_LANE"
           )
 
-          if (
-              "GamaPersonalTools.handle"
-              not in service
-          ):
+          route_pattern = (
+              r"GamaPersonalTools\s*"
+              r"\.handle\s*\("
+          )
+
+          if re.search(
+              route_pattern,
+              service,
+          ) is None:
               position = service.find(
                   marker
               )
 
-              if (
-                  position < 0
-              ):
+              if position < 0:
                   raise SystemExit(
                       "GAMA109 routing marker not found"
                   )
@@ -1464,9 +1347,7 @@ jobs:
                   "<application"
               )
 
-              if (
-                  app_position < 0
-              ):
+              if app_position < 0:
                   raise SystemExit(
                       "AndroidManifest application tag not found"
                   )
@@ -1503,16 +1384,12 @@ jobs:
               count=1,
           )
 
-          if (
-              code_count != 1
-          ):
+          if code_count != 1:
               raise SystemExit(
                   "versionCode not found"
               )
 
-          if (
-              name_count != 1
-          ):
+          if name_count != 1:
               raise SystemExit(
                   "versionName not found"
               )
@@ -1532,16 +1409,47 @@ jobs:
               encoding="utf-8",
           )
 
-          final_service = service_path.read_text(
-              encoding="utf-8"
+          final_service =
+              service_path.read_text(
+                  encoding="utf-8"
+              )
+
+          route_matches = re.findall(
+              route_pattern,
+              final_service,
           )
 
+          if len(route_matches) != 1:
+              raise SystemExit(
+                  "Personal tools routing invalid: "
+                  f"expected 1 route, found {len(route_matches)}"
+              )
+
+          final_manifest =
+              manifest_path.read_text(
+                  encoding="utf-8"
+              )
+
           if (
-              "GamaPersonalTools.handle"
-              not in final_service
+              final_manifest.count(
+                  alarm_permission
+              ) != 1
           ):
               raise SystemExit(
-                  "Personal tools routing missing"
+                  "SET_ALARM permission integration invalid"
+              )
+
+          final_gradle =
+              gradle_path.read_text(
+                  encoding="utf-8"
+              )
+
+          if (
+              'versionName = "Gama 10.3.2 Personal Android Core"'
+              not in final_gradle
+          ):
+              raise SystemExit(
+                  "Final versionName missing"
               )
 
           print(
@@ -1570,8 +1478,8 @@ jobs:
           test -s \
             "$SRC/GamaPersonalTools.kt"
 
-          grep -Fq \
-            'GamaPersonalTools.handle' \
+          grep -zEq \
+            'GamaPersonalTools[[:space:]]*\.handle[[:space:]]*\(' \
             "$SRC/GamaService.kt"
 
           grep -Fq \
@@ -1585,6 +1493,14 @@ jobs:
           grep -Fq \
             'GamaUnreadMessageStore.peekUnread' \
             "$SRC/GamaPersonalTools.kt"
+
+          grep -Fq \
+            'com.android.alarm.permission.SET_ALARM' \
+            app/src/main/AndroidManifest.xml
+
+          grep -Fq \
+            'versionName = "Gama 10.3.2 Personal Android Core"' \
+            app/build.gradle.kts
 
           grep -Fq \
             'isDebuggable = false' \
@@ -2002,7 +1918,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.3.2-SAFE163-engineering-reports
+          name: Gama-10.3.2-SAFE163-engineering-reports-${{ github.run_number }}
           path: |
             gama-safe163.py
             gama-compile.log
