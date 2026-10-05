@@ -1,4 +1,4 @@
-name: Build Gama 10.4.2 NATURAL171 APK
+name: Build Gama 10.5.0 UNIFIED172 APK
 
 on:
   workflow_dispatch:
@@ -12,21 +12,20 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-natural171-${{ github.ref }}
+  group: gama-unified172-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-
     defaults:
       run:
         shell: bash
 
     env:
-      GAMA_BASE_RUN_ID: "37300132231"
-      GAMA_BASE_ARTIFACT: "Gama-10.3.2-SAFE168-source"
+      GAMA_BASE_RUN_ID: "37317067822"
+      GAMA_BASE_ARTIFACT: "Gama-10.4.2-NATURAL171-source"
 
     steps:
       - name: Checkout repository
@@ -34,12 +33,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore exact SAFE168 green source
+      - name: Restore exact NATURAL171 source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           rm -rf _gama_build
           mkdir -p _gama_build
 
@@ -53,318 +51,344 @@ jobs:
           test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
           test -x _gama_build/gradlew
+          grep -Fq 'versionName = "Gama 10.4.2 Natural Voice Core"' _gama_build/app/build.gradle.kts
 
-          grep -Fq \
-            'versionName = "Gama 10.3.2 Personal Android Core"' \
-            _gama_build/app/build.gradle.kts
+      - name: Baseline integrity guard
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          BASE_KT_FILES="$(find app/src/main/java/com/gama/assistant -maxdepth 1 -type f -name '*.kt' | wc -l | tr -d ' ')"
+          BASE_KT_LINES="$(cat app/src/main/java/com/gama/assistant/*.kt | wc -l | tr -d ' ')"
 
-          echo "PASS: SAFE168 restaurado."
+          if [ "$BASE_KT_FILES" -lt 130 ]; then
+            echo "::error::Base incompleta: apenas $BASE_KT_FILES arquivos Kotlin."
+            exit 1
+          fi
 
-      - name: Apply Natural Voice mega patch
+          if [ "$BASE_KT_LINES" -lt 29000 ]; then
+            echo "::error::Base reduzida: apenas $BASE_KT_LINES linhas Kotlin."
+            exit 1
+          fi
+
+          echo "BASE_KT_FILES=$BASE_KT_FILES" >> "$GITHUB_ENV"
+          echo "BASE_KT_LINES=$BASE_KT_LINES" >> "$GITHUB_ENV"
+          echo "PASS: base preservada com $BASE_KT_FILES arquivos e $BASE_KT_LINES linhas Kotlin."
+
+      - name: Apply Unified Brain Gemini patch
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          cat > "$GITHUB_WORKSPACE/gama-natural.patch.gz.b64" <<'PATCH64'
-          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
+          cat > "$GITHUB_WORKSPACE/gama-unified.patch.gz.b64" <<'PATCH64'
+          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
           PATCH64
 
           base64 --decode \
-            "$GITHUB_WORKSPACE/gama-natural.patch.gz.b64" \
-            > "$GITHUB_WORKSPACE/gama-natural.patch.gz"
+            "$GITHUB_WORKSPACE/gama-unified.patch.gz.b64" \
+            > "$GITHUB_WORKSPACE/gama-unified.patch.gz"
 
           gzip -dc \
-            "$GITHUB_WORKSPACE/gama-natural.patch.gz" \
-            > "$GITHUB_WORKSPACE/gama-natural.patch"
+            "$GITHUB_WORKSPACE/gama-unified.patch.gz" \
+            > "$GITHUB_WORKSPACE/gama-unified.patch"
 
-          patch --batch --forward -p1 \
-            < "$GITHUB_WORKSPACE/gama-natural.patch"
-
-          echo "PASS: Natural Voice patch aplicado."
-
-      - name: Fix Android package visibility for lint
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          MANIFEST="app/src/main/AndroidManifest.xml"
-          test -s "$MANIFEST"
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("app/src/main/AndroidManifest.xml")
-          text = path.read_text(encoding="utf-8")
-          permission = '    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>\n'
-
-          count = text.count(permission)
-          if count != 1:
-              raise SystemExit(
-                  f"QUERY_ALL_PACKAGES cleanup: expected 1 occurrence, found {count}"
-              )
-
-          text = text.replace(permission, "", 1)
-
-          required = [
-              "<queries>",
-              'android.intent.action.MAIN',
-              'android.intent.category.LAUNCHER',
-              'com.whatsapp',
-              'com.google.android.youtube',
-              'com.instagram.android',
-              'com.duolingo',
-          ]
-          missing = [item for item in required if item not in text]
-          if missing:
-              raise SystemExit(
-                  "package visibility declarations missing: " + ", ".join(missing)
-              )
-
-          if "android.permission.QUERY_ALL_PACKAGES" in text:
-              raise SystemExit("QUERY_ALL_PACKAGES still present after cleanup")
-
-          path.write_text(text, encoding="utf-8")
-          print("PASS: package visibility usa <queries> e não QUERY_ALL_PACKAGES.")
-          PY
+          patch --batch --forward -p1 < "$GITHUB_WORKSPACE/gama-unified.patch"
+          echo "PASS: Unified Brain Gemini patch aplicado."
 
       - name: Version and source audit
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          cat > "$GITHUB_WORKSPACE/gama-natural-audit.py" <<'PY'
+          cat > "$GITHUB_WORKSPACE/gama-unified-audit.py" <<'PY'
           from pathlib import Path
           import os
           import re
 
-          root = Path(".")
-          src = root / "app/src/main/java/com/gama/assistant"
-          gradle_path = root / "app/build.gradle.kts"
-          manifest_path = root / "app/src/main/AndroidManifest.xml"
+          root = Path('.')
+          src = root / 'app/src/main/java/com/gama/assistant'
+          gradle_path = root / 'app/build.gradle.kts'
+          manifest_path = root / 'app/src/main/AndroidManifest.xml'
 
-          required_files = [
-              src / "GamaService.kt",
-              src / "VoicePolicy.kt",
-              src / "GamaRecognitionPolicy.kt",
-              src / "GamaSelfSpeechGuard.kt",
-              src / "GamaEnergyView.kt",
-              src / "GamaPresenceContext.kt",
-              src / "GamaBatteryProactive.kt",
-              src / "GamaPersonalTools.kt",
-              src / "GamaSuperAssistantCore.kt",
+          required = [
+              src / 'GamaService.kt',
+              src / 'VoicePolicy.kt',
+              src / 'GamaAppRegistry.kt',
+              src / 'GamaInstalledAppCatalog.kt',
+              src / 'GamaGeminiClient.kt',
+              src / 'GamaGeminiPolicy.kt',
+              src / 'GamaGeminiSecureStore.kt',
+              src / 'GamaGeminiSettingsActivity.kt',
+              src / 'GamaGeminiControl.kt',
+              src / 'GamaWakePhrasePolicy.kt',
+              src / 'GamaPersonalTools.kt',
+              src / 'GamaSuperAssistantCore.kt',
+              src / 'GamaScreenContextService.kt',
           ]
-
-          for file in required_files:
+          for file in required:
               if not file.is_file() or file.stat().st_size == 0:
-                  raise SystemExit(f"required file missing: {file}")
+                  raise SystemExit(f'required file missing: {file}')
 
-          service = (src / "GamaService.kt").read_text(encoding="utf-8")
-          voice = (src / "VoicePolicy.kt").read_text(encoding="utf-8")
-          energy = (src / "GamaEnergyView.kt").read_text(encoding="utf-8")
-          presence = (src / "GamaPresenceContext.kt").read_text(encoding="utf-8")
-          battery = (src / "GamaBatteryProactive.kt").read_text(encoding="utf-8")
-          super_core = (src / "GamaSuperAssistantCore.kt").read_text(encoding="utf-8")
-          recognition = (src / "GamaRecognitionPolicy.kt").read_text(encoding="utf-8")
-          personal_core = (src / "GamaPersonalCore.kt").read_text(encoding="utf-8")
-          manifest = manifest_path.read_text(encoding="utf-8")
-          gradle = gradle_path.read_text(encoding="utf-8")
+          kt_files = list(src.glob('*.kt'))
+          kt_lines = sum(len(p.read_text(encoding='utf-8').splitlines()) for p in kt_files)
+          base_files = int(os.environ['BASE_KT_FILES'])
+          base_lines = int(os.environ['BASE_KT_LINES'])
 
-          invariants = [
-              ("wake latency", "wakePartialHits >= 3" in service),
-              ("post TTS reopen", "ignoreAudioUntil = now + 220L" in service),
-              ("arrival briefing", "GamaPresenceContext.onUserPresent" in service),
-              ("battery proactive", "GamaBatteryProactive.poll" in service),
-              ("backchannel", "fun isBackchannel" in voice),
-              ("hard interrupt", "fun isHardInterrupt" in voice),
-              ("red orb", "canvas.drawCircle" in energy and "gama_red_core" not in energy),
-              ("presence core", "consumeArrivalSummary" in presence),
-              ("battery core", "level <= 12" in battery),
-              ("direct explicit WhatsApp", "explicitEnough" in super_core),
-              ("launcher app visibility", "<queries>" in manifest and "android.intent.action.MAIN" in manifest and "android.intent.category.LAUNCHER" in manifest),
-              ("no QUERY_ALL_PACKAGES", "android.permission.QUERY_ALL_PACKAGES" not in manifest),
-              ("duolingo query", "com.duolingo" in manifest),
-              ("partial freshness guard", "0..2600L" in recognition),
-              ("noise final guard", "meaningful" not in recognition),
-              ("human pause floor", "Long = 3_200L" in personal_core),
-              ("adaptive pause clamp", "3_000L" in personal_core and "3_800L" in personal_core),
+          if len(kt_files) < base_files:
+              raise SystemExit(f'regression: Kotlin files fell from {base_files} to {len(kt_files)}')
+          if kt_lines < base_lines:
+              raise SystemExit(f'regression: Kotlin lines fell from {base_lines} to {kt_lines}')
+          if kt_lines < 30000:
+              raise SystemExit(f'Unified source unexpectedly small: {kt_lines} Kotlin lines')
+
+          service = (src / 'GamaService.kt').read_text(encoding='utf-8')
+          voice = (src / 'VoicePolicy.kt').read_text(encoding='utf-8')
+          registry = (src / 'GamaAppRegistry.kt').read_text(encoding='utf-8')
+          catalog = (src / 'GamaInstalledAppCatalog.kt').read_text(encoding='utf-8')
+          gemini = (src / 'GamaGeminiClient.kt').read_text(encoding='utf-8')
+          secure = (src / 'GamaGeminiSecureStore.kt').read_text(encoding='utf-8')
+          manifest = manifest_path.read_text(encoding='utf-8')
+          all_text = '\\n'.join(p.read_text(encoding='utf-8', errors='ignore') for p in root.rglob('*') if p.is_file() and p.suffix in {'.kt','.xml','.kts','.md','.py','.sh'})
+
+          checks = [
+              ('unified brain routed', 'tryGeminiUnifiedBrain(' in service),
+              ('dynamic installed apps routed', 'GamaInstalledAppCatalog.resolveName' in service and '.resolveOpenRequest(' in service),
+              ('Gemini endpoint', 'generativelanguage.googleapis.com' in gemini),
+              ('Gemini header auth', 'x-goog-api-key' in gemini),
+              ('Gemini model discovery', 'discoverModels' in gemini),
+              ('Android Keystore', 'AndroidKeyStore' in secure),
+              ('dynamic app catalog', 'queryIntentActivities' in catalog and 'LauncherApps' in catalog),
+              ('special wake phrase', 'acorda crianca papai chegou' in voice),
+              ('Gemini settings activity', '.GamaGeminiSettingsActivity' in manifest),
+              ('launcher visibility queries', '<queries>' in manifest and 'android.intent.category.LAUNCHER' in manifest),
+              ('no QUERY_ALL_PACKAGES', 'android.permission.QUERY_ALL_PACKAGES' not in manifest),
+              ('fresh install release non-debuggable', 'isDebuggable = false' in gradle_path.read_text(encoding='utf-8')),
           ]
-
-          failed = [name for name, ok in invariants if not ok]
+          failed = [name for name, ok in checks if not ok]
           if failed:
-              raise SystemExit("Natural Core invariant missing: " + ", ".join(failed))
+              raise SystemExit('Unified invariant missing: ' + ', '.join(failed))
 
-          version_code = 25_420_000 + int(os.environ["GITHUB_RUN_NUMBER"])
-          gradle, code_count = re.subn(
-              r"versionCode\s*=\s*\d+",
-              f"versionCode = {version_code}",
-              gradle,
-              count=1,
-          )
-          gradle, name_count = re.subn(
-              r'versionName\s*=\s*"[^"]*"',
-              'versionName = "Gama 10.4.2 Natural Voice Core"',
-              gradle,
-              count=1,
-          )
+          # A key must never be baked into the APK/workflow/source.
+          secret_patterns = [
+              re.compile(r'AIza[A-Za-z0-9_\-]{20,}'),
+              re.compile(r'AQ\.[A-Za-z0-9_\-]{20,}'),
+          ]
+          for pattern in secret_patterns:
+              if pattern.search(all_text):
+                  raise SystemExit('Possible API credential embedded in source. Refusing build.')
 
+          gradle = gradle_path.read_text(encoding='utf-8')
+          version_code = 25_500_000 + int(os.environ['GITHUB_RUN_NUMBER'])
+          gradle, code_count = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {version_code}', gradle, count=1)
+          gradle, name_count = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 10.5.0 Unified Brain Gemini"', gradle, count=1)
           if code_count != 1 or name_count != 1:
-              raise SystemExit("version update failed")
+              raise SystemExit('version update failed')
+          gradle_path.write_text(gradle, encoding='utf-8')
 
-          if "isDebuggable = false" not in gradle:
-              raise SystemExit("release debuggable guard missing")
-
-          gradle_path.write_text(gradle, encoding="utf-8")
-          print(f"PASS: Natural Core audit; versionCode={version_code}")
+          print(f'PASS: {len(kt_files)} Kotlin files, {kt_lines} lines; versionCode={version_code}')
           PY
 
-          python3 -m py_compile \
-            "$GITHUB_WORKSPACE/gama-natural-audit.py"
-
-          python3 \
-            "$GITHUB_WORKSPACE/gama-natural-audit.py"
+          python3 -m py_compile "$GITHUB_WORKSPACE/gama-unified-audit.py"
+          python3 "$GITHUB_WORKSPACE/gama-unified-audit.py"
 
       - name: Java 17
         uses: actions/setup-java@v5
@@ -375,10 +399,8 @@ jobs:
       - name: Android SDK 35
         run: |
           set -euo pipefail
-
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           test -d "$SDK_ROOT"
-
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
@@ -386,12 +408,8 @@ jobs:
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           fi
-
           test -x "$SDKMANAGER"
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
@@ -415,31 +433,19 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew \
-            :app:compileReleaseKotlin \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
+          ./gradlew :app:compileReleaseKotlin --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
 
       - name: Unit tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew \
-            test \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
+          ./gradlew test --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
       - name: Android lint
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew \
-            lint \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-lint.log"
+          ./gradlew lint --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-lint.log"
 
       - name: Prepare offline models
         working-directory: _gama_build
@@ -453,27 +459,15 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew \
-            assembleRelease \
-            --no-daemon \
-            --stacktrace \
-            2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
 
       - name: Sign Release APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
           mkdir -p dist
 
-          input_apk="$(
-            find app/build/outputs/apk/release \
-              -maxdepth 1 \
-              -type f \
-              -name '*.apk' \
-              -print | head -n 1
-          )"
-
+          input_apk="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print | head -n 1)"
           if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
             echo "::error::APK Release não encontrado após assembleRelease."
             exit 1
@@ -484,57 +478,42 @@ jobs:
           test -x "$ZIPALIGN"
           test -x "$APKSIGNER"
 
-          "$ZIPALIGN" -f 4 \
-            "$input_apk" \
-            dist/Gama-aligned.apk
+          "$ZIPALIGN" -f 4 "$input_apk" dist/Gama-aligned.apk
 
-          rm -f /tmp/gama-natural171.jks
-
-          keytool \
-            -genkeypair \
-            -keystore /tmp/gama-natural171.jks \
-            -storepass GamaNatural2026 \
-            -keypass GamaNatural2026 \
+          rm -f /tmp/gama-unified172.jks
+          keytool -genkeypair \
+            -keystore /tmp/gama-unified172.jks \
+            -storepass GamaUnified2026 \
+            -keypass GamaUnified2026 \
             -alias gama \
             -keyalg RSA \
             -keysize 2048 \
             -validity 3650 \
-            -dname "CN=Gama Natural Test,O=Gama,C=BR"
+            -dname "CN=Gama Unified Test,O=Gama,C=BR"
 
           "$APKSIGNER" sign \
-            --ks /tmp/gama-natural171.jks \
+            --ks /tmp/gama-unified172.jks \
             --ks-key-alias gama \
-            --ks-pass pass:GamaNatural2026 \
-            --key-pass pass:GamaNatural2026 \
+            --ks-pass pass:GamaUnified2026 \
+            --key-pass pass:GamaUnified2026 \
             --out dist/Gama.apk \
             dist/Gama-aligned.apk
 
-          rm -f dist/Gama-aligned.apk /tmp/gama-natural171.jks
+          rm -f dist/Gama-aligned.apk /tmp/gama-unified172.jks
           echo "fresh-install-only" > dist/install-mode.txt
 
       - name: Verify final APK
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
           test -s dist/Gama.apk
 
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
-            verify \
-            --verbose \
-            --print-certs \
-            dist/Gama.apk \
-            | tee dist/signature-info.txt
-
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
-            dump badging \
-            dist/Gama.apk \
-            > dist/apk-info.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/Gama.apk | tee dist/signature-info.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Gama.apk > dist/apk-info.txt
 
           grep -q "name='com.gama.assistant'" dist/apk-info.txt
-          grep -q "versionName='Gama 10.4.2 Natural Voice Core'" dist/apk-info.txt
-
-          EXPECTED_VERSION_CODE="$((25420000 + GITHUB_RUN_NUMBER))"
+          grep -q "versionName='Gama 10.5.0 Unified Brain Gemini'" dist/apk-info.txt
+          EXPECTED_VERSION_CODE="$((25500000 + GITHUB_RUN_NUMBER))"
           grep -q "versionCode='$EXPECTED_VERSION_CODE'" dist/apk-info.txt
 
           if grep -q 'application-debuggable' dist/apk-info.txt; then
@@ -547,13 +526,12 @@ jobs:
             sha256sum Gama.apk > Gama.apk.sha256
             sha256sum -c Gama.apk.sha256
           )
-
-          echo "PASS: _gama_build/dist/Gama.apk criado, assinado e verificado."
+          echo "PASS: _gama_build/dist/Gama.apk existe, está assinado e foi verificado."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.4.2-NATURAL171-FRESH-INSTALL-ONLY
+          name: Gama-10.5.0-UNIFIED172-FRESH-INSTALL-ONLY
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -565,7 +543,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.4.2-NATURAL171-source
+          name: Gama-10.5.0-UNIFIED172-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -577,10 +555,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.4.2-NATURAL171-diagnostics-${{ github.run_number }}
+          name: Gama-10.5.0-UNIFIED172-diagnostics-${{ github.run_number }}
           path: |
-            gama-natural-audit.py
-            gama-natural.patch
+            gama-unified-audit.py
+            gama-unified.patch
             gama-compile.log
             gama-tests.log
             gama-lint.log
@@ -595,15 +573,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          TAG="gama-v10.4.2-natural-${{ github.run_number }}"
-
+          TAG="gama-v10.5.0-unified-${{ github.run_number }}"
           gh release create \
             "$TAG" \
             "_gama_build/dist/Gama.apk#Gama.apk" \
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 10.4.2 Natural Voice Core" \
-            --notes "Build baseado diretamente no SAFE168 verde. Mantém o Natural Voice Core validado no #170 e corrige o único bloqueio restante: remove QUERY_ALL_PACKAGES e usa a visibilidade de apps por <queries> com MAIN/LAUNCHER e pacotes conhecidos. Preserva orbe vermelho, apps instalados, WhatsApp, modo ausência/retorno, resumo ao desbloquear e alerta de bateria baixa." \
+            --title "Gama 10.5.0 Unified Brain Gemini" \
+            --notes "Base NATURAL171 preservada. Adiciona Gemini opcional com chave protegida localmente, cérebro unificado, descoberta dinâmica de apps instalados, frase especial de despertar e travas anti-regressão. Nenhuma chave de API é embutida no APK." \
             --latest
