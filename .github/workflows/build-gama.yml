@@ -1,4 +1,4 @@
-name: Build Gama 10.3.2 SAFE163
+name: Build Gama 10.3.2 SAFE168 APK
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ on:
       - ".github/workflows/build-gama.yml"
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 concurrency:
-  group: gama-safe163-${{ github.ref }}
+  group: gama-safe168-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -27,7 +27,8 @@ jobs:
     env:
       GAMA_BASE_RUN_ID: "37226292316"
       GAMA_BASE_ARTIFACT: "Gama-10.0.0-JARVIS-CONTEXT-source"
-      GAMA_EXPECTED_CERT_SHA256: "6933EDA890C29567A8F4B6CEAD7A39A442DF109D43B813A19F3F6FA7F39B078C"
+      GAMA_PATCH_RUN_ID: "37297324563"
+      GAMA_PATCH_ARTIFACT: "Gama-10.3.2-SAFE163-compile-debug-165"
 
     steps:
       - name: Checkout repository
@@ -35,35 +36,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve signing mode
-        id: signing
-        env:
-          GAMA_SIGNING_SEED: ${{ secrets.GAMA_SIGNING_SEED }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${GAMA_SIGNING_SEED:-}" ]; then
-            echo "mode=fresh" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-10.3.2-SAFE163-FRESH-INSTALL-ONLY" >> "$GITHUB_OUTPUT"
-
-            echo "::warning::GAMA_SIGNING_SEED não está configurado."
-            echo "::warning::O APK será Release, mas será FRESH-INSTALL-ONLY."
-          elif printf '%s' "$GAMA_SIGNING_SEED" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
-            echo "mode=stable" >> "$GITHUB_OUTPUT"
-            echo "artifact=Gama-10.3.2-SAFE163-APK" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::GAMA_SIGNING_SEED deve possuir exatamente 64 caracteres hexadecimais."
-            exit 1
-          fi
-
       - name: Restore exact green Gama source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          rm -rf _gama_build
-          mkdir -p _gama_build
+          rm -rf _gama_build _gama_patch
+          mkdir -p _gama_build _gama_patch
 
           gh run download \
             "$GAMA_BASE_RUN_ID" \
@@ -74,194 +54,330 @@ jobs:
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaScreenContextService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaNotificationListener.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaUnreadMessageStore.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaCalendarManager.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/ConversationSession.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/VoicePolicy.kt
+          test -x _gama_build/gradlew
 
-          grep -Fq \
-            'versionName = "Gama 10.0.0 JARVIS Context Core"' \
-            _gama_build/app/build.gradle.kts
+          echo "PASS: base #156 restaurada."
 
-          grep -Fq \
-            'isDebuggable = false' \
-            _gama_build/app/build.gradle.kts
+      - name: Download verified SAFE165 patch files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
 
-          echo "PASS: base verde do #156 restaurada."
+          gh run download \
+            "$GAMA_PATCH_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$GAMA_PATCH_ARTIFACT" \
+            --dir _gama_patch
 
-      - name: Add Personal Android tools
+          PATCH_ROOT="_gama_patch/_gama_build"
+
+          test -s "$PATCH_ROOT/app/src/main/java/com/gama/assistant/GamaPersonalTools.kt"
+          test -s "$PATCH_ROOT/app/src/main/java/com/gama/assistant/GamaService.kt"
+
+          cp \
+            "$PATCH_ROOT/app/src/main/java/com/gama/assistant/GamaPersonalTools.kt" \
+            "_gama_build/app/src/main/java/com/gama/assistant/GamaPersonalTools.kt"
+
+          cp \
+            "$PATCH_ROOT/app/src/main/java/com/gama/assistant/GamaService.kt" \
+            "_gama_build/app/src/main/java/com/gama/assistant/GamaService.kt"
+
+          echo "PASS: Personal Android patch aplicado."
+
+      - name: Set version and audit patched source
         working-directory: _gama_build
         run: |
           set -euo pipefail
 
-          SRC="app/src/main/java/com/gama/assistant"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
 
-          cat > "$SRC/GamaPersonalTools.kt" <<'KOTLIN'
-          package com.gama.assistant
+          gradle_path = Path("app/build.gradle.kts")
+          service_path = Path("app/src/main/java/com/gama/assistant/GamaService.kt")
+          tools_path = Path("app/src/main/java/com/gama/assistant/GamaPersonalTools.kt")
+          manifest_path = Path("app/src/main/AndroidManifest.xml")
 
-          import android.accessibilityservice.AccessibilityService
-          import android.app.KeyguardManager
-          import android.content.Context
-          import android.content.Intent
-          import android.net.ConnectivityManager
-          import android.net.NetworkCapabilities
-          import android.net.Uri
-          import android.os.BatteryManager
-          import android.provider.AlarmClock
-          import java.text.Normalizer
-          import java.util.Calendar
-          import java.util.Locale
+          gradle = gradle_path.read_text(encoding="utf-8")
+          service = service_path.read_text(encoding="utf-8")
+          tools = tools_path.read_text(encoding="utf-8")
+          manifest = manifest_path.read_text(encoding="utf-8")
 
-          object GamaPersonalTools {
+          version_code = 25_330_000 + int(os.environ["GITHUB_RUN_NUMBER"])
 
-              fun handle(
-                  service: GamaService,
-                  raw: String,
-              ): String? {
-                  GamaSilentContext.handle(
-                      service,
-                      raw,
-                  )?.let {
-                      return it
-                  }
+          gradle, code_count = re.subn(
+              r"versionCode\s*=\s*\d+",
+              f"versionCode = {version_code}",
+              gradle,
+              count=1,
+          )
+          gradle, name_count = re.subn(
+              r'versionName\s*=\s*"[^"]*"',
+              'versionName = "Gama 10.3.2 Personal Android Core"',
+              gradle,
+              count=1,
+          )
 
-                  systemStatus(
-                      service,
-                      raw,
-                  )?.let {
-                      return it
-                  }
+          if code_count != 1 or name_count != 1:
+              raise SystemExit("Falha ao atualizar versionCode/versionName.")
 
-                  notificationDigest(
-                      service,
-                      raw,
-                  )?.let {
-                      return it
-                  }
+          route_pattern = r"GamaPersonalTools\s*\.handle\s*\("
+          route_count = len(re.findall(route_pattern, service))
+          if route_count != 1:
+              raise SystemExit(
+                  f"Roteamento GamaPersonalTools inválido: {route_count}"
+              )
 
-                  timer(
-                      service,
-                      raw,
-                  )?.let {
-                      return it
-                  }
+          required_tools = (
+              "AlarmClock.ACTION_SET_TIMER",
+              "GamaScreenContextService",
+              "GamaUnreadMessageStore",
+              "GamaSilentContext",
+          )
+          missing = [item for item in required_tools if item not in tools]
+          if missing:
+              raise SystemExit(f"Personal tools incompleto: {missing}")
 
-                  website(
-                      service,
-                      raw,
-                  )?.let {
-                      return it
-                  }
+          if "com.android.alarm.permission.SET_ALARM" not in manifest:
+              raise SystemExit("Permissão SET_ALARM ausente na base.")
 
-                  systemAction(
-                      service,
-                      raw,
-                  )?.let {
-                      return it
-                  }
+          if "isDebuggable = false" not in gradle:
+              raise SystemExit("Release debuggable detectado na configuração.")
 
-                  return null
-              }
+          gradle_path.write_text(gradle, encoding="utf-8")
+          print(f"PASS: source auditado; versionCode={version_code}")
+          PY
 
-              private fun systemStatus(
-                  context: Context,
-                  raw: String,
-              ): String? {
-                  val text =
-                      normalize(raw)
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
 
-                  if (
-                      text !in setOf(
-                          "como estamos",
-                          "gama como estamos",
-                          "como esta o sistema",
-                          "como esta o celular",
-                          "status do sistema",
-                          "status do celular",
-                      )
-                  ) {
-                      return null
-                  }
+      - name: Android SDK 35
+        run: |
+          set -euo pipefail
 
-                  val batteryManager =
-                      context.getSystemService(
-                          BatteryManager::class.java
-                      )
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK_ROOT"
 
-                  val battery =
-                      batteryManager
-                          ?.getIntProperty(
-                              BatteryManager.BATTERY_PROPERTY_CAPACITY
-                          )
-                          ?.takeIf {
-                              it in 0..100
-                          }
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-                  val charging =
-                      batteryManager?.isCharging ==
-                          true
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
 
-                  val connectivity =
-                      context.getSystemService(
-                          ConnectivityManager::class.java
-                      )
+          test -x "$SDKMANAGER"
 
-                  val capabilities =
-                      connectivity
-                          ?.getNetworkCapabilities(
-                              connectivity.activeNetwork
-                          )
+          "$SDKMANAGER" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
 
-                  val network =
-                      when {
-                          capabilities?.hasTransport(
-                              NetworkCapabilities.TRANSPORT_WIFI
-                          ) == true ->
-                              "Wi-Fi"
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
 
-                          capabilities?.hasTransport(
-                              NetworkCapabilities.TRANSPORT_CELLULAR
-                          ) == true ->
-                              "dados móveis"
+      - name: Prepare Gradle wrapper
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --version
 
-                          capabilities?.hasCapability(
-                              NetworkCapabilities.NET_CAPABILITY_INTERNET
-                          ) == true ->
-                              "internet ativa"
+      - name: Clean
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew clean --no-daemon --stacktrace
 
-                          else ->
-                              "sem conexão"
-                      }
+      - name: Compile Release Kotlin
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            :app:compileReleaseKotlin \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-compile.log"
 
-                  val unread =
-                      GamaUnreadMessageStore
-                          .peekUnread(context)
-                          .size
+      - name: Unit tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            test \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-tests.log"
 
-                  return buildString {
-                      append(
-                          "Estamos operacionais."
-                      )
+      - name: Android lint
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            lint \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-lint.log"
 
-                      battery?.let {
-                          append(
-                              " A bateria está em $it por cento"
-                          )
+      - name: Prepare offline models
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          if [ -x tools/download_models.sh ]; then
+            bash tools/download_models.sh
+          fi
 
-                          if (charging) {
-                              append(
-                                  " e carregando"
-                              )
-                          }
+      - name: Assemble Release
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          ./gradlew \
+            assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            2>&1 | tee "$GITHUB_WORKSPACE/gama-release.log"
 
-                          append(".")
-                      }
+      - name: Sign fresh-install Release APK
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
 
-                      append(
-                          " A conexão atual é $network."
-                      )
+          mkdir -p dist
 
-                      append(
-                          "
+          input_apk="$(
+            find \
+              app/build/outputs/apk/release \
+              -maxdepth 1 \
+              -type f \
+              -name '*.apk' \
+              -print \
+              | head -n 1
+          )"
+
+          if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
+            echo "::error::APK Release não encontrado após assembleRelease."
+            exit 1
+          fi
+
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+
+          test -x "$ZIPALIGN"
+          test -x "$APKSIGNER"
+
+          "$ZIPALIGN" \
+            -f \
+            4 \
+            "$input_apk" \
+            dist/Gama-aligned.apk
+
+          rm -f /tmp/gama-safe168.jks
+
+          keytool \
+            -genkeypair \
+            -keystore /tmp/gama-safe168.jks \
+            -storepass GamaFresh2026 \
+            -keypass GamaFresh2026 \
+            -alias gama \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=Gama Fresh Test,O=Gama,C=BR"
+
+          "$APKSIGNER" \
+            sign \
+            --ks /tmp/gama-safe168.jks \
+            --ks-key-alias gama \
+            --ks-pass pass:GamaFresh2026 \
+            --key-pass pass:GamaFresh2026 \
+            --out dist/Gama.apk \
+            dist/Gama-aligned.apk
+
+          rm -f dist/Gama-aligned.apk /tmp/gama-safe168.jks
+
+          echo "fresh-install-only" > dist/install-mode.txt
+
+      - name: Verify final APK
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          test -s dist/Gama.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" \
+            verify \
+            --verbose \
+            --print-certs \
+            dist/Gama.apk \
+            | tee dist/signature-info.txt
+
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" \
+            dump \
+            badging \
+            dist/Gama.apk \
+            > dist/apk-info.txt
+
+          grep -q \
+            "name='com.gama.assistant'" \
+            dist/apk-info.txt
+
+          grep -q \
+            "versionName='Gama 10.3.2 Personal Android Core'" \
+            dist/apk-info.txt
+
+          if grep -q 'application-debuggable' dist/apk-info.txt; then
+            echo "::error::APK final está debuggable."
+            exit 1
+          fi
+
+          (
+            cd dist
+            sha256sum Gama.apk > Gama.apk.sha256
+            sha256sum -c Gama.apk.sha256
+          )
+
+          echo "PASS: _gama_build/dist/Gama.apk criado e verificado."
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.3.2-SAFE168-FRESH-INSTALL-ONLY
+          path: |
+            _gama_build/dist/Gama.apk
+            _gama_build/dist/Gama.apk.sha256
+            _gama_build/dist/apk-info.txt
+            _gama_build/dist/signature-info.txt
+            _gama_build/dist/install-mode.txt
+          if-no-files-found: error
+
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.3.2-SAFE168-source
+          path: |
+            _gama_build/**
+            !_gama_build/.gradle/**
+            !_gama_build/**/build/**
+            !_gama_build/dist/**
+          if-no-files-found: error
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gama-10.3.2-SAFE168-diagnostics-${{ github.run_number }}
+          path: |
+            gama-compile.log
+            gama-tests.log
+            gama-lint.log
+            gama-release.log
+            _gama_build/app/build/reports/**
+            _gama_build/app/build/test-results/**
+          if-no-files-found: warn
