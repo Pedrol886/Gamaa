@@ -1,4 +1,4 @@
-name: Build Gama 10.4.1 NATURAL170 APK
+name: Build Gama 10.4.2 NATURAL171 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-natural170-${{ github.ref }}
+  group: gama-natural171-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -225,6 +225,51 @@ jobs:
 
           echo "PASS: Natural Voice patch aplicado."
 
+      - name: Fix Android package visibility for lint
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+
+          MANIFEST="app/src/main/AndroidManifest.xml"
+          test -s "$MANIFEST"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/AndroidManifest.xml")
+          text = path.read_text(encoding="utf-8")
+          permission = '    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>\n'
+
+          count = text.count(permission)
+          if count != 1:
+              raise SystemExit(
+                  f"QUERY_ALL_PACKAGES cleanup: expected 1 occurrence, found {count}"
+              )
+
+          text = text.replace(permission, "", 1)
+
+          required = [
+              "<queries>",
+              'android.intent.action.MAIN',
+              'android.intent.category.LAUNCHER',
+              'com.whatsapp',
+              'com.google.android.youtube',
+              'com.instagram.android',
+              'com.duolingo',
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(
+                  "package visibility declarations missing: " + ", ".join(missing)
+              )
+
+          if "android.permission.QUERY_ALL_PACKAGES" in text:
+              raise SystemExit("QUERY_ALL_PACKAGES still present after cleanup")
+
+          path.write_text(text, encoding="utf-8")
+          print("PASS: package visibility usa <queries> e não QUERY_ALL_PACKAGES.")
+          PY
+
       - name: Version and source audit
         working-directory: _gama_build
         run: |
@@ -278,7 +323,8 @@ jobs:
               ("presence core", "consumeArrivalSummary" in presence),
               ("battery core", "level <= 12" in battery),
               ("direct explicit WhatsApp", "explicitEnough" in super_core),
-              ("all apps visibility", "android.permission.QUERY_ALL_PACKAGES" in manifest),
+              ("launcher app visibility", "<queries>" in manifest and "android.intent.action.MAIN" in manifest and "android.intent.category.LAUNCHER" in manifest),
+              ("no QUERY_ALL_PACKAGES", "android.permission.QUERY_ALL_PACKAGES" not in manifest),
               ("duolingo query", "com.duolingo" in manifest),
               ("partial freshness guard", "0..2600L" in recognition),
               ("noise final guard", "meaningful" not in recognition),
@@ -290,7 +336,7 @@ jobs:
           if failed:
               raise SystemExit("Natural Core invariant missing: " + ", ".join(failed))
 
-          version_code = 25_410_000 + int(os.environ["GITHUB_RUN_NUMBER"])
+          version_code = 25_420_000 + int(os.environ["GITHUB_RUN_NUMBER"])
           gradle, code_count = re.subn(
               r"versionCode\s*=\s*\d+",
               f"versionCode = {version_code}",
@@ -299,7 +345,7 @@ jobs:
           )
           gradle, name_count = re.subn(
               r'versionName\s*=\s*"[^"]*"',
-              'versionName = "Gama 10.4.1 Natural Voice Core"',
+              'versionName = "Gama 10.4.2 Natural Voice Core"',
               gradle,
               count=1,
           )
@@ -442,11 +488,11 @@ jobs:
             "$input_apk" \
             dist/Gama-aligned.apk
 
-          rm -f /tmp/gama-natural170.jks
+          rm -f /tmp/gama-natural171.jks
 
           keytool \
             -genkeypair \
-            -keystore /tmp/gama-natural170.jks \
+            -keystore /tmp/gama-natural171.jks \
             -storepass GamaNatural2026 \
             -keypass GamaNatural2026 \
             -alias gama \
@@ -456,14 +502,14 @@ jobs:
             -dname "CN=Gama Natural Test,O=Gama,C=BR"
 
           "$APKSIGNER" sign \
-            --ks /tmp/gama-natural170.jks \
+            --ks /tmp/gama-natural171.jks \
             --ks-key-alias gama \
             --ks-pass pass:GamaNatural2026 \
             --key-pass pass:GamaNatural2026 \
             --out dist/Gama.apk \
             dist/Gama-aligned.apk
 
-          rm -f dist/Gama-aligned.apk /tmp/gama-natural170.jks
+          rm -f dist/Gama-aligned.apk /tmp/gama-natural171.jks
           echo "fresh-install-only" > dist/install-mode.txt
 
       - name: Verify final APK
@@ -486,9 +532,9 @@ jobs:
             > dist/apk-info.txt
 
           grep -q "name='com.gama.assistant'" dist/apk-info.txt
-          grep -q "versionName='Gama 10.4.1 Natural Voice Core'" dist/apk-info.txt
+          grep -q "versionName='Gama 10.4.2 Natural Voice Core'" dist/apk-info.txt
 
-          EXPECTED_VERSION_CODE="$((25410000 + GITHUB_RUN_NUMBER))"
+          EXPECTED_VERSION_CODE="$((25420000 + GITHUB_RUN_NUMBER))"
           grep -q "versionCode='$EXPECTED_VERSION_CODE'" dist/apk-info.txt
 
           if grep -q 'application-debuggable' dist/apk-info.txt; then
@@ -507,7 +553,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.4.1-NATURAL170-FRESH-INSTALL-ONLY
+          name: Gama-10.4.2-NATURAL171-FRESH-INSTALL-ONLY
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -519,7 +565,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.4.1-NATURAL170-source
+          name: Gama-10.4.2-NATURAL171-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -531,7 +577,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.4.1-NATURAL170-diagnostics-${{ github.run_number }}
+          name: Gama-10.4.2-NATURAL171-diagnostics-${{ github.run_number }}
           path: |
             gama-natural-audit.py
             gama-natural.patch
@@ -550,7 +596,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="gama-v10.4.1-natural-${{ github.run_number }}"
+          TAG="gama-v10.4.2-natural-${{ github.run_number }}"
 
           gh release create \
             "$TAG" \
@@ -558,6 +604,6 @@ jobs:
             "_gama_build/dist/Gama.apk.sha256#Gama.apk.sha256" \
             "_gama_build/dist/install-mode.txt#install-mode.txt" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Gama 10.4.1 Natural Voice Core" \
-            --notes "Build baseado diretamente no SAFE168 verde. Inclui Natural Voice Core e corrige os 3 testes do #169: janela de partial de 2,6 s, bloqueio de ruído sem evidência de voz e pausa semântica de 3,2 s para frases incompletas. Mantém orbe vermelho, apps instalados, WhatsApp, modo ausência/retorno, resumo ao desbloquear e alerta de bateria baixa." \
+            --title "Gama 10.4.2 Natural Voice Core" \
+            --notes "Build baseado diretamente no SAFE168 verde. Mantém o Natural Voice Core validado no #170 e corrige o único bloqueio restante: remove QUERY_ALL_PACKAGES e usa a visibilidade de apps por <queries> com MAIN/LAUNCHER e pacotes conhecidos. Preserva orbe vermelho, apps instalados, WhatsApp, modo ausência/retorno, resumo ao desbloquear e alerta de bateria baixa." \
             --latest
