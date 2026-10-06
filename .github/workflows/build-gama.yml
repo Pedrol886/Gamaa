@@ -1,4 +1,4 @@
-name: Build Gama 10.6.1 WAKEFIX176 APK
+name: Build Gama 10.6.2 LOCALFIRST177 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-10-6-1-wakefix176-${{ github.ref }}
+  group: gama-10-6-2-localfirst177-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -23,8 +23,8 @@ jobs:
       run:
         shell: bash
     env:
-      GAMA_BASE_RUN_ID: "37377352221"
-      GAMA_BASE_ARTIFACT: "Gama-10.6.0-GEMINIFIRST-source"
+      GAMA_BASE_RUN_ID: "37396135242"
+      GAMA_BASE_ARTIFACT: "Gama-10.6.1-WAKEFIX176-source"
 
     steps:
       - name: Checkout repository
@@ -32,7 +32,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Restore proven Gama 10.6.0 source
+      - name: Restore proven WAKEFIX176 source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -47,164 +47,182 @@ jobs:
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaGeminiClient.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt
           test -s _gama_build/app/src/main/assets/model/final.mdl
           test -s _gama_build/app/src/main/assets/model/Gr.fst
+          test -s _gama_build/app/src/main/assets/spk-model/final.ext.raw
           test -f _gama_build/gradlew
           chmod +x _gama_build/gradlew
 
-      - name: Patch hotword and TTS recovery
+      - name: Patch LOCALFIRST177 routing and Gemini
         run: |
           set -euo pipefail
-          cat > "$GITHUB_WORKSPACE/patch_wakefix176.py" <<'PY'
+          cat > "$GITHUB_WORKSPACE/gama177_patch.py" <<'PY_PATCH'
           from pathlib import Path
+          import os
           import re
 
           root = Path("_gama_build")
-          service_path = root / "app/src/main/java/com/gama/assistant/GamaService.kt"
+          service = root / "app/src/main/java/com/gama/assistant/GamaService.kt"
+          client = root / "app/src/main/java/com/gama/assistant/GamaGeminiClient.kt"
+          isolation = root / "app/src/main/java/com/gama/assistant/LocalCommandIsolationPolicy.kt"
           gradle_path = root / "app/build.gradle.kts"
 
-          service = service_path.read_text(encoding="utf-8")
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              if old not in text:
+                  raise SystemExit(f"Patch não encontrado: {label}")
+              return text.replace(old, new, 1)
 
-          wake_pattern = re.compile(
-              r"(?m)^(\s*)val wakeConfirmed = endpoint \|\| partialWakeStable\n"
-              r"\1if \(wakeConfirmed && GamaSupervisor\.acceptWake\(\n"
-              r"\s*text = wakeText,\n"
-              r"\s*sessionActive = conversation\.active,\n"
-              r"\s*voiceEvidence = wakeVoiceEvidence,\n"
-              r"\s*\)\) \{"
+          # Gemini: novos projetos usam modelos atuais primeiro; 2.5 fica como fallback legado.
+          t = client.read_text(encoding="utf-8")
+          t = replace_once(
+              t,
+              '''    private val preferredModels = listOf(\n        "gemini-2.5-flash",\n        "gemini-2.5-flash-lite",\n    )''',
+              '''    private val preferredModels = listOf(\n        "gemini-3.8-flash",\n        "gemini-3.5-flash-lite",\n        "gemini-3.5-flash",\n        "gemini-2.5-flash",\n        "gemini-2.5-flash-lite",\n    )''',
+              "modelos Gemini",
           )
-          wake_match = wake_pattern.search(service)
-          if not wake_match:
-              raise SystemExit("WAKEFIX176: dedicated wake block not found")
-          indent = wake_match.group(1)
-          replacement_wake = (
-              f"{indent}val wakeConfirmed = endpoint || partialWakeStable\n"
-              f"{indent}// WAKEFIX176: the dedicated recognizer is constrained to the wake vocabulary.\n"
-              f"{indent}// Trust a stable/final hotword decode even when OEM DSP RMS is low.\n"
-              f"{indent}val dedicatedWakeAccepted =\n"
-              f"{indent}    wakeConfirmed &&\n"
-              f"{indent}    !conversation.active &&\n"
-              f"{indent}    VoicePolicy.hasWake(wakeText)\n"
-              f"{indent}if (dedicatedWakeAccepted) {{"
+
+          # Grounding pode ser recusado no Free Tier/modelo. Tenta sem grounding antes de desistir.
+          t = replace_once(
+              t,
+              '''            try {\n                return requestModel(apiKey, model, userText, history, contextSummary, installedApps, grounding)\n                    .also { selectedModel = model }\n            } catch (e: GeminiModelUnavailable) {\n                if (selectedModel == model) selectedModel = null\n                lastError = e\n            }''',
+              '''            try {\n                return requestModel(apiKey, model, userText, history, contextSummary, installedApps, grounding)\n                    .also { selectedModel = model }\n            } catch (e: GeminiGroundingUnavailable) {\n                return requestModel(apiKey, model, userText, history, contextSummary, installedApps, false)\n                    .also { selectedModel = model }\n            } catch (e: GeminiModelUnavailable) {\n                if (selectedModel == model) selectedModel = null\n                lastError = e\n            }''',
+              "retry sem grounding",
           )
-          service = wake_pattern.sub(lambda _: replacement_wake, service, count=1)
 
-          old_hits = '''                        wakePartialHits >= 3'''
-          new_hits = '''                        // Two stable constrained partials are enough. This keeps the
-                        // response fast while still requiring repeated hotword evidence.
-                        wakePartialHits >= 2'''
-          if old_hits not in service:
-              raise SystemExit("WAKEFIX176: partial hit threshold not found")
-          service = service.replace(old_hits, new_hits, 1)
+          t = replace_once(
+              t,
+              '''            if (code !in 200..299) {\n                if (code == 400 || code == 403 || code == 404) throw GeminiModelUnavailable("$model indisponível ($code)")\n                throw IllegalStateException("Gemini HTTP $code")\n            }''',
+              '''            if (code !in 200..299) {\n                if (grounding && (code == 400 || code == 403)) {\n                    throw GeminiGroundingUnavailable("Grounding indisponível para $model ($code)")\n                }\n                if (code == 400 || code == 403 || code == 404) {\n                    throw GeminiModelUnavailable("$model indisponível ou chave sem acesso ($code)")\n                }\n                throw IllegalStateException("Gemini HTTP $code")\n            }''',
+              "tratamento HTTP Gemini",
+          )
 
-          old_tts = "\n".join([
-              "    if (!ttsReady) {",
-              "        if (ttsFailed) {",
-              "            val id = \"failed-${SystemClock.elapsedRealtimeNanos()}\"",
-              "            activeUtterance = id",
-              "            finishTts(id)",
-              "        } else {",
-              "            pendingSpeech = displayText",
-              "            pendingCloseAfterSpeech = closeAfter",
-              "        }",
-              "        return",
-              "    }",
-          ])
+          t = replace_once(
+              t,
+              '''    private class GeminiModelUnavailable(message: String) : Exception(message)\n}''',
+              '''    private class GeminiGroundingUnavailable(message: String) : Exception(message)\n    private class GeminiModelUnavailable(message: String) : Exception(message)\n}''',
+              "exceções Gemini",
+          )
+          client.write_text(t, encoding="utf-8")
 
-          new_tts = "\n".join([
-              "    if (!ttsReady) {",
-              "        // WAKEFIX176: never silently discard a reply because Android TTS failed",
-              "        // during an earlier initialization. Keep the reply and attempt a fresh",
-              "        // engine start. A later user call can retry again if the device has no",
-              "        // working TTS engine configured.",
-              "        pendingSpeech = displayText",
-              "        pendingCloseAfterSpeech = closeAfter",
-              "        if (ttsFailed) {",
-              "            updateNotification(\"Recuperando a voz do Gama...\")",
-              "            restartTtsAfterFailure()",
-              "        }",
-              "        return",
-              "    }",
-          ])
+          # Política local: reconhecer perguntas naturais de hora sem depender da API.
+          t = isolation.read_text(encoding="utf-8")
+          t = replace_once(
+              t,
+              '        if (Regex("\\\\b(que horas|qual a hora|horas sao|hora agora)\\\\b").containsMatchIn(c)) return Kind.TIME',
+              '''        val clockWord = Regex("\\\\b(hora|horas|horario)\\\\b").containsMatchIn(c)\n        val clockQuestion = Regex("\\\\b(que|qual|agora|diga|diz|fala|fale|sao)\\\\b").containsMatchIn(c)\n        val clockEvent = Regex("\\\\b(comeca|inicia|abre|fecha|termina|acontece|eleicao|eleicoes|votacao|jogo|evento|show|prova|consulta|reuniao|voo|onibus|filme|amanha|ontem)\\\\b").containsMatchIn(c)\n        if (clockWord && clockQuestion && !clockEvent) return Kind.TIME''',
+              "política local da hora",
+          )
+          isolation.write_text(t, encoding="utf-8")
 
-          if old_tts not in service:
-              raise SystemExit("WAKEFIX176: TTS fallback block not found")
-          service = service.replace(old_tts, new_tts, 1)
+          # Serviço principal: local/device ganha da API em qualquer cenário.
+          t = service.read_text(encoding="utf-8")
+          t = replace_once(
+              t,
+              '''        val asksClock = c.contains("que horas") ||\n            c.contains("que hora") ||\n            c.contains("que ora") ||\n            c.contains("qual a hora") ||\n            c.contains("qual hora") ||\n            c.contains("qual horario") ||\n            c.contains("qual o horario") ||\n            c.contains("horas sao") ||\n            c.contains("hora agora") ||\n            c.contains("horas agora") ||\n            c.contains("horario agora") ||\n            c.contains("me diga as horas") ||\n            c.contains("diga as horas") ||\n            c == "as horas" ||\n            c == "hora" ||\n            c == "horas" ||\n            c == "horario"\n        if (!asksClock) return false''',
+              '''        val clockWord = Regex("\\\\b(hora|horas|horario)\\\\b").containsMatchIn(c)\n        val naturalClockQuestion = clockWord && (\n            Regex("\\\\b(que|qual|agora|diga|diz|fala|fale|sao)\\\\b").containsMatchIn(c) ||\n            c.contains("me diga") || c.contains("me diz") || c.contains("me fala") ||\n            c.contains("pode me dizer") || c.contains("pode dizer")\n        )\n        val asksClock = naturalClockQuestion ||\n            c.contains("que horas") ||\n            c.contains("que hora") ||\n            c.contains("que ora") ||\n            c.contains("qual a hora") ||\n            c.contains("qual hora") ||\n            c.contains("qual horario") ||\n            c.contains("qual o horario") ||\n            c.contains("horas sao") ||\n            c.contains("hora agora") ||\n            c.contains("horas agora") ||\n            c.contains("horario agora") ||\n            c.contains("me diga as horas") ||\n            c.contains("diga as horas") ||\n            c == "as horas" ||\n            c == "hora" ||\n            c == "horas" ||\n            c == "horario"\n        if (!asksClock) return false''',
+              "isTimeQuestion natural",
+          )
 
-          service_path.write_text(service, encoding="utf-8")
+          t = replace_once(
+              t,
+              '''        if (!GamaGeminiSecureStore.hasKey(this)) return false\n        if (!GamaGeminiPolicy.canUseCloud(command)) return false\n        if (LocalCommandIsolationPolicy.mustNeverUseBrain(normalizedCommand)) return false''',
+              '''        if (!GamaGeminiSecureStore.hasKey(this)) return false\n        if (!GamaGeminiPolicy.canUseCloud(command)) return false\n        // GAMA177_LOCAL_AUTHORITY: fatos e ações do aparelho nunca passam pela API.\n        if (LocalCommandIsolationPolicy.mustNeverUseBrain(normalizedCommand)) return false\n        if (isFastDeviceCommand(normalizedCommand)) return false\n        if (isTimeQuestion(normalizedCommand) || normalizedCommand.contains("bateria")) return false\n        if (DeviceActionSafety.looksLikeUnresolvedAction(normalizedCommand)) return false''',
+              "barreira local no Gemini",
+          )
 
+          t = replace_once(
+              t,
+              '''        // GAMA105_UNIFIED_GEMINI_BRAIN\n        // Deterministic Android tools above always win. Gemini is an optional language\n        // layer for natural conversation/intent; the actual device action still runs here.\n        if (tryGeminiUnifiedBrain(command, normalizedCommand, gamaCommandSequence, privateData)) {\n            return\n        }\n\n        // Ações do aparelho nunca são delegadas à IA para "adivinhar" o que executar.\n        if (DeviceActionSafety.looksLikeUnresolvedAction(normalizedCommand)) {\n            val reply = "Entendi que você quer executar uma ação, mas não entendi qual. Pode dizer de outro jeito?"\n            updateNotification(reply)\n            speakCommandReply(reply, privateData)\n            return\n        }''',
+              '''        // GAMA177_LOCAL_ACTION_GATE\n        // Ações do aparelho nunca são delegadas à API para "adivinhar" o que executar.\n        if (DeviceActionSafety.looksLikeUnresolvedAction(normalizedCommand)) {\n            val reply = "Entendi que você quer executar uma ação, mas não entendi qual. Pode dizer de outro jeito?"\n            updateNotification(reply)\n            speakCommandReply(reply, privateData)\n            return\n        }\n\n        // GAMA105_UNIFIED_GEMINI_BRAIN\n        // Só conversa/pergunta aberta chega aqui. Ferramentas Android já foram resolvidas localmente.\n        if (tryGeminiUnifiedBrain(command, normalizedCommand, gamaCommandSequence, privateData)) {\n            return\n        }''',
+              "ordem local antes do Gemini",
+          )
+
+          t = replace_once(
+              t,
+              '                    val reply = "Não consegui acessar o Gemini agora. Verifique a internet e a chave e tente novamente."',
+              '                    val reply = "A conversa online não respondeu agora. Os comandos do celular continuam funcionando normalmente; para conversar, confira a nova chave do Gemini nas configurações do Gama."',
+              "mensagem de falha Gemini",
+          )
+          service.write_text(t, encoding="utf-8")
+
+          # Atualiza versão sem depender de edição manual.
           gradle = gradle_path.read_text(encoding="utf-8")
-          version_code_match = re.search(r"versionCode\s*=\s*(\d+)", gradle)
-          if not version_code_match:
-              raise SystemExit("WAKEFIX176: versionCode not found")
-          new_code = max(int(version_code_match.group(1)) + 1, 25600176)
-          gradle, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {new_code}", gradle, count=1)
-          gradle, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 10.6.1 WakeFix176"', gradle, count=1)
+          version_code = 25_602_000 + int(os.environ["GITHUB_RUN_NUMBER"])
+          gradle, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {version_code}", gradle, count=1)
+          gradle, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 10.6.2 LocalFirst177"', gradle, count=1)
           if c1 != 1 or c2 != 1:
-              raise SystemExit("WAKEFIX176: version update failed")
+              raise SystemExit("Falha ao atualizar a versão")
           gradle_path.write_text(gradle, encoding="utf-8")
 
-          # Assertions: prove the exact runtime path was patched.
-          updated = service_path.read_text(encoding="utf-8")
-          checks = [
-              "val dedicatedWakeAccepted" in updated,
-              "wakePartialHits >= 2" in updated,
-              'updateNotification("Recuperando a voz do Gama...")' in updated,
-              "restartTtsAfterFailure()" in updated,
-              "tryGeminiUnifiedBrain(" in updated,
-          ]
-          if not all(checks):
-              raise SystemExit("WAKEFIX176: post-patch assertions failed")
+          print("PATCH LOCALFIRST177 OK")
+          PY_PATCH
 
-          print(f"WAKEFIX176 applied, versionCode={new_code}")
-          PY
-
-          python3 -m py_compile "$GITHUB_WORKSPACE/patch_wakefix176.py"
-          python3 "$GITHUB_WORKSPACE/patch_wakefix176.py"
+          python3 -m py_compile "$GITHUB_WORKSPACE/gama177_patch.py"
+          python3 "$GITHUB_WORKSPACE/gama177_patch.py"
 
       - name: Source integrity audit
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          cat > "$GITHUB_WORKSPACE/gama177_audit.py" <<'PY_AUDIT'
           from pathlib import Path
           import re
 
           root = Path("_gama_build")
           src = root / "app/src/main/java/com/gama/assistant"
-          files = list(src.glob("*.kt"))
-          lines = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines()) for p in files)
-          if len(files) < 140:
-              raise SystemExit(f"Kotlin regression: {len(files)} files")
-          if lines < 29900:
-              raise SystemExit(f"Kotlin regression: {lines} lines")
-
           service = (src / "GamaService.kt").read_text(encoding="utf-8", errors="ignore")
+          client = (src / "GamaGeminiClient.kt").read_text(encoding="utf-8", errors="ignore")
+          isolation = (src / "LocalCommandIsolationPolicy.kt").read_text(encoding="utf-8", errors="ignore")
           gradle = (root / "app/build.gradle.kts").read_text(encoding="utf-8", errors="ignore")
-          manifest = (root / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8", errors="ignore")
 
-          required = {
-              "microphone permission": "android.permission.RECORD_AUDIO" in manifest,
-              "foreground mic service": 'android:foregroundServiceType="microphone"' in manifest,
-              "Vosk wake assets": (root / "app/src/main/assets/model/final.mdl").is_file(),
-              "Gemini routed": "tryGeminiUnifiedBrain(" in service,
-              "dedicated wake bypasses RMS gate": "val dedicatedWakeAccepted" in service,
-              "TTS recovery": 'updateNotification("Recuperando a voz do Gama...")' in service,
-              "no MediaPipe GenAI": "tasks-genai" not in gradle,
+          kt_files = list(src.glob("*.kt"))
+          kt_lines = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines()) for p in kt_files)
+          if len(kt_files) < 140:
+              raise SystemExit(f"Regressão Kotlin: {len(kt_files)} arquivos")
+          if kt_lines < 29900:
+              raise SystemExit(f"Regressão Kotlin: {kt_lines} linhas")
+
+          checks = {
+              "local action gate before Gemini": service.find("GAMA177_LOCAL_ACTION_GATE") < service.find("GAMA105_UNIFIED_GEMINI_BRAIN"),
+              "local authority inside Gemini": "GAMA177_LOCAL_AUTHORITY" in service,
+              "natural clock local": "naturalClockQuestion" in service,
+              "local policy clock": "clockQuestion" in isolation,
+              "Gemini 3.8 preferred": '"gemini-3.8-flash"' in client,
+              "Gemini 3.5 lite fallback": '"gemini-3.5-flash-lite"' in client,
+              "grounding retry": "GeminiGroundingUnavailable" in client,
+              "Gemini dynamic discovery": "discoverModels" in client,
+              "no offline LLM dependency": "tasks-genai" not in gradle,
+              "no mandatory gemma task": "gemma.task" not in service.lower() and "gemma.task" not in gradle.lower(),
           }
-          bad = [k for k, v in required.items() if not v]
+          bad = [name for name, ok in checks.items() if not ok]
           if bad:
-              raise SystemExit("Integrity failure: " + ", ".join(bad))
+              raise SystemExit("Falha de integridade: " + ", ".join(bad))
 
-          secret_patterns = [re.compile(r"AIza[A-Za-z0-9_-]{20,}")]
+          for asset in [
+              root / "app/src/main/assets/model/final.mdl",
+              root / "app/src/main/assets/model/Gr.fst",
+              root / "app/src/main/assets/spk-model/final.ext.raw",
+          ]:
+              if not asset.is_file() or asset.stat().st_size == 0:
+                  raise SystemExit(f"Vosk ausente: {asset}")
+
+          secret_patterns = [
+              re.compile(r"AIza[A-Za-z0-9_-]{20,}"),
+              re.compile(r"AQ\.[A-Za-z0-9_-]{20,}"),
+          ]
           for p in root.rglob("*"):
               if not p.is_file() or p.suffix.lower() not in {".kt", ".kts", ".xml", ".json", ".txt", ".md", ".sh"}:
                   continue
               text = p.read_text(encoding="utf-8", errors="ignore")
               if any(rx.search(text) for rx in secret_patterns):
-                  raise SystemExit(f"Possible embedded API key: {p}")
+                  raise SystemExit(f"Possível chave embutida em {p}")
 
-          print(f"PASS: {len(files)} Kotlin files, {lines} Kotlin lines")
-          PY
+          print(f"PASS: {len(kt_files)} Kotlin files, {kt_lines} Kotlin lines")
+          PY_AUDIT
+
+          python3 -m py_compile "$GITHUB_WORKSPACE/gama177_audit.py"
+          python3 "$GITHUB_WORKSPACE/gama177_audit.py"
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -219,6 +237,7 @@ jobs:
           test -d "$SDK_ROOT"
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
           SDKMANAGER="$(command -v sdkmanager || true)"
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
@@ -276,7 +295,7 @@ jobs:
 
           input_apk="$(find "$GITHUB_WORKSPACE/_gama_build/app/build/outputs/apk/release" -maxdepth 1 -type f -name '*.apk' | head -n 1 || true)"
           if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
-            echo "::error::assembleRelease finished without APK"
+            echo "::error::assembleRelease terminou sem APK."
             exit 1
           fi
 
@@ -291,6 +310,7 @@ jobs:
             STORE_PASS="$GAMA_KEYSTORE_PASSWORD"
             KEY_ALIAS="$GAMA_KEY_ALIAS"
             KEY_PASS="$GAMA_KEY_PASSWORD"
+            echo "Assinatura estável ativada."
           else
             KEYSTORE="$RUNNER_TEMP/gama-test.jks"
             STORE_PASS="gama-test-pass"
@@ -306,6 +326,7 @@ jobs:
               -validity 3650 \
               -dname "CN=Gama Test, OU=Gama, O=Gama, L=Aracaju, ST=Sergipe, C=BR" \
               -noprompt
+            echo "Assinatura de teste ativada."
           fi
 
           "$APKSIGNER" sign \
@@ -315,6 +336,7 @@ jobs:
             --key-pass "pass:$KEY_PASS" \
             --out "$final_apk" \
             "$aligned"
+
           "$APKSIGNER" verify --verbose --print-certs "$final_apk"
 
       - name: Verify final APK
@@ -322,19 +344,22 @@ jobs:
           set -euo pipefail
           APK="$GITHUB_WORKSPACE/_gama_build/dist/Gama.apk"
           test -s "$APK"
+
           APK_SIZE="$(stat -c%s "$APK")"
           if [ "$APK_SIZE" -lt 10000000 ]; then
-            echo "::error::APK suspiciously small: $APK_SIZE bytes"
+            echo "::error::APK suspeitamente pequeno: $APK_SIZE bytes."
             exit 1
           fi
+
           unzip -l "$APK" | grep -Fq 'assets/model/final.mdl'
-          echo "PASS: Gama.apk exists and contains Vosk model"
+          unzip -l "$APK" | grep -Fq 'classes.dex'
+          echo "PASS: Gama.apk verificado."
           ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.6.1-WAKEFIX176-APK
+          name: Gama-10.6.2-LOCALFIRST177-APK
           path: _gama_build/dist/Gama.apk
           if-no-files-found: error
           retention-days: 30
@@ -342,7 +367,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.6.1-WAKEFIX176-source
+          name: Gama-10.6.2-LOCALFIRST177-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -355,7 +380,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.6.1-WAKEFIX176-diagnostics
+          name: Gama-10.6.2-LOCALFIRST177-diagnostics
           path: |
             _gama_build/app/build/reports/**
             _gama_build/app/build/test-results/**
