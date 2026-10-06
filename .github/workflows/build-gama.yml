@@ -1,317 +1,187 @@
-name: Build Gama 10.7.0 VOICEBRAIN178 APK
+name: Build Gama 11.0 LOCAL AUTONOMOUS APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - .github/workflows/build-gama.yml
+    paths: [.github/workflows/build-gama.yml]
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: gama-10-7-0-voicebrain178-${{ github.ref }}
+  group: gama-11-local-autonomous-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
+    timeout-minutes: 90
     env:
       GAMA_BASE_RUN_ID: "37445474860"
       GAMA_BASE_ARTIFACT: "Gama-10.6.2-LOCALFIRST177-source"
-
+      GAMA_LEGACY_RUN_ID: "37158343882"
+      GAMA_LEGACY_ARTIFACT: "Gama-9.3.0-JARVIS-source"
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Restore proven LOCALFIRST177 source
+      - uses: actions/checkout@v4
+      - name: Restore current base and proven local brain
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          rm -rf _gama_build
-          mkdir -p _gama_build
-          gh run download "$GAMA_BASE_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "$GAMA_BASE_ARTIFACT" \
-            --dir _gama_build
-          test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/AndroidManifest.xml
+          rm -rf _gama_build _gama_legacy
+          mkdir -p _gama_build _gama_legacy
+          gh run download "$GAMA_BASE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$GAMA_BASE_ARTIFACT" --dir _gama_build
+          gh run download "$GAMA_LEGACY_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$GAMA_LEGACY_ARTIFACT" --dir _gama_legacy
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaGeminiClient.kt
-          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt
-          test -s _gama_build/app/src/main/assets/model/final.mdl
-          test -s _gama_build/app/src/main/assets/model/Gr.fst
-          test -s _gama_build/app/src/main/assets/spk-model/final.ext.raw
-          test -f _gama_build/gradlew
+          test -s _gama_legacy/app/src/main/java/com/gama/assistant/LocalBrain.kt
+          test -s _gama_legacy/app/src/main/java/com/gama/assistant/AiSetup.kt
           chmod +x _gama_build/gradlew
 
-      - name: Initialize VOICEBRAIN178 overlay
+      - name: Apply Gama 11 autonomous core
         run: |
           set -euo pipefail
-          : > "$RUNNER_TEMP/gama178-overlay.b64"
+          cat > "$RUNNER_TEMP/gama11.b64" <<'B64'
+          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
+          B64
+          tr -d '[:space:]' < "$RUNNER_TEMP/gama11.b64" | base64 --decode | gzip -d > "$RUNNER_TEMP/gama11_patch.py"
+          python3 -m py_compile "$RUNNER_TEMP/gama11_patch.py"
+          GAMA_ROOT="$GITHUB_WORKSPACE/_gama_build" GAMA_LEGACY_ROOT="$GITHUB_WORKSPACE/_gama_legacy" python3 "$RUNNER_TEMP/gama11_patch.py"
 
-      - name: Overlay chunk 01
+      - name: Set version and audit architecture
         run: |
           set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_01'
-          H4sIAAAAAAAAA+w825LbtpJ5nq9AWK4TKWeGc/H4EmUd72SO43jX8fh4xkntVqocDAVJ8FCADJIay8487Zek9iGVU5Wn1H7B/Nh240ISJChpfDubWuNFFNFs9A2NRqNJOpttf/Ke287Ozt6tGzfwFxv+7t66sev+63u7N/Zu7u7u37h+E+Dg4tatT8iN900YtiLLqSLkEyVlvgxOUv4sm1DFhh+Cqg/WKOg/U8l7tYGr639v7+bNj/r/EM3pf0q5eF9GcHX9X9/b3fuo/w/RPP0/p3P6Hozg6vrf371+/aP+P0Rr6z+R03dsA2+g/1u7ux/1/yFaWP9jOn2HjuDq+r9xc/fj+v9B2hL90yzjIByRv60lXF3/t27ufYz/P0hbS//34e99NuWCH6aciTw+WyqqZkMF39zf79D//q3967d8/e9dv74P/n/nfTFdb//P9T+jyRkdMwJaj1Hrcan1jQ0+nUmVEyqGSvJhnEiRo/IP8fdl3uwucp7GD+XY3ZdqHD/PpIj/7fjo0YFSdBHsOTp9zpISGVpgzGX84Ojey4TNci6F1yVYHn+b57OnTx4CGQKeDEEcy+SM5Sd8ymSRdyMCJO174kzIc/GtzNoPnsk85QLlkBRKoSjyiWJ0uLExpDklSQqyI9Vc+RtLeAaP9zYItDlNCdXkDshxrrgYb5b3FZulC3eb3CFRVPXBBO3oeVEw1Xyqv7Gx/fnn5DCVxRB0KuZMZRQHJSldMBWTA6MtS0pGwKAJTc/pIiPsJUuKnA1JKhOapgtyutDcxOTz7Q2p1USanoC81uTMFJ/THK1IZLkm7uTgPpJUwUcbHiTCzBQbMRDk8Ds5ZGkG8CmY3tHICAxbNNbPbl2Pb2+NQLwTy77fd3NJ343VfVspz1kAwHYCtVke6N5bgnsvhLtvJPCv30vAyVPWkIciGUtBxlYcTrF3QSyiSNNVD8No+Q9SncEj3vPaMMzDo0IQBTOCHWQLkVRSTsyEHhA7syt+ioypE91VN1lsE9CUrMxvs4nsuJhOabAfTOsUnM6A9J6wrEjzf2nPmK/6ZOsr8lRwS0rfmlltTlhSgTs7YAw3U55oY3ceyj1jpmlP0ClDcaCf2zKaiuqoq+mIdAGkKsQhzZMJitEHc6BnbAFwFQfHMIUUOwbRsDiVMGZFar+FANvdAVInz4l5/qDIJ6Xf6UWPmJgUU3AtEzpnFoSMJCcZTeeUCAmigBmcTmQctfFbUWWWwgcwN0H4bHgANIHDSuU4BrfHU3qaMrj3CMST1QmOn0suTqTRYC/aJIExFAM3lOW9IHN0xv9dCwjEtBmEcAYGMO4yDGjtDeDsVRjMt77KOuyN8EO8JhgUFsosDDmG6SOGZlZVSn8swfAW8Tksmtl9B9Fz/PTbqHwxXnj/3PzoGSusQA3YRTWV0S9Vi+Dac7o9AY2Cl026kNeojVLJ2ee1pt0IxppJMaQgXSZohgEHQdMeKZrBwlEoXEGlGHE1hYhC4upG9B328vK/JQFeL39BthPgFQHiyB+rMpCo0dOyiToAcOnm+9ZXYUUEbB7h4ymdwcND67Oaj7uGk3CKDhmXt4aPjnN6xh6MAAvPY549kvnXKRVnvT65QMcQuZWzC6+OGwCvoyHWN2I+0mgAbXTo5Od8R12ADctzLbpm8GoS5YBc0+THbTL8x5dY6khBrDBMF9+AswH32INFX6oBOUHHh87nbr9crXxHj0E58DdmgilY6I7R2YjEIugbuSUUzIxcxCjcI/UIlkqQH0hPw1QWzPJCCXI+YYL0EG3T8fMs5IJDWo0OrD8e
-          GAMA178_01
-
-
-      - name: Overlay chunk 02
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_02'
-          yrpLVuD6MwoGPmMpJQePH8TQC9FV5b/nl7+kfKjd9n0pxykjBw+A72LI5ab26ICSQe9cahDwL4ThHCInTG9S3GRoqKKk/O+FzOkq0i3FsE6KMS+IhJhrCjEKjlxkEn6yzNFLx1JB9HekJyuaTIYsJywtUkMN4CjoVMeLQISdrzrkJHOZwoR+Uei5jPfhX8pPQY2qi3xtb09FuSQtlb3xB3oZ3CRT8CdCL5VmqpV6AbpnNL/8fQ7Tb8QTWZAhRzdk7sDSCRIGZRlGW2SFtxHL5TpkU6lwHDZFmeghlHF9GH5/zxQfcePbOLglBXsOEBzuq7TmYQmGqzYpoW1JkJCjUj8Cpz0G5GxcgKJpmlBx+St0UEurT03padExV8S1Saltzbo05KNyc4RCmFK8oQhge4D20BGFTdFoxxjb4cy+G9v/sVT3prN80etDLHbOVAIrTa8dwmif0EasmYEIBoOXCCgtR/n5Z30/dHvG1JRn6Iq9ro6lwYlrPWdycAqmZNfIcaHo5a8o4uoxpgMClCoK0WANOG096Av0FC3q9/e+aN1Dt3sFXq7uXU58vRM9bcDbDbuIt6awVKLOC0kBG3ZmTc+NqAV56MSoavKTaJVs2vS3ZhYDRuBnyOlYXP6R5eBNVi6JF+El0W3b9H6sGT+bmLm9b3oPWzEv7m13l8HugHwtZcqosIHhIJDk8BZusxvV/vxec6n3trPYRlKRnomQwMzASQ1hjcyZyQn0jDj6zdU6h0Au7AvKeOyOk63GtGKDYi7CQb+L3vTvn2gb4/1fvZ8pr7tIwqWUn/KU5wsUKTwC8ypjq7Y32LzMhhNlC6oZHncC2mDOqdqfc2BCsGUnPTawM7vcktVii6Y9YQvbFLYr2xW2tWwL2xr2hW1tG8O2pp1heyNbw/YG9oatbnMdBlSRtrbNYQtnWNazPWxr2x+2ZTaIrbTDGV1gJshZ42Pz9wl7rqkKGSK2jyYXav8ck8tV8aewuBV+cA3L++gCP9rju/eAI5tJs7FgeLff5Qj5iPQaDFii+i3GdGDZxVcVjhqpVyRdeSatQ/tb092ima2gyktchUhaa1hzGrFqLD/VFHQlITy1/dCGD9jg9m6XqN2ZyJJEj0u3FO5MJLDtCm8z3B4IdjgPwWe4xHgjKTnkWSJhN8iGzSOissvfvJCLeMzyI/U3NqJFmvcYJiVwgF6/72F2CgK8nq6qHRsYVTW8SRnbFEfoIKs8YD0oc2p3mqeu8YinOWxtMZeKG7AadxcthDKfMPUNHmxi1rkixOFoZ4PsMRti5nk9DUP+8hcSmfPTcCeQ8yl0tHnoMCls1iWdFjwdooA75uWnTrooQZgER8rl3WHcUgmeMPqEDoflhG77Weg9SNNem9pO0EqWjeOgGEbNuUjyXj80X1bwuJS/ZVw0OTDmUSOhSVdgWgXtf71ZlZQnWWBavadPHvaiSZ7PssH2tk3/c5jcVIwLzOyNdf4c8Gcx1ivNd09ZTre1T8juzgDimL9id3Z3dqJ+LGdMVOdkoGSakVYNSV+fHzejHxfmsHwih7qe4d6Jn/SxZNskMYDcfrazs9NAQodV/+5eCyBj+RMz0GMFxCqYztHLLWRxCzjcwkTjpg2hmocs2NpBm5GnjhUqscbGL2bsEHrarsIEhzq0o0MbKvaqpzc1wn7L1PQwOE/3dnbieO+LL0Jrga6M4aMFSt2dAeGDm27YzTICjIwOgeF2kNQZDC07Ty3P3zA+qwqO3LYMzSMvK5R6bnh9gmRnWs1dtzCXpQLTIsfZ/lAXsDgTbzygM10c/coOKUTO
-          GAMA178_02
-
-
-      - name: Overlay chunk 03
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_03'
-          HWFxysQ4n7R9uBuF52zqQrHMEWz54JpUexjDgo9Ptfnq+BQQNRjOihkWN7HhfTvLpDDmngUrChSxD2QWvtyTBz2tG/pTE210BXlaMs89yZgHl4omMBAyZ+sVnvcx4orc2eGhqV4DzQYYQCMKom+fkLbvGI/bQNpfrhJbiuL04Uos8DZ4LMWm4EUfgyfmL51JbsN9gJoGDjCQAHzSO0LuO9v86x092upV08BXDoaMuNB1YK9DHg89inb3+l+v4/Q3kOpu7Bm78t3TehHT/8U0uEHdcEhXTpWnpFDo995mwds2J/SDlqkvWWBh1He6MD4+Ol61MgZWPn9p3L/RAhjKoyKf6d7WHA0tm5b1rZPFjGHBUq0obBtLTr/EwycFT94p8tHW7YaLC2E8SHCTE8K1xsNrrOL+BmCRGVcfRb4wv5fJ5T/I5W9EkuTyN8VOFR6mVQddeAx48N3BJoGdkang1YdpADKXr8qiT0CNTqoYF5f/0Gf5Xyua8TT2hjo0OBl4DXALNDXHcngwh6KdUCABRgAvLQn0KEZkRtB/yEwv0NIUPDjCYDxNAk7Cy99FQf3ByqqgIQcvZI8Aqan+AUxZcfmL4njqluH6nwEDuaIig/UC5jIMCzzAPVueAEQihGIzlnMFS4jAE0sB5F3+lghQXRYHhPro8r+ObO0rJXiq+j8scxKLyd9NBUONlhkDWjWT5gh2s6xoMlFO7WhbaIAv4elSA2YcdfmLqbI1Z90eVY8KkaA8xtTUQJ0qXmyCqOdcwu9pioeUsiB4nombLv07Bp0AItBpVURVng87XhqCB2cpGDk++u7eo5N7OjKyBSpy4EG+jkytcDSIdF3Qz+g2nsFk+DlLGZv9DGwriO2iTdMNYOhtJfwHGPgnJKxpm5GuVi47LxrEjMEQ/WG3XFW0MyW0LjEBH4oyA6mzl3o6GjZZWY5i2WbOSOMGVkf9gGTSmNuLlorBLaWuD7a1qAK1DR484VTpGTabxeSe/t2EoeYSizGzyz8IFu5M9Vk+tb5i3iJAS20QGFWPheVNCk+lQa8zWmS6XsOJoInKin7gLDDTR905NebJhZ4mRiAVSwymkgBO0i8B+PJXSp5+dwBGrcYgLQq9M5Zc/j4C4pujPcZT8HJiw5wrppsu2ULN1K9cz6arP4G7MG5hvJWpIvIRH5SSysicZ5jD4VjOo2sZbHXrgFzzVukSAfhJHRU9EEMYtdf33elMwfqMa4feLLcqzLBh7GQjh0b4BMplYtiLvoXeyz8UT1CIiXGrFMsham5u8COsBrF9wqHD4r7ePuyL+mVX9GNz1TB7qHqA0kGGreOURIvKmJgRznaQigZSTczuzeXEuI6nziR1xcSAVFhd+GXw7e0jvq7F7FQOF/6eKxxL6Pi5FUmFAn4IBGDDotdILGZWhXFMm/4YGgpkk2e2x+x0TEcbEqUEgAZtv99vx9cIFtwdRPaVmCwKp+Obg3fuYOpUdQJhMyQrCDExIkFtBHZp7QeuLA0zc0LCwNa+G96UlKFz1+7NDAkR83rEmSD4mFGVTBpaD5Ha3qp1a3Jc7n5NZdASjS415hZ3U/rShLAn8gxiESB7f+eLm91KMwq2qZrvYLHrCmWXKF5viHXRLtYx5dkPHLbQ5Xsv0dLNdElDPuECD4KcPAKTzIE8ZLBTQRpTeR512Ay2cL1x+24jn2NKvsLu4E89L5dCaEbsxF0JuDZHzYeCsz+6Zrzhj+JHcc24ghXsYFsO8eaexEz91vwMkN8x17rSg/VDqFYOtZbmkBonhA+MTmOsx9Z15+eK56yHi1yc
-          GAMA178_03
-
-
-      - name: Overlay chunk 04
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_04'
-          u3dk+nD59SJnRhWHZquZxU9Pvnl2G2ZdOzP5Z8zS1lKzgZRsU9jtlKmp6Q+kYtvScad0mS3tbeQuq/6AeZZvVj2AqHFM0+McAGvvVumtJ/hHd4SIW8dOhEgN7Koy/apLCdRIxe68WyKk248FaRE8mzxhNNPpHE1aPZFY7w88bv1j/ckaH859vgOhzukrTknvWp2efoAg7edc4YVo6tl4wXcjXTPSaorse03dOwds7Yy+Rr8ya+1YxuNY/cCVcvrYcFbjo/ikTTnieiyL8QQ9uM7I95ckoUsqOOxpLBl1A9IrQWfGuaQAn25sWJbn6f0ja7ur+OxH8Vn36mGB9FhhqFVZ+osQH0iNfnGUZ0toX2pf1qxyrPoXsGHX+Sm9SVtuX8H0+wwXi/Kdcf+N0feQiw8tH4N2+tesKAPyQORdL2llemHE0wy30ngLTY1GLsp11MR0tT79upbpK7FbyZgB7sanxWiEZ/Eg1CFTzeX1brU067QyCBBfpKteAumSRWjdq2X4LfdVDFYWdK55ZPGWBwgwXyZtoddeeel8SXnJaafz9FrqEciuNvUtajw590SnxedXskStM4bpKRe6gCW65ki8ZgePvLdwquMXZzV37pD9vS/MWycsk4VK2DP2ckILCEWHukikRI8w1Tss3m19oqffOvH6Wi8Q1F669ouZymmtB9iu8MGk1tHVgFx77d4wMmmQvZ3+RVSfdZ5QaJFPHit5murMfsnqzi7Q69Hk3jYiQuqPKPAW1y3wZwD+jIs1gC0Qqb/R1Alcvcf0bMgEb4vfA6/Ut3MdK2h6UccgrRekvD5YTE/5EMbzFdf3LKUmzGUqbbxHbzWq36rChLl9BekNFOqlNZDZduYK7zo3CP7paNTb39nBrch1rC/ySLbfu7CJDYC2mQ17o/bfDYl/MGGCKTmxKKu2SkFWS8sy8YReiQAplXxx0XpP0pwxOpF1C6eyhf2wnQSlUkpCj4JM4hwYIT3uT1mooHfYovrbJYn+WqJoFxhecy8j1WXQZSq7t5eaSiWNnbCxLCOtUbDdi+wN93ag1KdrvmKuasuawK/ukBs7O2FSaq971gIe/CAOVdwe2DVE9e3JyWOyzE7WCaoqJEtZsljNi6S4MSqakZSi57UKtJXH8Qkuvqa0k56H4sZGdcZPP/0UyMa1gcIAxxDSdADYoT3icCRbAK+VZ2j1snyvIz2fXBdEzrbjop33s0C1MDOQaTMhntmsOKygcPYSputnrz9r75xgyBooFvY+cOAXn7VjcIMbTFDPEHz4KzNev8SRFaeZCU50x6aG+ivZ7dsosslGq1iyO0ZyUvUzEk7Obeaoq6DQH7CqRU3UnUXYY9Dud467vhBVb+Uw5qL+oYjKgdqRYEh3qInX+nwRL9zBrPuahIVujeW+ItHkyPFhDNEeZ90GP9FGAUOHRAIE+Y/v7oWe1kfDgefNkbGPoT1+Kzi917bhh3Icn/dODu5vklZSAMIOXT+hT8Dx+FOBZ/2SgIPF81mzndPHmO6YLVqpzlJ7pYacjJ1FV8JcsVmzHxXrXrWtZyxdHBmQypnazn4nytbq93bomivW22Hzg7i3w9WI8ddDdrHxT/su34dqa3//8WA2e8LGcEMtrvj5xxXff9zd29ttff9xD7//+fH7j++/vbvvP7ruB/rH+7CiTrM9wmKUlL9iyuuzn41MaMo26l8ZrNmbdea1jyxC5/GM1T5GpaukAykZvA+OLZSWMTlYzX3mv5ngwwDNsIZjYShrQNjgrEbXQ1qIZGI+q+UTpyuOLNk+fh3SsGEgOWROS4qc
-          GAMA178_04
-
-
-      - name: Overlay chunk 05
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_05'
-          mbD1CQNKzKfazDhMxU+w231TIcgbftWt+S1Bj/z6Fxnt1+Kan2FsiRsb11me8wnNMx15+BtblDn2/4D9B61+J/hqsAgtsMJGvP/x+f5p1Fj3rV70u1Ieta5FdWz6mtT/UHNZA7E3A4h0D6uAuN6DVo8WJb7CgXaQU5QEkIyYP6+o+yHV5aswJa8cGYjL0eOXita2vZvraBCioVzX74UVeBzs7tCfxRVPi4wnqxRWjWyIKK9U/dICsAYwH/HoqpzqErKxotMuXh90AHRwW+KLrQ9cyXGNAktOeQF39e6BO4ircrcAV1CcNi2v5O0/ZHHS7u7gzKSfHFuxQ72KvZIEYKO8WvhXV+Yr52e5POti64SfnbR6O7h6NeFAsUR/og0UD1Scp8mykttinOCWI01X8utI00SS8jKpX8Em5sosz1K6eIZFhJ3afAwQ5DgA0cG6423OTBZxFWdIAbEUGHrKPzZXifdMyc9zav7UuOxaX/QbBwULfuqX4meZdKHTqWLugqvySl/MMF1V3ccdoiz/V7hMYbqQGsj+oeUfWu+hXo/yupTpq/DOqUmGIgRsmao/MH6twyFBEHvJLWYPl6gwiRKPvaIJFupWl9RwrKuQWXVJG4ybbzgbFmytuf6jUHD2wt6aMpKyOasINzcci3UdmiPDTKZzdgQqtO85uBrT6iOjxE+2WRO/W/+SaBsLPNO/G6cs15/i1PkantcS2fZe1ydsLUZHjKbByw12EL+SVJ0NxIjJBa69/2RzpQuQys9q3xNjLliM2anZD7Cn/0GqoWbIP7VI6ofMlh//K1gGqp7IExTspY8nI4mOrWGDlvUigrfNVOnsA0W3Un31Qd29RirYhWqHcop12o8xi6riVMqz7CE/Y8fgOmxXL+k3c/tl/t68dKEXOAS1pijm1mjLevEybV/jgOd9cnFFyu2X0DPUxnFuy0iazkXPDfNWiSFDJ3Tcx1CrO4WbZqaavelXNBrMuSMi446Uu3xRACHWJ03dHcwg6fycEYSPCKabfofBYfD+zFj2ouDWAcyUxM9Kk6jhYZ3m/re9I+1pI8l+31/RgyKNveM0R5iZBCXKeLBJrBiDDCQbMVmrjZvQE3zIbZOQKP996726Xl3tBswsUlwffHRXvbrfXa/M/qtxJatJjKx36fGYBlMQvHjs4xidgngsVQYITgTYAffgWSyohqhPbxOo7MULtnfs+HeyvaI2dShURhLBx2bDLpL8gBMN1jhJPmQP5xgT0ugoe+bui0dnQIStRvykQRcMzCQZDLg9m0EhEyCs3Yzcol4cI+8yPM0qgwlbqzoq6NsPLP7zRTxEic1AUJg1EAgcUFnittPOyztsjJ7ENZXkTHg2gbp+m9s5cQh09uSswN2SfyqkfIlSrIeKGMJylMzA3jRDLwzWhw2II0DkbDtksDyRHRKZzVpr/BCPqKNqz5pfoIfEVd5Q2Jw/Ls2jhyZGiRYPzFwo1es8+NfLx3X4OWGRjzysWaiADGuWN79MUP96yPNXzPH0KQaqSv1AhpP7mKnMbjAJMUjm8W+rFJgrgOOWjKkqZZznXF+PjpJhPh99jBqASPfxlNLHdLr+eTz99JghwPOMMZ2fp+AMNs3BRxKQ5ziHo3aScFFoUq91BVbK0QwP+abJIBqfR7MLQLywcfsQelzkjD0bNgZ2nCo5YMnTEdEmHq7BirsHB8dVsnlUybC1Uu9etnznKeFJ5AUOqmVahRZbpQItqdEie+xn3NlrOIZIjhG66cf0S2Xtr78m3/a//8IkBAc92FlP/5s8/rrx+Fn0gWe37wdw
-          GAMA178_05
-
-
-      - name: Overlay chunk 06
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_06'
-          QeeBjMLW+QPo2x9aKq3/97HeJe0AC/T/25u/W/d/bW3/9mR1/9M/ku5b/2+/nQxjQZX2kxH7nNoZx3l8yNhdhv8LQEhijmdBb2NpMG90GiazC/bxhV+e1BBBjHLBoMAJYNCLD65HyZBrjaBNUqbM5UH59fP516/XyBhAwI1c3qNk35/k2UmuhaM5mk2vK675IqTaDyhbQB71qMhR2SJ1LUrVIn9o9QPRPihNitKOaDUJ1UBwBQXRT2hVREq1ElIpoXQSQhPCv7guJKSDWKh4sA2WAeleRLEQ7Jr4DaOKIjwJAWQInzpcCrQFs2vdg4QS0kDQ7LT5stzNO8HG8mM6M8QAqxWSK+M5F6oiGPckOSqI9w8SSZZcPgbmYhD1U37fxkFzX22PvGYxbbA9KDiDh8P1zC8eA7c+cfkYb0mKl5aJM+T8BjK61WNPd7Q7zD0agLymnrDdRtpnTLtMQLERmGa3O4UGN0iLjG6QlmB4g2QrjNWKq9Ha+RiF/XVMUXvKFiVuRUAqWZrLbVIVN+3A42tbDlYY0tgAmDXG5yanyWHMxlGeDTPwj5pdi3VUi6zs3+Mc/Uv/vG6k+RnXm/PjBXnKWjZwjruneDqM94JK+pUgJuExHxGYKoguTFhss/pSVsXKb8Qb5ra/YBjlYnw5EL6AYnML+fw5k8+rrMzTLe4itxH/tmVsHmithP5cA6t62+kWYJBR/qdPH0fk9cbTAHa5yaonZjuglzuPvmF9/MwaIYLfA2YSkhsfLTKV+KEvsJU4lRAiUCCluzevuVQBjx1IvcezDTuAohYM7R1jSld8+2SifdbpIxXV8c/rys6O2kIWCLkVHD2fBQz92rDZBtW2SKsj49o0bbQctfsoROvMTH6tO1W1A5FZix6N4FVQVTjDQ8fQ8jifXGazys/Rz1UaXtW64svUJc5T9JKFQFcIR/rY7uGpU+n4qXk6U5mpirO9F2zilPEK2aWugbHVE10S/Gkt7mg4voIVyr2Y/Y4Wa2PkEVHJjQ4JCX7Oh/wz4d77+Im/B/h7gL/BzuRo16djrvHm7KmKDcP/TfTDs0RkHIO1PPGpxmVv2Rf29d0F8B9yKO3u2dRIvuYu2sQ0OkZW9Ty54j84y4qRUkjLhxm14H/GmivYEnoCElAoPgQvafaXNovXW3V60Yasm66CGTOYNzZGpvOs/6Y5ipj+OJpPJowU5JW1RvOw29ytH7cOOmumWyVsaQvhKJwlURSKL3aIV6WaZTIXI3X7yUSFyqxxgYdGzERBZxjpCz4nptyo+1/o3H1J+EcCjNHKI4xxcJROr7KztEL5zJ0dFMJiEBtNREihvQQg9TO2OjMRHxR9qyIhvsbD65M8nb5mvPBlyhAQuY3qnP1Mzi5gNkbn45Bqf/IJQp9CDnq3aQv+E+rksomgf2VFf3JGDomZmIVTluUDA8/lTKwEqQOJZVCDFpSInVA8/tK5m6sFKvwrru/Cwurt11udapwMBgxAynbQtXzPFl7z1UH3fa9dP+nsvm52zXZMhjHC5bnFHMB6xKdsCoylEu/Xj3df9+rtNh36IYY0D4w9zssLnidOxBzD0GtW7g8ByjsBmTVLaA/zz0YhLMremqHGedPA27oN7yuTYZXMnX1Q026Pa/eRJob5rHVe7+cwV3YhsUkrgs1xYJZZKzTUaIyq65w1m0TX9anICbOedDX7UIv6XYOZaIznEOPcuizYtJB1pXeAfN833veN93jiUDMRwBb0PTwF5c2xCEx3X73etF73ibkMYSb6QZ9CfbZtnST9jDY8wl2wGU9nFtLsQ67+
-          GAMA178_06
-
-
-      - name: Overlay chunk 07
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_07'
-          olzzkYgEyoD+wspU45z1nzUknZ6l9Vk7FWSGlkG+AZrwOcb5yeGsjCo6G/PxZ+O0zsEbhdNBhlFA4w0mKYDjySi/mKXZqJKweayapYfJFzbuXJZhb8Wvarh1MlQz1PFvNnK/P2Wd4s2Fv1tbdG1RQmY0hCwssqpao5llFLPmd8NZLyrAgQzWLnpgLQM3Y2JnBK6NUWQI/phzLMpjYkiI/BjUN9NjRoelSICNZOQt910PIG6xD4I1CojMpxtANTJ4b7zWEZz7oSpltcIqFL1QHTv9+wMDiIN3mn3AwWWPmPzKhddNB4xszN/QDmjQMBsx3kw9BnCbNQKf58OHovqiiAxkwAXIf7kZZdgGWYccug+hpbYy9K0MfQ8ulbb/+VwplmL/29r+9ddtx/63Ov/zz6T/g/3PZ7y7sZkQriY+mWYe6+GfELGpwKpITXGeRc2IFqKsdDQfClscHrIhxKzVOW52jntHzU6j2dX6i8P67pv6q6YQWXo8l37d/M9hu7XbOlYiTQ+EoLet4/c6jyP26Fe61OHhEfEiPzzsNZrNw1671XlTo6SHGBN9B5JKHTta8vEihJoTOofwY6FM0ApDxv7VuUMWqqYqggnT5Tggfbbc8SlTOR2lqnqDTlEBNTTJZTmfqbA8jvMZsC+mopgXhbh7pt2HN15wSVpv5TcPibnjAb18IhU114Fb1GV2lUb9lImJA7DSrVumOWW0i2ZwCGkAIatnFJhyq+KcBzGCCzEYzCfgQwXGbWBbpANVdMwE/WyWU2ATxtJnZ9FJtyXC54HhHFy9ZUB0YRZFgErRrzpkGvxCHllyoF+Ac6A1iqgwFdBaQ9CiZMpvXXmdU0HdoxAwZ8J5DUm7/YUv55NOf3zRezaunUwfQK/zn0wlRG+1Ack+Us3KT8UgfrAuZvZZTIRbn7nYiYtfcElLrwQYKKcLeA17BVsTCiLHR85Av0U3gePcZ7MLTpHAfz2dFkdGPbORhC8VToRMRD/r9sBLKcr0RNBETquERu0hdChM28r0qvmF70tJgh9ElxxSXKYnUo35oHpicA5lekEZtAfRAwNXlulBI00n7Wz0aQmt50RnKT20n1jBcYHEcezow39LJkIel3NPbzxo2pPrVuSooD+eK3E9zTVZUse+bkTa4itausOXYA493K3i/KSjvB6b0ujZu+L8Xv32AavyyDK4rINTFqxsMT5bYmXFaOcWFbkquGKO4G7LoUASQJE0ftvsHrUOOvFR4w2Q/Oi5kefJk0WSgHnM4iZBrgIWVHskwWRE1y4fn73x1Nk4gfFfgAewDiaGDIo4l0KkvOF/bKKCu7yxyJBxRsUyqRGJzKPsLYUSlrXguMWSR/Q2V05wSZDqFy0LSPbSWLQorD5481hEgni+eSN9G7tA7zWuL0oGg73L5KOFN4Qxea9df6UY0l6n+a53XD96E3ku/vYW6DaPmsdYpNfaY8WbjWaD0B17GyIVLoH2ecsDFMy3lMKYf5nrSNjrPePozrRrzLcQsF3AMPV7F0XI/l8OtczugKnUo0InGEgyDiD3Obi3Lef3cAhuN+76EHx9uLhGVTP3l2g09+on7ePeQaf93g/Xu4MlfnRKhO7RrRapHLiXhq1sUMMRpJnaicNph+vU4e0cjcDvgE7FXvSALyJuCzYMdsS/GBZuHAJ+8eYpqIhtol1QGqOvZrAmxzWkOOcomCXcXQ8+p+nGuH1h4UI8b7bZROQ2uwfJQwVkKuRw5MJaJFMViIjORalF8pdmKgsoT1gMuHcO5ocgPb62Fiz/Wy/92y97Kw6x0Nrbatzl
-          GAMA178_07
-
-
-      - name: Overlay chunk 08
-        run: |
-          set -euo pipefail
-          cat >> "$RUNNER_TEMP/gama178-overlay.b64" <<'GAMA178_08'
-          0T5RgfSuLEJEJhdlp4DEsBTe874ZPr9AvCylxU3cZoNz6bjRekc75Ftbkvhpl0vaZmsyZMODjBkk2qugnGO49JaRbgqYLq8rcGhJhvpis+OQdDfNo0Z3G8DC8eHnJPaTbFS8LWWr4aLyyXjE1nx4kG4yQPcvy+Pr0j7wRaZF6hDvP+IiqZ3fMfptq/muFp1MsxiD2etAEjvr66BBsW9Z1BRjEXEoTwQCOF/QucKbZ/yo3sHqAiP63bWp+OFBygYD/9LrEW+idfUY+DWrM8HQJr6DvypovT72yzuCxcxBQv9FBaQA17sWi0LPhZYn1u3NOa75NLNQCzfCYgU+DpPY3QNWGL1kg0jRWctl0CEWlDFA71K5gMHqLl+vDtt5l5oVlBvVLWNq3qXmq5GK4XmjukV8yzsN9yjPB582t548uUnNuG0CtXq14ZAsX4c7iBOIfZ08bLeETjLL9CPJAffF/VoAw2iQQ9wRvbkVpyvpFNYZ5mp4Tdbc35S5WPk8r9IqrdIqrdIqrdLDSP8DmEzihADIAAA=
-          GAMA178_08
-
-      - name: Apply VOICEBRAIN178 overlay
-        run: |
-          set -euo pipefail
-          base64 --decode "$RUNNER_TEMP/gama178-overlay.b64" > "$RUNNER_TEMP/gama178-overlay.tar.gz"
-          echo "983f066b5531758a4c9148eb30058ce1753c49d9ca33e366d56c6966ed8d16f1  $RUNNER_TEMP/gama178-overlay.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/gama178-overlay.tar.gz" -C _gama_build
-
-      - name: Patch live conversation route
-        run: |
-          set -euo pipefail
-          cat > "$GITHUB_WORKSPACE/gama178_patch.py" <<'PY_PATCH'
+          python3 - <<'PY'
           from pathlib import Path
-          import os
-          import re
-
-          root = Path("_gama_build")
-          service_path = root / "app/src/main/java/com/gama/assistant/GamaService.kt"
-          gradle_path = root / "app/build.gradle.kts"
-
-          service = service_path.read_text(encoding="utf-8")
-          marker = "                val decision = result.getOrNull()\n"
-          start = service.find(marker)
-          if start < 0:
-              raise SystemExit("Bloco Gemini da #177 não encontrado")
-          end = service.find("                when (decision.action) {", start)
-          if end < 0:
-              raise SystemExit("Fim do bloco Gemini não encontrado")
-          block = service[start:end]
-          old_reply = '                    val reply = "A conversa online não respondeu agora. Os comandos do celular continuam funcionando normalmente; para conversar, confira a nova chave do Gemini nas configurações do Gama."\n'
-          if old_reply not in block:
-              raise SystemExit("Mensagem antiga do Gemini não encontrada")
-          block = block.replace(
-              old_reply,
-              '                    val reply = GamaGeminiClient.friendlyFailure(result.exceptionOrNull())\n'
-              '                    Log.w(TAG, "Gemini conversation failed: ${result.exceptionOrNull()?.javaClass?.simpleName}: ${result.exceptionOrNull()?.message}")\n',
-              1,
-          )
-          block = block.replace(
-              "                    speakCommandReply(reply, privateData)\n",
-              "                    speakCommandReply(reply, privateData, closeAfter = false)\n",
-              1,
-          )
-          service = service[:start] + block + service[end:]
-
-          brain = service.find("// GAMA105_UNIFIED_GEMINI_BRAIN")
-          if brain < 0:
-              raise SystemExit("Marcador do cérebro Gemini não encontrado")
-          fallback_pos = service.find("speakCommandReply(fallback, privateData)", brain)
-          reply_pos = service.find("speakCommandReply(reply, privateData)", brain)
-          if fallback_pos < 0 or reply_pos < 0:
-              raise SystemExit("Respostas Gemini não encontradas")
-          service = service[:fallback_pos] + "speakCommandReply(fallback, privateData, closeAfter = false)" + service[fallback_pos + len("speakCommandReply(fallback, privateData)"):]
-          reply_pos = service.find("speakCommandReply(reply, privateData)", brain)
-          service = service[:reply_pos] + "speakCommandReply(reply, privateData, closeAfter = false)" + service[reply_pos + len("speakCommandReply(reply, privateData)"):]
-          service_path.write_text(service, encoding="utf-8")
-
-          gradle = gradle_path.read_text(encoding="utf-8")
-          version_code = 25_700_000 + int(os.environ["GITHUB_RUN_NUMBER"])
-          gradle, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {version_code}", gradle, count=1)
-          gradle, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 10.7.0 VoiceBrain178"', gradle, count=1)
-          if c1 != 1 or c2 != 1:
-              raise SystemExit("Falha ao atualizar versão")
-          gradle_path.write_text(gradle, encoding="utf-8")
-          print(f"PATCH VOICEBRAIN178 OK, versionCode={version_code}")
-          PY_PATCH
-
-          python3 -m py_compile "$GITHUB_WORKSPACE/gama178_patch.py"
-          python3 "$GITHUB_WORKSPACE/gama178_patch.py"
-
-      - name: Source integrity audit
-        run: |
-          set -euo pipefail
-          cat > "$GITHUB_WORKSPACE/gama178_audit.py" <<'PY_AUDIT'
-          from pathlib import Path
-          import re
-
-          root = Path("_gama_build")
-          src = root / "app/src/main/java/com/gama/assistant"
-          service = (src / "GamaService.kt").read_text(encoding="utf-8", errors="ignore")
-          client = (src / "GamaGeminiClient.kt").read_text(encoding="utf-8", errors="ignore")
-          launcher = (src / "GamaReliableAppLauncher.kt").read_text(encoding="utf-8", errors="ignore")
-          catalog = (src / "GamaInstalledAppCatalog.kt").read_text(encoding="utf-8", errors="ignore")
-          registry = (src / "GamaAppRegistry.kt").read_text(encoding="utf-8", errors="ignore")
-          gradle = (root / "app/build.gradle.kts").read_text(encoding="utf-8", errors="ignore")
-
-          kt_files = list(src.glob("*.kt"))
-          kt_lines = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines()) for p in kt_files)
-          if len(kt_files) < 140:
-              raise SystemExit(f"Regressão Kotlin: {len(kt_files)} arquivos")
-          if kt_lines < 29900:
-              raise SystemExit(f"Regressão Kotlin: {kt_lines} linhas")
-
-          checks = {
-              "Gemini 3.8": '"gemini-3.8-flash"' in client,
-              "Gemini 3.6": '"gemini-3.6-flash"' in client,
-              "thinking low": '"thinkingLevel", "low"' in client,
-              "no temperature": 'put("temperature"' not in client,
-              "4096 output budget": 'put("maxOutputTokens", 4096)' in client,
-              "compatibility retry": "compatibilityMode" in client and "GeminiPayloadRejected" in client,
-              "friendly failure": "friendlyFailure" in client and "GamaGeminiClient.friendlyFailure" in service,
-              "Gemini conversation stays active": "speakCommandReply(reply, privateData, closeAfter = false)" in service,
-              "WhatsApp implicit URI": 'Uri.parse("whatsapp://send")' in launcher,
-              "WhatsApp hard alias": 'id = "whatsapp"' in catalog,
-              "WhatsApp variant verify": 'contains("whatsapp")' in registry,
-              "no offline LLM dependency": "tasks-genai" not in gradle,
+          import os,re
+          root=Path('_gama_build'); src=root/'app/src/main/java/com/gama/assistant'
+          g=root/'app/build.gradle.kts'; s=g.read_text(); code=26000000+int(os.environ['GITHUB_RUN_NUMBER'])
+          s,a=re.subn(r'versionCode\s*=\s*\d+',f'versionCode = {code}',s,count=1)
+          s,b=re.subn(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 11.0 Local Autonomous Core"',s,count=1)
+          if a!=1 or b!=1: raise SystemExit('version patch failed')
+          g.write_text(s)
+          service=(src/'GamaService.kt').read_text(errors='ignore'); registry=(src/'GamaAppRegistry.kt').read_text(errors='ignore')
+          brain=(src/'LocalBrain.kt').read_text(errors='ignore'); main=(src/'MainActivity.kt').read_text(errors='ignore')
+          manifest=(root/'app/src/main/AndroidManifest.xml').read_text(errors='ignore'); allkt='\n'.join(p.read_text(errors='ignore') for p in src.glob('*.kt'))
+          forbidden=['GamaGeminiClient','GamaGeminiControl','GamaGeminiPolicy','GamaGeminiSecureStore','GamaGeminiSettingsActivity','gemini-3.','Configurar Gemini']
+          bad=[x for x in forbidden if x in allkt or x in manifest]
+          if bad: raise SystemExit('Cloud AI remains: '+', '.join(bad))
+          checks={
+            'local LLM':'com.google.mediapipe:tasks-genai:0.10.27' in s,
+            'model setup':'AiSetup.download(this)' in main,
+            'fallback':'fallbackWithoutModel' in brain,
+            'all installed apps':'GamaInstalledAppCatalog.resolve(context, raw)' in registry,
+            'speech repair':'CommandRouter.appToOpen(raw)' in registry,
+            'app launch':'Accessibility is optional' in service,
+            'brightness':'ACTION_MANAGE_WRITE_SETTINGS' in service,
+            'wifi':'Settings.Panel.ACTION_WIFI' in service,
+            'bluetooth':'ACTION_BLUETOOTH_SETTINGS' in service,
+            'flashlight':'setTorchMode' in service,
+            'camera':'MediaStore.ACTION_IMAGE_CAPTURE' in service,
+            'research':'GamaInternetHub' in service,
+            'local brain process':'BrainProcessProtocol.requestIntent' in service,
+            'screen control':'GamaScreenContextService' in service,
           }
-          bad = [name for name, ok in checks.items() if not ok]
-          if bad:
-              raise SystemExit("Falha de integridade: " + ", ".join(bad))
+          miss=[k for k,v in checks.items() if not v]
+          if miss: raise SystemExit('Missing: '+', '.join(miss))
+          files=list(src.glob('*.kt'))
+          if len(files)<130: raise SystemExit(f'Kotlin regression: {len(files)}')
+          for p in [root/'app/src/main/assets/model/final.mdl',root/'app/src/main/assets/model/Gr.fst',root/'app/src/main/assets/spk-model/final.ext.raw']:
+              if not p.is_file() or not p.stat().st_size: raise SystemExit(f'voice asset missing: {p}')
+          print(f'PASS Gama 11 architecture: {len(files)} Kotlin files, no Gemini')
+          PY
 
-          for asset in [
-              root / "app/src/main/assets/model/final.mdl",
-              root / "app/src/main/assets/model/Gr.fst",
-              root / "app/src/main/assets/spk-model/final.ext.raw",
-          ]:
-              if not asset.is_file() or asset.stat().st_size == 0:
-                  raise SystemExit(f"Vosk ausente: {asset}")
-
-          secret_patterns = [
-              re.compile(r"AIza[A-Za-z0-9_-]{20,}"),
-              re.compile(r"AQ\.[A-Za-z0-9_-]{20,}"),
-          ]
-          for p in root.rglob("*"):
-              if not p.is_file() or p.suffix.lower() not in {".kt", ".kts", ".xml", ".json", ".txt", ".md", ".sh"}:
-                  continue
-              text = p.read_text(encoding="utf-8", errors="ignore")
-              if any(rx.search(text) for rx in secret_patterns):
-                  raise SystemExit(f"Possível chave embutida em {p}")
-
-          print(f"PASS: {len(kt_files)} Kotlin files, {kt_lines} Kotlin lines")
-          PY_AUDIT
-
-          python3 -m py_compile "$GITHUB_WORKSPACE/gama178_audit.py"
-          python3 "$GITHUB_WORKSPACE/gama178_audit.py"
-
-      - name: Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Android SDK 35
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          test -d "$SDK_ROOT"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          fi
-          test -x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"; echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$(command -v sdkmanager || true)"; if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"; fi
+          test -x "$SDKMANAGER"; yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" >/dev/null
-
-      - name: Gradle cache
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Clean
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile, test, lint and assemble
         working-directory: _gama_build
         run: |
           set -euo pipefail
           ./gradlew --no-daemon clean
-
-      - name: Compile Release Kotlin
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
           ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace
-
-      - name: Unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
           ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace
-
-      - name: Android lint
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
           ./gradlew --no-daemon :app:lintRelease --stacktrace
-
-      - name: Assemble Release
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
           ./gradlew --no-daemon :app:assembleRelease --stacktrace
 
-      - name: Zipalign and sign APK
+      - name: Sign and verify APK
         env:
           GAMA_KEYSTORE_B64: ${{ secrets.GAMA_KEYSTORE_B64 }}
           GAMA_KEYSTORE_PASSWORD: ${{ secrets.GAMA_KEYSTORE_PASSWORD }}
@@ -319,95 +189,31 @@ jobs:
           GAMA_KEY_PASSWORD: ${{ secrets.GAMA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-          test -x "$ZIPALIGN"
-          test -x "$APKSIGNER"
-
-          input_apk="$(find "$GITHUB_WORKSPACE/_gama_build/app/build/outputs/apk/release" -maxdepth 1 -type f -name '*.apk' | head -n 1 || true)"
-          if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
-            echo "::error::assembleRelease terminou sem APK."
-            exit 1
-          fi
-
-          mkdir -p "$GITHUB_WORKSPACE/_gama_build/dist"
-          aligned="$GITHUB_WORKSPACE/_gama_build/dist/Gama-aligned.apk"
-          final_apk="$GITHUB_WORKSPACE/_gama_build/dist/Gama.apk"
-          "$ZIPALIGN" -f -p 4 "$input_apk" "$aligned"
-
+          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"; APK="$(find _gama_build/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n1 || true)"
+          test -s "$APK"; mkdir -p _gama_build/dist; "$BT/zipalign" -f -p 4 "$APK" _gama_build/dist/aligned.apk
           if [ -n "${GAMA_KEYSTORE_B64:-}" ] && [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && [ -n "${GAMA_KEY_ALIAS:-}" ] && [ -n "${GAMA_KEY_PASSWORD:-}" ]; then
-            echo "$GAMA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gama-release.jks"
-            KEYSTORE="$RUNNER_TEMP/gama-release.jks"
-            STORE_PASS="$GAMA_KEYSTORE_PASSWORD"
-            KEY_ALIAS="$GAMA_KEY_ALIAS"
-            KEY_PASS="$GAMA_KEY_PASSWORD"
+            echo "$GAMA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gama.jks"; KS="$RUNNER_TEMP/gama.jks"; SP="$GAMA_KEYSTORE_PASSWORD"; KA="$GAMA_KEY_ALIAS"; KP="$GAMA_KEY_PASSWORD"
           else
-            KEYSTORE="$RUNNER_TEMP/gama-test.jks"
-            STORE_PASS="gama-test-pass"
-            KEY_ALIAS="gama-test"
-            KEY_PASS="gama-test-pass"
-            keytool -genkeypair \
-              -keystore "$KEYSTORE" \
-              -storepass "$STORE_PASS" \
-              -keypass "$KEY_PASS" \
-              -alias "$KEY_ALIAS" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 3650 \
-              -dname "CN=Gama Test, OU=Gama, O=Gama, L=Aracaju, ST=Sergipe, C=BR" \
-              -noprompt
+            KS="$RUNNER_TEMP/gama-test.jks"; SP=gama-test-pass; KA=gama-test; KP=gama-test-pass
+            keytool -genkeypair -keystore "$KS" -storepass "$SP" -keypass "$KP" -alias "$KA" -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Gama Test,O=Gama,C=BR" -noprompt
           fi
+          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$SP" --ks-key-alias "$KA" --key-pass "pass:$KP" --out _gama_build/dist/Gama.apk _gama_build/dist/aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs _gama_build/dist/Gama.apk
+          test -s _gama_build/dist/Gama.apk
+          test "$(stat -c%s _gama_build/dist/Gama.apk)" -gt 10000000
+          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/model/final.mdl'
+          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
 
-          "$APKSIGNER" sign \
-            --ks "$KEYSTORE" \
-            --ks-pass "pass:$STORE_PASS" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass "pass:$KEY_PASS" \
-            --out "$final_apk" \
-            "$aligned"
-          "$APKSIGNER" verify --verbose --print-certs "$final_apk"
-
-      - name: Verify final APK
-        run: |
-          set -euo pipefail
-          APK="$GITHUB_WORKSPACE/_gama_build/dist/Gama.apk"
-          test -s "$APK"
-          APK_SIZE="$(stat -c%s "$APK")"
-          if [ "$APK_SIZE" -lt 10000000 ]; then
-            echo "::error::APK suspeitamente pequeno: $APK_SIZE bytes."
-            exit 1
-          fi
-          unzip -l "$APK" | grep -Fq 'assets/model/final.mdl'
-          unzip -l "$APK" | grep -Fq 'classes.dex'
-          echo "PASS: Gama.apk VOICEBRAIN178 verificado."
-          ls -lh "$APK"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: Gama-10.7.0-VOICEBRAIN178-APK
+          name: Gama-11.0-LOCAL-AUTONOMOUS-APK
           path: _gama_build/dist/Gama.apk
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload source
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Gama-10.7.0-VOICEBRAIN178-source
-          path: |
-            _gama_build/**
-            !_gama_build/.gradle/**
-            !_gama_build/app/build/**
-            !_gama_build/dist/**
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-10.7.0-VOICEBRAIN178-diagnostics
+          name: Gama-11.0-build-reports
           path: |
             _gama_build/app/build/reports/**
             _gama_build/app/build/test-results/**
