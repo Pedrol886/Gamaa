@@ -1,4 +1,4 @@
-name: Build Gama 12.0 AUTONOMOUS UNIFIED FIX181 APK
+name: Build Gama 12.0 AUTONOMOUS UNIFIED FIX182 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-12-autonomous-unified-fix181-${{ github.ref }}
+  group: gama-12-autonomous-unified-fix182-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -1064,6 +1064,131 @@ jobs:
           test -s _gama_build/app/src/main/java/com/gama/assistant/CommandRouter.kt
           test -s _gama_build/app/src/test/java/com/gama/assistant/Gama12AutonomousCoreTest.kt
 
+      - name: Repair and preflight Kotlin source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_KOTLIN_REPAIR'
+          from pathlib import Path
+
+          src = Path("_gama_build/app/src/main/java/com/gama/assistant")
+          service_path = src / "GamaService.kt"
+          service = service_path.read_text(encoding="utf-8")
+
+          repairs = [
+              (
+                  'Regex("(?:brilho|em|para) (\\d{1,3}) ?%?")',
+                  'Regex("(?:brilho|em|para) (\\\\d{1,3}) ?%?")',
+                  "brightness percentage regex",
+              ),
+              (
+                  '"^(?:fecha|feche|sai|saia)\\b"',
+                  '"^(?:fecha|feche|sai|saia)\\\\b"',
+                  "close-command word boundary",
+              ),
+          ]
+
+          for old, new, label in repairs:
+              count = service.count(old)
+              if count == 1:
+                  service = service.replace(old, new, 1)
+                  print(f"PASS repaired: {label}")
+              elif count == 0 and new in service:
+                  print(f"PASS already repaired: {label}")
+              else:
+                  raise SystemExit(
+                      f"{label}: expected one broken literal or one repaired literal, "
+                      f"found broken={count}, repaired={service.count(new)}"
+                  )
+
+          service_path.write_text(service, encoding="utf-8")
+
+          # Static preflight for unsupported escapes in ordinary Kotlin strings.
+          # Triple-quoted strings are deliberately skipped because regex escapes
+          # are valid there without double escaping.
+          valid = set('tbnr\\"\'\\\\$u')
+
+          def invalid_escapes(path: Path):
+              text = path.read_text(encoding="utf-8", errors="ignore")
+              i = 0
+              line = 1
+              bad = []
+              size = len(text)
+
+              while i < size:
+                  if text.startswith('//', i):
+                      end = text.find('\\n', i)
+                      if end < 0:
+                          break
+                      line += 1
+                      i = end + 1
+                      continue
+
+                  if text.startswith('/*', i):
+                      end = text.find('*/', i + 2)
+                      if end < 0:
+                          break
+                      line += text[i:end + 2].count('\\n')
+                      i = end + 2
+                      continue
+
+                  if text.startswith('"""', i):
+                      end = text.find('"""', i + 3)
+                      if end < 0:
+                          bad.append((line, 'unterminated triple string'))
+                          break
+                      line += text[i:end + 3].count('\\n')
+                      i = end + 3
+                      continue
+
+                  if text[i] == '"':
+                      i += 1
+                      while i < size:
+                          ch = text[i]
+                          if ch == '\\n':
+                              line += 1
+                              i += 1
+                              continue
+                          if ch == '\\\\':
+                              if i + 1 >= size:
+                                  bad.append((line, 'trailing backslash'))
+                                  break
+                              nxt = text[i + 1]
+                              if nxt not in valid:
+                                  bad.append((line, '\\\\' + nxt))
+                              i += 2
+                              continue
+                          if ch == '"':
+                              i += 1
+                              break
+                          i += 1
+                      continue
+
+                  if text[i] == '\\n':
+                      line += 1
+                  i += 1
+
+              return bad
+
+          failures = []
+          for path in sorted(src.glob('*.kt')):
+              for line, token in invalid_escapes(path):
+                  failures.append(f"{path.name}:{line}: unsupported escape {token}")
+
+          if failures:
+              raise SystemExit("Kotlin string preflight failed:\\n" + "\\n".join(failures[:50]))
+
+          service = service_path.read_text(encoding="utf-8")
+          required = [
+              'Regex("(?:brilho|em|para) (\\\\d{1,3}) ?%?")',
+              '"^(?:fecha|feche|sai|saia)\\\\b"',
+          ]
+          for token in required:
+              if token not in service:
+                  raise SystemExit(f"Required repaired literal missing: {token}")
+
+          print("PASS: Kotlin literal preflight completed with no unsupported escapes.")
+          PY_KOTLIN_REPAIR
+
       - name: Set release version and audit autonomous architecture
         run: |
           set -euo pipefail
@@ -1078,9 +1203,9 @@ jobs:
           text = gradle.read_text(encoding="utf-8")
           version_code = 27_000_000 + int(os.environ["GITHUB_RUN_NUMBER"])
           text, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {version_code}", text, count=1)
-          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.0 Autonomous Unified Core FIX181"', text, count=1)
+          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.0 Autonomous Unified Core FIX182"', text, count=1)
           if c1 != 1 or c2 != 1:
-              raise SystemExit("Falha ao configurar versão Gama 12 FIX181")
+              raise SystemExit("Falha ao configurar versão Gama 12 FIX182")
           gradle.write_text(text, encoding="utf-8")
 
           files_to_scan = list(src.glob("*.kt")) + [root / "app/src/main/AndroidManifest.xml", gradle]
@@ -1140,7 +1265,7 @@ jobs:
           if len(kt_files) < 125 or kt_lines < 28500:
               raise SystemExit(f"Regressão de fonte: {len(kt_files)} arquivos Kotlin / {kt_lines} linhas")
 
-          print(f"PASS Gama 12 FIX181: {len(kt_files)} Kotlin files, {kt_lines} Kotlin lines, versionCode={version_code}")
+          print(f"PASS Gama 12 FIX182: {len(kt_files)} Kotlin files, {kt_lines} Kotlin lines, versionCode={version_code}")
           for name in checks:
               print("PASS", name)
           PY_AUDIT
@@ -1262,14 +1387,14 @@ jobs:
           unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
           "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
           grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
-          grep -Fq "versionName='Gama 12.0 Autonomous Unified Core FIX181'" _gama_build/dist/apk-info.txt
+          grep -Fq "versionName='Gama 12.0 Autonomous Unified Core FIX182'" _gama_build/dist/apk-info.txt
           (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
           rm -f _gama_build/dist/Gama-aligned.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.0-AUTONOMOUS-UNIFIED-FIX181-APK
+          name: Gama-12.0-AUTONOMOUS-UNIFIED-FIX182-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1282,7 +1407,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.0-AUTONOMOUS-UNIFIED-FIX181-source
+          name: Gama-12.0-AUTONOMOUS-UNIFIED-FIX182-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -1293,15 +1418,4 @@ jobs:
 
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-12.0-FIX181-diagnostics
-          path: |
-            gama12-compile.log
-            gama12-tests.log
-            gama12-lint.log
-            gama12-release.log
-            _gama_build/app/build/reports/**
-            _gama_build/app/build/test-results/**
-          if-no-files-found: ignore
-          retention-days: 7
+        uses: actions/upload-artifa
