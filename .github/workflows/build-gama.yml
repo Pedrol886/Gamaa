@@ -1,221 +1,2558 @@
-name: Build Gama 11.0 LOCAL AUTONOMOUS APK
+name: Build Gama 12.0 AUTONOMOUS UNIFIED APK
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [.github/workflows/build-gama.yml]
+    paths:
+      - .github/workflows/build-gama.yml
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: gama-11-local-autonomous-${{ github.ref }}
+  group: gama-12-autonomous-unified-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
     env:
       GAMA_BASE_RUN_ID: "37445474860"
       GAMA_BASE_ARTIFACT: "Gama-10.6.2-LOCALFIRST177-source"
-      GAMA_LEGACY_RUN_ID: "37158343882"
-      GAMA_LEGACY_ARTIFACT: "Gama-9.3.0-JARVIS-source"
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Restore current base and proven local brain
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Restore proven Android base
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          rm -rf _gama_build _gama_legacy
-          mkdir -p _gama_build _gama_legacy
-          gh run download "$GAMA_BASE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$GAMA_BASE_ARTIFACT" --dir _gama_build
-          gh run download "$GAMA_LEGACY_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$GAMA_LEGACY_ARTIFACT" --dir _gama_legacy
+          rm -rf _gama_build
+          mkdir -p _gama_build
+          gh run download "$GAMA_BASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$GAMA_BASE_ARTIFACT" \
+            --dir _gama_build
+          test -s _gama_build/app/build.gradle.kts
+          test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-          test -s _gama_legacy/app/src/main/java/com/gama/assistant/LocalBrain.kt
-          test -s _gama_legacy/app/src/main/java/com/gama/assistant/AiSetup.kt
+          test -s _gama_build/app/src/main/assets/model/final.mdl
+          test -s _gama_build/app/src/main/assets/model/Gr.fst
+          test -s _gama_build/app/src/main/assets/spk-model/final.ext.raw
+          test -f _gama_build/gradlew
           chmod +x _gama_build/gradlew
 
-      - name: Apply Gama 11 autonomous core
+      - name: Install Gama 12 autonomous unified source
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/gama11.b64" <<'B64'
-          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
-          B64
-          tr -d '[:space:]' < "$RUNNER_TEMP/gama11.b64" | base64 --decode | gzip -d > "$RUNNER_TEMP/gama11_patch.py"
-          python3 -m py_compile "$RUNNER_TEMP/gama11_patch.py"
-          GAMA_ROOT="$GITHUB_WORKSPACE/_gama_build" GAMA_LEGACY_ROOT="$GITHUB_WORKSPACE/_gama_legacy" python3 "$RUNNER_TEMP/gama11_patch.py"
-
-      - name: Set version and audit architecture
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import os,re
-          root=Path('_gama_build'); src=root/'app/src/main/java/com/gama/assistant'
-          g=root/'app/build.gradle.kts'; s=g.read_text(); code=26000000+int(os.environ['GITHUB_RUN_NUMBER'])
-          s,a=re.subn(r'versionCode\s*=\s*\d+',f'versionCode = {code}',s,count=1)
-          s,b=re.subn(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 11.0 Local Autonomous Core"',s,count=1)
-          if a!=1 or b!=1: raise SystemExit('version patch failed')
-          g.write_text(s)
-          service=(src/'GamaService.kt').read_text(errors='ignore'); registry=(src/'GamaAppRegistry.kt').read_text(errors='ignore')
-          brain=(src/'LocalBrain.kt').read_text(errors='ignore'); main=(src/'MainActivity.kt').read_text(errors='ignore')
-          manifest=(root/'app/src/main/AndroidManifest.xml').read_text(errors='ignore'); allkt='\n'.join(p.read_text(errors='ignore') for p in src.glob('*.kt'))
-          forbidden=['GamaGeminiClient','GamaGeminiControl','GamaGeminiPolicy','GamaGeminiSecureStore','GamaGeminiSettingsActivity','gemini-3.','Configurar Gemini']
-          bad=[x for x in forbidden if x in allkt or x in manifest]
-          if bad: raise SystemExit('Cloud AI remains: '+', '.join(bad))
-          checks={
-            'local LLM':'com.google.mediapipe:tasks-genai:0.10.27' in s,
-            'model setup':'AiSetup.download(this)' in main,
-            'fallback':'fallbackWithoutModel' in brain,
-            'all installed apps':'GamaInstalledAppCatalog.resolve(context, raw)' in registry,
-            'speech repair':'CommandRouter.appToOpen(raw)' in registry,
-            'app launch':'Accessibility is optional' in service,
-            'brightness':'ACTION_MANAGE_WRITE_SETTINGS' in service,
-            'wifi':'Settings.Panel.ACTION_WIFI' in service,
-            'bluetooth':'ACTION_BLUETOOTH_SETTINGS' in service,
-            'flashlight':'setTorchMode' in service,
-            'camera':'MediaStore.ACTION_IMAGE_CAPTURE' in service,
-            'research':'GamaInternetHub' in service,
-            'local brain process':'BrainProcessProtocol.requestIntent' in service,
-            'screen control':'GamaScreenContextService' in service,
+          mkdir -p _gama_build/app/src/main/java/com/gama/assistant
+          mkdir -p _gama_build/app/src/test/java/com/gama/assistant
+          cat > _gama_build/app/build.gradle.kts <<'GRADLE'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
           }
-          miss=[k for k,v in checks.items() if not v]
-          if miss: raise SystemExit('Missing: '+', '.join(miss))
-          files=list(src.glob('*.kt'))
-          if len(files)<130: raise SystemExit(f'Kotlin regression: {len(files)}')
-          for p in [root/'app/src/main/assets/model/final.mdl',root/'app/src/main/assets/model/Gr.fst',root/'app/src/main/assets/spk-model/final.ext.raw']:
-              if not p.is_file() or not p.stat().st_size: raise SystemExit(f'voice asset missing: {p}')
-          print(f'PASS Gama 11 architecture: {len(files)} Kotlin files, no Gemini')
-          PY
+          
+          android {
+              namespace = "com.gama.assistant"
+              compileSdk = 35
+          
+              defaultConfig {
+                  applicationId = "com.gama.assistant"
+                  minSdk = 26
+                  targetSdk = 35
+                  ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+                  versionCode = 27000000
+                  versionName = "Gama 12.0 Autonomous Unified Core"
+              }
+          
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          
+          
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          
+              buildTypes {
+                  getByName("release") {
+                      isDebuggable = false
+                      isMinifyEnabled = false
+                  }
+              }
+          }
+          
+          dependencies {
+              implementation("com.google.mlkit:text-recognition:16.0.1")
+              implementation("com.google.mlkit:face-detection:16.1.7")
+              implementation("androidx.camera:camera-view:1.4.2")
+              implementation("androidx.camera:camera-lifecycle:1.4.2")
+              implementation("androidx.camera:camera-camera2:1.4.2")
+              implementation("androidx.camera:camera-core:1.4.2")
+              implementation("androidx.biometric:biometric:1.1.0")
+              implementation("androidx.activity:activity-ktx:1.9.3")
+              testImplementation("junit:junit:4.13.2")
+              implementation("com.alphacephei:vosk-android:0.3.47@aar")
+              implementation("net.java.dev.jna:jna:5.13.0@aar")
+          }
+          GRADLE
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - name: Android SDK 35
-        run: |
-          set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"; echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          SDKMANAGER="$(command -v sdkmanager || true)"; if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"; fi
-          test -x "$SDKMANAGER"; yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" >/dev/null
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Compile, test, lint and assemble
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon clean
-          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace
-          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace
-          ./gradlew --no-daemon :app:lintRelease --stacktrace
-          ./gradlew --no-daemon :app:assembleRelease --stacktrace
+          cat > _gama_build/app/src/main/AndroidManifest.xml <<'MANIFEST'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <permission android:name="com.gama.assistant.INTERNAL" android:protectionLevel="signature" />
+              <uses-permission android:name="com.gama.assistant.INTERNAL" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.READ_CALENDAR"/>
+              <uses-permission android:name="android.permission.READ_CONTACTS"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+              <uses-permission android:name="android.permission.WRITE_SETTINGS"/>
+          
+              <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+          
+              <queries>
+                  <intent>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent>
+                  <package android:name="com.whatsapp" />
+                  <package android:name="com.whatsapp.w4b" />
+                  <package android:name="com.spotify.music" />
+                  <package android:name="com.instagram.android" />
+                  <package android:name="com.google.android.youtube" />
+                  <package android:name="com.zhiliaoapp.musically" />
+                  <package android:name="com.android.chrome" />
+                  <package android:name="com.netflix.mediaclient" />
+                  <package android:name="com.duolingo" />
+              </queries>
+          
+              <uses-permission android:name="com.android.alarm.permission.SET_ALARM"/>
+                  <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+          
+              <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+              <uses-feature
+                  android:name="android.hardware.camera.front"
+                  android:required="false" />
+          <application
+                  android:name=".GamaApplication"
+                  android:allowBackup="false"
+                  android:fullBackupContent="false"
+                  android:label="Gama"
+                  android:icon="@drawable/gama_red_core"
+                  android:roundIcon="@drawable/gama_red_core"
+                  android:theme="@style/GamaRedTheme">
+          
+                  <activity
+                      android:name=".MainActivity"
+                      android:launchMode="singleTop"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                      <intent-filter><action android:name="android.intent.action.ASSIST"/><category android:name="android.intent.category.DEFAULT"/></intent-filter>
+                  </activity>
+          
+                  <activity
+                      android:name=".GamaIntroActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTop"
+                      android:showWhenLocked="true"
+                      android:turnScreenOn="true"
+                      android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>
+          
+                  <activity
+                      android:name=".GamaLockConversationActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTop"
+                      android:showWhenLocked="true"
+                      android:turnScreenOn="true"
+                      android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>
+          
+                  <activity
+                      android:name=".LockScreenActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTop"
+                      android:showWhenLocked="true"
+                      android:turnScreenOn="true"
+                      android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"/>
+          
+                  <service
+                      android:name=".GamaService"
+                      android:exported="false"
+                      android:stopWithTask="false"
+                      android:foregroundServiceType="microphone"/>
+          
+                  <service
+                      android:name=".GamaBrainProcessService"
+                      android:exported="false"
+                      android:process=":gama_brain"
+                      android:stopWithTask="false"/>
+          
+                  <service android:name=".GamaRecognitionService" android:label="Gama" android:exported="true" android:permission="android.permission.RECORD_AUDIO">
+                      <intent-filter><action android:name="android.speech.RecognitionService"/></intent-filter>
+                  </service>
+                  <service android:name=".SystemAssistant" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION">
+                      <intent-filter><action android:name="android.service.voice.VoiceInteractionService"/></intent-filter>
+                      <meta-data android:name="android.voice_interaction" android:resource="@xml/gama_assistant"/>
+                  </service>
+                  <service android:name=".SystemAssistantSession" android:exported="true" android:permission="android.permission.BIND_VOICE_INTERACTION"/>
+                  <service
+                      android:name=".GamaNotificationListener"
+                      android:label="Gama"
+                      android:exported="true"
+                      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.service.notification.NotificationListenerService"/>
+                      </intent-filter>
+                  </service>
+          
+                  <receiver android:name=".GamaPulseReceiver" android:exported="true">
+                      <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/></intent-filter>
+                  </receiver>
+          
+                  <receiver
+                      android:name=".GamaDeviceAdminReceiver"
+                      android:label="Gama"
+                      android:exported="true"
+                      android:permission="android.permission.BIND_DEVICE_ADMIN">
+                      <meta-data
+                          android:name="android.app.device_admin"
+                          android:resource="@xml/gama_device_admin"/>
+                      <intent-filter>
+                          <action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/>
+                      </intent-filter>
+                  </receiver>
+              
+                  <activity
+                      android:name=".GamaVoiceSettingsActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true" />
+          <activity
+                      android:name=".GamaDiagnosticActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTop" />
+              
+              
+                  <activity
+                      android:name=".GamaCalendarPermissionActivity"
+                      android:exported="false"
+                      android:excludeFromRecents="true"
+                      android:launchMode="singleTop" />
+              
+              
+                  <service
+                      android:name=".GamaScreenContextService"
+                      android:exported="true"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/gama_accessibility_service" />
+                  </service>
+          
+              
+          <activity
+            android:name=".GamaFaceGateActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop" />
+          
+              </application>
+          </manifest>
+          MANIFEST
 
-      - name: Sign and verify APK
-        env:
-          GAMA_KEYSTORE_B64: ${{ secrets.GAMA_KEYSTORE_B64 }}
-          GAMA_KEYSTORE_PASSWORD: ${{ secrets.GAMA_KEYSTORE_PASSWORD }}
-          GAMA_KEY_ALIAS: ${{ secrets.GAMA_KEY_ALIAS }}
-          GAMA_KEY_PASSWORD: ${{ secrets.GAMA_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"; APK="$(find _gama_build/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n1 || true)"
-          test -s "$APK"; mkdir -p _gama_build/dist; "$BT/zipalign" -f -p 4 "$APK" _gama_build/dist/aligned.apk
-          if [ -n "${GAMA_KEYSTORE_B64:-}" ] && [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && [ -n "${GAMA_KEY_ALIAS:-}" ] && [ -n "${GAMA_KEY_PASSWORD:-}" ]; then
-            echo "$GAMA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gama.jks"; KS="$RUNNER_TEMP/gama.jks"; SP="$GAMA_KEYSTORE_PASSWORD"; KA="$GAMA_KEY_ALIAS"; KP="$GAMA_KEY_PASSWORD"
-          else
-            KS="$RUNNER_TEMP/gama-test.jks"; SP=gama-test-pass; KA=gama-test; KP=gama-test-pass
-            keytool -genkeypair -keystore "$KS" -storepass "$SP" -keypass "$KP" -alias "$KA" -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Gama Test,O=Gama,C=BR" -noprompt
-          fi
-          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$SP" --ks-key-alias "$KA" --key-pass "pass:$KP" --out _gama_build/dist/Gama.apk _gama_build/dist/aligned.apk
-          "$BT/apksigner" verify --verbose --print-certs _gama_build/dist/Gama.apk
-          test -s _gama_build/dist/Gama.apk
-          test "$(stat -c%s _gama_build/dist/Gama.apk)" -gt 10000000
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/model/final.mdl'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Gama-11.0-LOCAL-AUTONOMOUS-APK
-          path: _gama_build/dist/Gama.apk
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: Gama-11.0-build-reports
-          path: |
-            _gama_build/app/build/reports/**
-            _gama_build/app/build/test-results/**
-          if-no-files-found: ignore
-          retention-days: 7
+          cat > _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt <<'GAMASERVICE'
+          @file:Suppress("SuspiciousIndentation")
+          
+          package com.gama.assistant
+          
+          import android.app.*
+          import android.app.admin.DevicePolicyManager
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.content.BroadcastReceiver
+          import android.content.IntentFilter
+          import java.util.concurrent.ConcurrentLinkedQueue
+          import java.security.SecureRandom
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.hardware.camera2.CameraCharacteristics
+          import android.hardware.camera2.CameraManager
+          import android.media.*
+          import android.os.Build
+          import android.os.IBinder
+          import android.os.Looper
+          import android.os.PowerManager
+          import android.os.SystemClock
+          import android.provider.MediaStore
+          import android.provider.Settings
+          import android.speech.tts.TextToSpeech
+          import android.speech.tts.UtteranceProgressListener
+          import android.util.Log
+          import android.view.Gravity
+          import android.view.KeyEvent
+          import android.view.MotionEvent
+          import android.view.WindowManager
+          import org.json.JSONObject
+          import org.vosk.Model
+          import org.vosk.Recognizer
+          import org.vosk.SpeakerModel
+          import org.json.JSONArray
+          import java.io.File
+          import java.io.FileOutputStream
+          import java.text.Normalizer
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.net.URLEncoder
+          import java.util.Locale
+          import kotlin.concurrent.thread
+          
+          class GamaService : Service(), TextToSpeech.OnInitListener {
+              companion object {
+                  const val CHANNEL = "gama_voice"
+                  const val NOTIF_ID = 42
+                  const val SAMPLE_RATE = 16000
+                  const val ACTION_CLOSE_UI = "com.gama.assistant.CLOSE_GAMA_UI"
+                  const val ACTION_ENROLL_OWNER = "com.gama.assistant.ENROLL_OWNER_VOICE"
+                  const val EXTRA_REQUEST_SECURE_UNLOCK = "request_secure_unlock"
+                  private const val TAG = "GamaService"
+          
+                  // Speaker verification. This protects Gama commands, not Android's lock screen.
+                  private const val OWNER_PREFS = "muffin_owner_voice_v3" // legacy storage key: preserve enrolled owner data
+                  private const val OWNER_VECTOR_KEY = "owner_vector"
+                  private const val OWNER_FRAMES_KEY = "owner_frames"
+                  private const val OWNER_SAMPLES_KEY = "owner_samples"
+                  private const val OWNER_THRESHOLD_KEY = "owner_threshold"
+                  private const val OWNER_VOICE_ONLY = true
+                  private const val OWNER_ENROLL_SAMPLES = 7
+                  private const val OWNER_MIN_SPK_FRAMES = 45
+                  private const val OWNER_ENROLL_MIN_SPK_FRAMES = 75
+                  private const val OWNER_BASE_THRESHOLD = 0.68
+                  private const val OWNER_MIN_THRESHOLD = 0.62
+                  private const val OWNER_MAX_THRESHOLD = 0.79
+                  private const val OWNER_SAMPLE_MARGIN = 0.07
+                  private const val OWNER_ENROLL_MIN_COHESION = 0.44
+                  private const val OWNER_VARIATION_MARGIN = 0.12
+                  private const val OWNER_VARIATION_FLOOR = 0.54
+                  private const val OWNER_RETRY_ACCEPT_MARGIN = 0.07
+                  private const val OWNER_RETRY_MIN_SPK_FRAMES = 60
+                  private const val OWNER_RETRY_WINDOW_MS = 9000L
+                  private const val WAKE_WINDOW_MS = 9000L
+                  private const val COMMAND_START_TIMEOUT_MS = 12_000L
+                      private const val FOLLOW_UP_START_TIMEOUT_MS = 15_000L
+                      private const val CONVERSATION_IDLE_TIMEOUT_MS = Long.MAX_VALUE
+                      private const val BRAIN_HARD_WATCHDOG_MS = 24_000L
+                  private const val RESPONSE_WATCHDOG_MS = 5000L
+                  private const val OWNER_SESSION_MS = 30L * 60L * 1000L
+                  private const val CREATOR_RESEARCH_PHRASE =
+                      "acorda crianca preciso fazer uma pesquisa"
+                  private const val CREATOR_RESEARCH_WINDOW_MS = 45000L
+              }
+          
+              private val pendingCommand = PendingCommand()
+              @Volatile private var transcription: TranscriptionListener? = null
+              @Volatile private var textMode = false
+              @Volatile private var voiceReady = false
+              @Volatile private var lastAudioReadAt = 0L
+              @Volatile private var pendingActivity: Intent? = null
+              private var deferredLaunch = false
+              @Volatile private var requestGeneration = 0L
+              private fun postAudio(action: () -> Unit) {
+                  if (textMode) uiHandler.post {
+                      if (textMode) {
+                          try { action() } catch (e: Exception) { Log.e(TAG, "Falha isolada em tarefa do Gama", e) }
+                      } else audioTasks.add(action)
+                  } else audioTasks.add(action)
+              }
+              @Volatile private var running = false
+              @Volatile private var speaking = false
+              @Volatile private var ttsReady = false
+              @Volatile private var wakeUntil = 0L
+              @Volatile private var conversationUntil = 0L
+              @Volatile private var creatorResearchUntil = 0L
+              @Volatile private var researchBusy = false
+              @Volatile private var brainBusy = false
+              @Volatile private var liveBusy = false
+              @Volatile private var lastWakeAt = 0L
+              @Volatile private var ttsSpeaking = false
+              private var recognitionErrors = 0
+              @Volatile private var closeUiAfterSpeech = false
+              @Volatile private var waitingForCommandStart = false
+              @Volatile private var commandSpeechStarted = false
+              @Volatile private var armCommandWindowAfterTts = false
+              @Volatile private var interactionToken = 0L
+              @Volatile private var responsePending = false
+              @Volatile private var responseWatchToken = 0L
+              @Volatile private var conversationLastActivityAt = 0L
+              @Volatile private var conversationIdleToken = 0L
+          
+              private val audioTasks = ConcurrentLinkedQueue<() -> Unit>()
+              private val commandWindow = CommandWindow()
+              private val conversation = ConversationSession()
+              private val orchestrator = GamaOrchestrator(conversation)
+              private var pendingSemanticText = ""
+              private var pendingSemanticJson: JSONObject? = null
+              private var pendingSemanticUntil = 0L
+                  private var pendingSemanticStartedAt = 0L
+              private var bargeVoiceStartedAt = 0L
+              private var activeSpeechStartedAt = 0L
+              @Volatile private var activeBrainTurnStamp: GamaTurnCoordinator.Stamp? = null
+              private var activeBrainContext = ""
+              private val zevronPlanSteps = ConcurrentLinkedQueue<String>()
+              @Volatile private var zevronPlanRunning = false
+              @Volatile private var lastPlanStepMayContinue = true
+              @Volatile private var currentPlanStep = ""
+              private var bargePreRoll = ByteArray(0)
+              private var headphoneCheckAt = 0L
+              private var headphoneOutput = false
+              private var listenerThread: Thread? = null
+              private var ttsFailed = false
+              @Volatile private var activeUtterance: String? = null
+              @Volatile private var activeSpeechText: String? = null
+              @Volatile private var ttsRetryCount = 0
+              private var queuedWakeCommand: Pair<String, JSONObject>? = null
+              private var challenge = ""
+              private var challengeCommand = ""
+              private var challengeFailures = 0
+              private var challengeCooldownUntil = 0L
+              private var recentAndroidAuth = 0L
+              private var recentOwnerSession = 0L
+              @Volatile private var unlockPending = false
+              private var deferredSensitiveCommand: String? = null
+              private var deferredSensitiveUntil = 0L
+              private var ownerAuthCommand: String? = null
+              private var ownerAuthUntil = 0L
+              private var ownerAuthResumeConversation = false
+              private var lastAdaptedAt = 0L
+              private var cachedReferences: List<FloatArray>? = null
+              private var noiseFloor = 45.0
+              private val audioFrontEnd = GamaAudioFrontEnd(SAMPLE_RATE)
+              @Volatile private var lastAudioMetrics = GamaAudioMetrics.initial()
+              private var noisyAudioBlocks = 0
+              private var lastNoiseHintAt = 0L
+              private var voicedBlocks = 0
+              private var preRoll = ByteArray(0)
+              private var decoderActive = false
+              private var lastSpeechAt = 0L
+              private var utteranceStartedAt = 0L
+              private var lastPartialAt = 0L
+              private var ignoreAudioUntil = 0L
+              private var enrollmentRequested = false
+              private var enrollmentStartedAt = 0L
+              private val deviceStateReceiver = object : BroadcastReceiver() {
+                  override fun onReceive(context: Context?, intent: Intent?) {
+                      // Never depend on the microphone worker to process screen/unlock events.
+                      // If AudioRecord is stalled during Android authentication, posting this
+                      // work to audioTasks would make Gama look permanently deaf afterwards.
+                      uiHandler.post {
+                          if (intent?.action == Intent.ACTION_USER_PRESENT && !isDeviceLocked()) {
+                              unlockPending = false
+                              recentAndroidAuth = SystemClock.elapsedRealtime()
+                              resumeAfterUnlock()
+                              GamaPresenceContext.onUserPresent(this@GamaService)?.let { summary ->
+                                  if (!speaking && !ttsSpeaking) {
+                                      speak(summary, false)
+                                  }
+                              }
+                              val deferredAutomation = pendingAutomationAfterUnlock
+                              pendingAutomationAfterUnlock = null
+                              if (deferredAutomation != null) {
+                                  uiHandler.postDelayed({ postAudio { executeAutomationRule(deferredAutomation) } }, 450L)
+                              }
+                          } else if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                              recentOwnerSession = 0L
+                              recentAndroidAuth = 0L
+                              hideWakeUi()
+                          }
+                      }
+                  }
+              }
+          
+              private val brainProcessReceiver = object : BroadcastReceiver() {
+                      override fun onReceive(context: Context?, intent: Intent?) {
+                          val requestId =
+                              intent?.getLongExtra(
+                                  BrainProcessProtocol.EXTRA_REQUEST_ID,
+                                  0L
+                              ) ?: return
+          
+                          if (
+                              requestId <= 0L ||
+                              requestId != activeBrainRequestId
+                          ) {
+                              return
+                          }
+          
+                          val sessionId =
+                              intent.getLongExtra(
+                                  BrainProcessProtocol.EXTRA_SESSION_ID,
+                                  0L
+                              )
+          
+                          val turnId =
+                              intent.getLongExtra(
+                                  BrainProcessProtocol.EXTRA_TURN_ID,
+                                  0L
+                              )
+          
+                          val generationId =
+                              intent.getLongExtra(
+                                  BrainProcessProtocol.EXTRA_GENERATION_ID,
+                                  0L
+                              )
+          
+                          when (intent.action) {
+                              BrainProcessProtocol.ACTION_STARTED -> {
+                                  activeBrainPid =
+                                      intent.getIntExtra(
+                                          BrainProcessProtocol.EXTRA_PROCESS_PID,
+                                          0
+                                      )
+          
+                                  scheduleBrainProcessHealthCheck(requestId)
+                              }
+          
+                              BrainProcessProtocol.ACTION_RESULT -> {
+                                  val answer =
+                                      intent.getStringExtra(
+                                          BrainProcessProtocol.EXTRA_ANSWER
+                                      ).orEmpty()
+          
+                                  val success =
+                                      intent.getBooleanExtra(
+                                          BrainProcessProtocol.EXTRA_SUCCESS,
+                                          false
+                                      )
+          
+                                  finishIsolatedBrainResult(
+                                      requestId,
+                                      answer,
+                                      success,
+                                      sessionId,
+                                      turnId,
+                                      generationId,
+                                  )
+                              }
+                          }
+                      }
+                  }
+          
+                  private var pendingSpeech: String? = null
+              private var pendingCloseAfterSpeech = false
+              private var queuedSpeechText: String? = null
+              private var queuedSpeechCloseAfter = false
+              private var queuedSpeechRecord = true
+              private var pendingLockAfterSpeech = false
+              private var pendingSuggestedCommand: String? = null
+              private var pendingSuggestedAt = 0L
+              private val automationEngine by lazy { GamaAutomationEngine(applicationContext) }
+              @Volatile private var pendingAutomationDraft: AutomationDraft? = null
+              @Volatile private var pendingAutomationUntil = 0L
+              @Volatile private var automationTickToken = 0L
+              @Volatile private var automationExecuting = false
+              private var pendingAutomationAfterUnlock: GamaAutomationEngine.Rule? = null
+              private var pendingWhatsAppTarget: String? = null
+              private var pendingWhatsAppAt = 0L
+              @Volatile private var installedAppsCache: List<InstalledApp>? = null
+              private var installedAppsCacheAt = 0L
+              private var pendingWhatsAppPermission: WhatsAppSendRequest? = null
+              private var pendingWhatsAppAccessibility: WhatsAppSendRequest? = null
+              @Volatile private var pendingNotificationReadAt = 0L
+              @Volatile private var pendingLockAfterAccessibility = false
+              private var audioRecord: AudioRecord? = null
+              private var model: Model? = null
+              private var speakerModel: SpeakerModel? = null
+              private var recognizer: Recognizer? = null
+              // Detector dedicado da hotword. Enquanto o Gama está em espera ele usa um
+              // vocabulário minúsculo e recebe o áudio continuamente, sem depender do VAD
+              // do reconhecedor de frases. Isso deixa “Gama” muito mais confiável em tela
+              // apagada, fala baixa e ruído ambiente.
+              private var wakeRecognizer: Recognizer? = null
+              private var wakePreRoll = ByteArray(0)
+              private var lastDedicatedWakePartialAt = 0L
+              private var wakePartialCandidate = ""
+              private var wakePartialHits = 0
+              private var wakePartialFirstAt = 0L
+              // Detector separado de encerramento. Durante uma conversa ele escuta apenas
+              // frases curtas de descanso/saída, para que ruído ou baixa confiança no
+              // reconhecedor principal nunca prendam o Gama no ciclo de "não entendi".
+              private var sleepRecognizer: Recognizer? = null
+              private var lastDedicatedSleepPartialAt = 0L
+              // Ao trocar para outro app, alguns aparelhos emitem sons curtos que o Vosk
+              // pode interpretar como fala. Mantemos duas janelas pequenas: uma para
+              // baixa confiança e outra, um pouco maior, apenas para falsos números.
+              private var postExternalNoiseGuardUntil = 0L
+              private var postExternalNumericGuardUntil = 0L
+              private var externalActionGuardAfterTts = false
+              @Volatile private var externalLaunchStatusUntil = 0L
+              @Volatile private var partialWakeToken = 0L
+              @Volatile private var ownerEnrollmentMode = false
+              private val ownerEnrollmentVectors = mutableListOf<FloatArray>()
+              @Volatile private var ownerRetryPending = false
+              private var ownerRetryFirstScore = -1.0
+              private var ownerRetryThreshold = OWNER_BASE_THRESHOLD
+              private var ownerRetryUntil = 0L
+          
+              private enum class OwnerVoiceDecision { MATCH, RETRY, REJECT }
+          
+              private data class OwnerVoiceAssessment(
+                  val decision: OwnerVoiceDecision,
+                  val score: Double,
+                  val threshold: Double
+              )
+              private var tts: TextToSpeech? = null
+              private var orb: GamaEnergyView? = null
+              private var wm: WindowManager? = null
+              private var orbParams: WindowManager.LayoutParams? = null
+              private var lastPartial = ""
+              // Most recent meaningful partial from Vosk. Final results can occasionally
+              // become empty/short at an endpoint even though the partial was correct.
+              // Keep a very short-lived copy so Gama can recover the utterance instead of
+              // asking the user to repeat it.
+              private var lastUsefulPartial = ""
+              private var lastUsefulPartialAt = 0L
+              private var lastVoiceEvidenceAt = 0L
+              private var lastWakePulse = 0L
+              @Volatile private var brainRequestSerial = 0L
+              @Volatile private var activeBrainRequestId = 0L
+              @Volatile private var activeBrainGeneration = 0L
+              @Volatile private var activeBrainPid = 0
+              @Volatile private var brainHealthToken = 0L
+              @Volatile private var brainCooldownUntil = 0L
+              @Volatile private var pendingCalendarTitleUntil = 0L
+              private var listenerWakeLock: PowerManager.WakeLock? = null
+              private var speechHoldUntil = 0L
+              private var lastFastTimeAt = 0L
+              private val proactiveEvents = ConcurrentLinkedQueue<GamaEventHub.Event>()
+              @Volatile private var lastProactiveSpokenAt = 0L
+              @Volatile private var proactiveDrainToken = 0L
+              @Volatile private var lastCalendarAwarenessCheck = 0L
+          
+              private val uiHandler = android.os.Handler(Looper.getMainLooper())
+              private val uiTimeout = Runnable {
+                  if (!conversation.active) {
+                      wakeUntil = 0L
+                      conversationUntil = 0L
+                      hideWakeUi()
+                  }
+              }
+          
+              @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
+              override fun onCreate() {
+                  // GAMA91_AUDIO_DSP_START
+                  GamaAudioNoiseSupervisor.start(this)
+          
+                  // GAMA67_STABILITY_SUPERVISORS
+                  brainProcessSupervisor = BrainProcessSupervisor(this) {
+                      uiHandler.post { handleBrainProcessDeath() }
+                  }
+                  RuntimeRecoveryBus.listener = { threadName, errorClass ->
+                      uiHandler.post { handleRecoverableWorkerFailure(threadName, errorClass) }
+                  }
+                  GamaProactiveBridge.listener = { event ->
+                      uiHandler.post { handleProactiveEvent(event) }
+                  }
+                  uiHandler.postDelayed(listenerSupervisorRunnable, 4_000L)
+          
+                  super.onCreate()
+                  AssistantRuntime.service = this
+                  GamaPersonalAICore.initialize(this)
+                      // O perfil de voz, quando cadastrado, é apenas foco em ambiente ruidoso.
+                  // Autenticação privada continua exclusivamente sob controle do Android.
+                  createChannel()
+                  textMode = true
+                  val stateFilter = IntentFilter().apply {
+                      addAction(Intent.ACTION_USER_PRESENT)
+                      addAction(Intent.ACTION_SCREEN_OFF)
+                  }
+                  if (Build.VERSION.SDK_INT >= 33) registerReceiver(deviceStateReceiver, stateFilter, Context.RECEIVER_NOT_EXPORTED)
+                  else registerReceiver(deviceStateReceiver, stateFilter)
+          
+                  val brainFilter = IntentFilter().apply {
+                      addAction(BrainProcessProtocol.ACTION_STARTED)
+                      addAction(BrainProcessProtocol.ACTION_RESULT)
+                  }
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      registerReceiver(brainProcessReceiver, brainFilter, Context.RECEIVER_NOT_EXPORTED)
+                  } else {
+                      registerReceiver(brainProcessReceiver, brainFilter)
+                  }
+          
+                  if (!isDeviceLocked()) {
+                      recentAndroidAuth = SystemClock.elapsedRealtime() // trusted unlocked service start
+                  }
+                  // Usa o mecanismo TTS padrão do aparelho para evitar falhas de inicialização
+                  // de engines específicas. A seleção de voz masculina continua sendo tentada
+                  // depois, via lista de vozes exposta pelo próprio Android.
+                  running = true
+                  tts = try {
+                      TextToSpeech(this, this)
+                  } catch (e: Exception) {
+                      ttsFailed = true
+                      Log.e(TAG, "Falha ao inicializar TTS", e)
+                      null
+                  }
+          
+                  uiHandler.postDelayed({
+                      if (running && !ttsReady && !ttsFailed) {
+                          ttsFailed = true
+                          updateNotification("Voz indisponível. Verifique o TTS nas configurações do Android.")
+                          val id = "tts-init-timeout"
+                          activeUtterance = id
+                          finishTts(id)
+                      }
+                  }, 8000L)
+          
+                  // Não mostramos a bolinha ao iniciar.
+                  // A palavra de ativação agora é fixa: "Gama".
+                  running = true
+          
+                  AssistantRuntime.state("Pronto • modo texto")
+                  scheduleAutomationTick()
+              }
+          
+              private fun drainAudioTasks() {
+              while (true) {
+                  val action = audioTasks.poll() ?: break
+                  try { action() } catch (e: Exception) { Log.w(TAG, "Falha em tarefa de áudio", e) }
+              }
+          }
+          
+          private fun waitForMicRetry(delayMs: Long) {
+              val deadline = SystemClock.elapsedRealtime() + delayMs
+              while (running && SystemClock.elapsedRealtime() < deadline) {
+                  drainAudioTasks()
+                  try { Thread.sleep(200L) } catch (_: InterruptedException) { return }
+              }
+          }
+          
+              private fun enableVoice() {
+                  // A dead/stalled listener must be restartable even when textMode was already false.
+                  if (!textMode && running && listenerThread?.isAlive == true && voiceReady) return
+                  if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      BackgroundMode.setEnabled(this, false)
+                      AssistantRuntime.state("Permita o microfone para ativar a voz")
+                      pauseVoiceWithoutStoppingService()
+                      return
+                  }
+                  try { startForeground(NOTIF_ID, notification("Preparando reconhecimento de voz...")) }
+                  catch (_: Exception) { BackgroundMode.setEnabled(this, false); pauseVoiceWithoutStoppingService(); AssistantRuntime.state("Abra o Gama para ativar o microfone"); return }
+                  running = true
+                  textMode = false
+                  BackgroundMode.setEnabled(this, true)
+                  AssistantRuntime.state("Preparando escuta em segundo plano…")
+                  if (BackgroundMode.keepCpuAwake(this)) acquireListenerWakeLock()
+                  listenerThread = thread(name = "gama-listener") {
+                      var consecutiveFailures = 0
+                      try {
+                          while (running) {
+                              try {
+                                  listenLoop()
+                                  consecutiveFailures = 0
+                              } catch (_: SecurityException) {
+                                  BackgroundMode.setEnabled(this@GamaService, false)
+                                  updateNotification("Permita o microfone no aplicativo Gama.")
+                                  running = false
+                                  pauseVoiceWithoutStoppingService()
+                              } catch (e: LinkageError) {
+                                  BackgroundMode.setEnabled(this@GamaService, false)
+                                  updateNotification("Motor de voz incompatível com este aparelho.")
+                                  running = false
+                                  pauseVoiceWithoutStoppingService()
+                              } catch (e: Exception) {
+                                  if (running) {
+                                      consecutiveFailures++
+                                      Log.e(TAG, "Falha no microfone: ${e.javaClass.simpleName}", e)
+                                      val retryDelay = minOf(10000L, 1500L * consecutiveFailures.coerceAtMost(6))
+                                  updateNotification("Reconectando o microfone...")
+                                  waitForMicRetry(retryDelay)
+                                  if (consecutiveFailures > 6) consecutiveFailures = 3
+                                  }
+                              }
+                          }
+                      } finally {
+                          releaseListenerWakeLock()
+                      }
+                  }
+              }
+          
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  when (intent?.action) {
+                      "com.gama.assistant.TEXT" -> intent.getStringExtra("text")?.let { submitText(it) }
+                      "com.gama.assistant.LISTEN" -> { enableVoice(); if (!textMode) postAudio { acknowledgeWake() } }
+                      "com.gama.assistant.END_CONVERSATION" -> endConversation()
+                      "com.gama.assistant.INTERRUPT" -> interruptSpeechForUser()
+                      ACTION_ENROLL_OWNER -> {
+                          enrollmentRequested = true
+                          enableVoice()
+                          postAudio { startEnrollmentWhenReady() }
+                      }
+                      BackgroundMode.ENABLE -> enableVoice()
+                      null -> if (BackgroundMode.enabled(this)) enableVoice() else pauseVoiceWithoutStoppingService()
+                      "com.gama.assistant.STOP" -> { BackgroundMode.setEnabled(this, false); pauseVoiceWithoutStoppingService(); return START_NOT_STICKY }
+                  }
+                  return if (textMode) START_NOT_STICKY else START_STICKY
+              }
+          
+              fun startTranscription(listener: TranscriptionListener) { postAudio {
+                  if (!running || textMode || transcription != null || ttsSpeaking || speaking || waitingForCommandStart || commandSpeechStarted || brainBusy || researchBusy) {
+                      listener.error(android.speech.SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+                      return@postAudio
+                  }
+                  recognizer?.reset()
+                  decoderActive = false
+                  preRoll = ByteArray(0)
+                  lastPartial = ""
+                  transcription = listener
+                  commandWindow.arm(SystemClock.elapsedRealtime(), 5000L)
+                  waitingForCommandStart = true
+                  commandSpeechStarted = false
+                  listener.ready()
+                  uiHandler.postDelayed({
+                      postAudio {
+                          if (transcription === listener) {
+                              transcription = null
+                              recognizer?.reset()
+                              decoderActive = false
+                              finishCommandListening()
+                              listener.error(android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+                          }
+                      }
+                  }, 60000L)
+              } }
+              fun stopTranscription(listener: TranscriptionListener, cancel: Boolean) { postAudio {
+                  if (transcription !== listener) return@postAudio
+                  transcription = null
+                  val result = if (cancel) "" else try { JSONObject(recognizer?.finalResult ?: "{}").optString("text") } catch (_: Exception) { "" }
+                  recognizer?.reset()
+                  decoderActive = false
+                  finishCommandListening()
+                  if (!cancel) listener.result(result)
+              } }
+          
+              fun isVoiceActive(): Boolean = running && !textMode
+              fun isVoiceReady(): Boolean = isVoiceActive() && voiceReady
+          
+              /** Keeps the hotword engine alive but prevents the intro TTS from feeding back into Vosk. */
+              fun beginIntroPresentation() {
+                  postAudio {
+                      ignoreAudioUntil = Long.MAX_VALUE / 4L
+                      transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+                      transcription = null
+                      recognizer?.reset()
+                      decoderActive = false
+                      preRoll = ByteArray(0)
+                      bargePreRoll = ByteArray(0)
+                      finishCommandListening()
+                  }
+              }
+          
+              /** Restores normal hotword decoding shortly after the ceremony voice finishes. */
+              fun endIntroPresentation() {
+                  postAudio {
+                      ignoreAudioUntil = SystemClock.elapsedRealtime() + 1200L
+                      recognizer?.reset()
+                      decoderActive = false
+                      preRoll = ByteArray(0)
+                      bargePreRoll = ByteArray(0)
+                      if (running) updateNotification("Ativo em segundo plano • diga Gama")
+                  }
+              }
+              fun submitText(text: String) { postAudio {
+                  val input = text.take(1500).trim()
+                  when (ZevronConversationEngine.control(input)) {
+                      ZevronConversationEngine.Control.WAKE_ONLY -> acknowledgeWake()
+                      ZevronConversationEngine.Control.SLEEP -> closeConversationForGoodbye()
+                      ZevronConversationEngine.Control.NORMAL -> {
+                          val command = ZevronConversationEngine.stripWakeWord(input)
+                          if (command.isNotBlank()) authorizeCommand(command, JSONObject())
+                      }
+                  }
+              } }
+              fun resumeAfterUnlock() {
+                  if (isDeviceLocked()) return
+                  unlockPending = false
+                  pendingActivity = null
+                  recentAndroidAuth = SystemClock.elapsedRealtime()
+                  val deferred = pendingCommand.take(false, SystemClock.elapsedRealtime())
+                  ensureVoicePipelineAfterUnlock()
+                  if (!deferred.isNullOrBlank()) {
+                      uiHandler.postDelayed({ postAudio {
+                          if (!isDeviceLocked()) executeAndReply(deferred)
+                      } }, 550L)
+                  } else if (conversation.active) {
+                      uiHandler.postDelayed({ postAudio {
+                          if (!isDeviceLocked()) {
+                              touchConversation()
+                              beginCommandWindow()
+                              updateNotification("Conversa contínua • pode falar")
+                          }
+                      } }, 450L)
+                  } else {
+                      updateNotification("Ativo em segundo plano • diga Gama")
+                  }
+              }
+          
+              private fun ensureVoicePipelineAfterUnlock() {
+                  val now = SystemClock.elapsedRealtime()
+                  val stale = listenerThread?.isAlive != true || !voiceReady ||
+                      (lastAudioReadAt > 0L && now - lastAudioReadAt > 3_000L)
+                  if (stale) {
+                      recoverMicrophoneOnly("unlock")
+                  } else {
+                      postAudio {
+                          recognizer?.reset()
+                          decoderActive = false
+                          voicedBlocks = 0
+                          preRoll = ByteArray(0)
+                          bargePreRoll = ByteArray(0)
+                          speechHoldUntil = 0L
+                          ignoreAudioUntil = SystemClock.elapsedRealtime() + 350L
+                      }
+                  }
+                  uiHandler.postDelayed({
+                      val checkNow = SystemClock.elapsedRealtime()
+                      val stillStale = listenerThread?.isAlive != true || !voiceReady ||
+                          (lastAudioReadAt > 0L && checkNow - lastAudioReadAt > 3_500L)
+                      if (!textMode && BackgroundMode.enabled(this) && stillStale) {
+                          recoverMicrophoneOnly("unlock-watchdog")
+                      }
+                  }, 1_800L)
+              }
+              fun cancelRequest() { postAudio {
+                  requestGeneration++
+                  transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+                  transcription = null
+                  pendingCommand.clear()
+                  ownerAuthCommand = null
+                  ownerAuthUntil = 0L
+                  ownerAuthResumeConversation = false
+                  queuedWakeCommand = null
+                  armCommandWindowAfterTts = false
+                  finishCommandListening()
+                  clearOwnerVoiceRetry()
+                  unlockPending = false
+                  pendingActivity = null
+                  responsePending = false
+                  uiHandler.post { tts?.stop(); speak("Cancelado.", !conversation.active) }
+              } }
+              fun launchSafely(intent: Intent): String {
+                  // Em Android recente, abrir uma Activity a partir do segundo plano pode
+                  // ser bloqueado. Mantemos a bolinha visível durante o start quando a
+                  // permissão de overlay existe, ou usamos o VoiceInteractionService se
+                  // o Gama for o assistente padrão.
+                  externalActionGuardAfterTts = true
+                  val now = SystemClock.elapsedRealtime()
+                  postExternalNoiseGuardUntil = maxOf(postExternalNoiseGuardUntil, now + 3500L)
+                  postExternalNumericGuardUntil = maxOf(postExternalNumericGuardUntil, now + 12000L)
+          
+                  val target = Intent(intent).addFlags(
+                      Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                  )
+                  pendingActivity = target
+          
+                  val foregroundNow = GamaApplication.foreground
+                  val assistantNow = SystemAssistant.current
+                  val overlayGranted = Settings.canDrawOverlays(this)
+                  val route = when {
+                      foregroundNow -> BackgroundLaunchPolicy.Route.ACTIVITY
+                      assistantNow != null -> BackgroundLaunchPolicy.Route.ASSISTANT
+                      overlayGranted -> BackgroundLaunchPolicy.Route.ACTIVITY
+                      else -> BackgroundLaunchPolicy.Route.NOTIFICATION
+                  }
+          
+                  val canOpen = route != BackgroundLaunchPolicy.Route.NOTIFICATION
+                  deferredLaunch = !canOpen
+                  externalLaunchStatusUntil = now + 3200L
+          
+                  uiHandler.post {
+                      if (!running) return@post
+          
+                      fun fallbackToNotification() {
+                          deferredLaunch = true
+                          pendingActivity = target
+                          updateNotification("Toque em Continuar pedido na notificação do Gama.")
+                      }
+          
+                      try {
+                          when (route) {
+                              BackgroundLaunchPolicy.Route.ASSISTANT -> {
+                                  updateNotification("Abrindo aplicativo...")
+                                  val assistant = assistantNow
+                                  if (assistant != null) assistant.present(target) else fallbackToNotification()
+                              }
+                              BackgroundLaunchPolicy.Route.ACTIVITY -> {
+                                  updateNotification("Abrindo aplicativo...")
+                                  if (!foregroundNow && overlayGranted) {
+                                      // A sobreposição precisa estar anexada no momento do
+                                      // startActivity em alguns aparelhos Samsung.
+                                      showOrb()
+                                      uiHandler.postDelayed({
+                                          if (!running) return@postDelayed
+                                          try { super.startActivity(target) }
+                                          catch (_: Exception) { fallbackToNotification() }
+                                      }, 180L)
+                                  } else {
+                                      super.startActivity(target)
+                                  }
+                              }
+                              BackgroundLaunchPolicy.Route.NOTIFICATION -> fallbackToNotification()
+                          }
+                      } catch (_: Exception) {
+                          fallbackToNotification()
+                      }
+                  }
+          
+                  return if (canOpen) "Abrindo."
+                  else "Para abrir aplicativos só por voz, autorize a bolinha flutuante ou defina o Gama como assistente padrão. O pedido também está na notificação."
+              }
+          
+              override fun startActivity(intent: Intent) { launchSafely(intent) }
+          
+              override fun onBind(intent: Intent?): IBinder? = null
+          
+              override fun onDestroy() {
+                  // GAMA67_STABILITY_SUPERVISORS_STOP
+                  uiHandler.removeCallbacks(listenerSupervisorRunnable)
+                  RuntimeRecoveryBus.listener = null
+                  GamaProactiveBridge.listener = null
+                  proactiveDrainToken++
+                  proactiveEvents.clear()
+                  runCatching { brainProcessSupervisor?.close() }
+                  brainProcessSupervisor = null
+          
+                  running = false
+                  voiceReady = false
+                  automationTickToken++
+                  pendingAutomationDraft = null
+                  pendingAutomationAfterUnlock = null
+                  conversation.close()
+                  GamaSupervisor.onConversationClosed()
+                  transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+                  transcription = null
+                  requestGeneration++
+                  pendingCommand.clear()
+                  ownerAuthCommand = null
+                  ownerAuthUntil = 0L
+                  ownerAuthResumeConversation = false
+                  if (AssistantRuntime.service === this) AssistantRuntime.service = null
+                  AssistantRuntime.state("Voz pausada")
+                  interactionToken++
+                  responseWatchToken++
+                  audioTasks.clear()
+                  uiHandler.removeCallbacksAndMessages(null)
+                  try { unregisterReceiver(deviceStateReceiver) } catch (_: Exception) {}
+                  try { unregisterReceiver(brainProcessReceiver) } catch (_: Exception) {}
+                  brainHealthToken++
+                  activeBrainRequestId = 0L
+                  activeBrainPid = 0
+                  try { stopService(Intent(this, GamaBrainProcessService::class.java)) } catch (_: Exception) {}
+                  // Stop unblocks read; only the audio worker may close native objects.
+                  try { audioRecord?.stop() } catch (_: Exception) {}
+                  listenerThread?.interrupt()
+                  activeUtterance = null
+                  tts?.stop()
+                  tts?.shutdown()
+                  ttsReady = false
+                  releaseListenerWakeLock()
+                  GamaAudioNoiseSupervisor.stop()
+                  removeOrb()
+                  sendBroadcast(Intent(ACTION_CLOSE_UI).setPackage(packageName))
+                  // No local conversational LLM is loaded in this process.
+                  super.onDestroy()
+              }
+          
+              private fun handleProactiveEvent(event: GamaEventHub.Event) {
+                  if (!running || event.priority != GamaEventHub.Priority.HIGH) return
+          
+                  val age = System.currentTimeMillis() - event.occurredAt
+                  val explicitPolicyAlert =
+                      GamaPersonalAICore
+                          .explicitAlertAllowed(
+                              this,
+                              event.source,
+                          )
+          
+                  if (
+                      !GamaSupervisor
+                          .maySpeakProactively(
+                              conversation.active,
+                              age,
+                          ) &&
+                      !explicitPolicyAlert
+                  ) {
+                      if (!conversation.active) {
+                          updateNotification("Atividade importante registrada • diga Gama para conversar")
+                          proactiveEvents.clear()
+                      }
+                      return
+                  }
+          
+                  val now = SystemClock.elapsedRealtime()
+                  val busy = brainBusy || liveBusy || researchBusy || automationExecuting ||
+                      commandSpeechStarted || waitingForCommandStart || transcription != null
+                  val elapsed = if (lastProactiveSpokenAt == 0L) Long.MAX_VALUE else now - lastProactiveSpokenAt
+          
+                  if (!GamaProactivePolicy.shouldSpeakNow(
+                          event.priority,
+                          speaking || ttsSpeaking,
+                          busy,
+                          elapsed,
+                      )) {
+                      if (proactiveEvents.size < 5) proactiveEvents.add(event)
+                      scheduleProactiveDrain(
+                          if (elapsed < 45_000L) (45_000L - elapsed).coerceAtLeast(2_000L) else 3_000L
+                      )
+                      return
+                  }
+          
+                  lastProactiveSpokenAt = now
+                  val reply = if (event.kind == GamaEventHub.Kind.MESSAGE) {
+                      ZevronContextResolver.rememberExternalRecipient(event.source, event.summary)
+                      GamaProactivePolicy.spokenSummary(
+                          event.source,
+                          event.summary,
+                          isDeviceLocked(),
+                          repeated = false,
+                      )
+                  } else {
+                      when (event.source) {
+                          "Agenda" -> if (isDeviceLocked()) {
+                              "Senhor, você tem um compromisso importante em breve."
+                          } else {
+                              "Senhor, ${event.summary}."
+                          }
+                          "Bateria" -> "Senhor, ${event.summary}"
+                          else -> "Senhor, ${event.summary}"
+                      }
+                  }
+          
+                  updateNotification(reply)
+                  speak(reply, closeAfter = false, record = !isDeviceLocked())
+              }
+          
+              private fun scheduleProactiveDrain(delayMs: Long = 3_000L) {
+                  val token = ++proactiveDrainToken
+                  uiHandler.postDelayed({
+                      if (!running || token != proactiveDrainToken) return@postDelayed
+                      drainProactiveQueue()
+                  }, delayMs)
+              }
+          
+              private fun drainProactiveQueue() {
+                  if (!running) return
+                  if (!GamaSupervisor.shouldDrainProactiveQueue(conversation.active)) {
+                      proactiveEvents.clear()
+                      return
+                  }
+                  val event = proactiveEvents.poll() ?: return
+                  val now = SystemClock.elapsedRealtime()
+                  val busy = speaking || ttsSpeaking || brainBusy || liveBusy || researchBusy || automationExecuting ||
+                      commandSpeechStarted || waitingForCommandStart || transcription != null
+                  val elapsed = if (lastProactiveSpokenAt == 0L) Long.MAX_VALUE else now - lastProactiveSpokenAt
+                  if (!GamaProactivePolicy.shouldSpeakNow(event.priority, speaking || ttsSpeaking, busy, elapsed)) {
+                      proactiveEvents.add(event)
+                      scheduleProactiveDrain(if (elapsed < 45_000L) (45_000L - elapsed).coerceAtLeast(2_000L) else 3_000L)
+                      return
+                  }
+                  handleProactiveEvent(event)
+              }
+          
+              private fun releaseListenerWakeLock() {
+                  try { if (listenerWakeLock?.isHeld == true) listenerWakeLock?.release() } catch (_: Exception) {}
+              }
+          
+              override fun onInit(status: Int) {
+                  if (!running) return
+                  if (status == TextToSpeech.SUCCESS) {
+                      ttsFailed = false
+                      ttsReady = true
+                      postAudio { startEnrollmentWhenReady() }
+          
+                      // Respeita a voz escolhida pelo usuário no Android/Samsung.
+                      // Só define pt-BR se o mecanismo iniciou em outro idioma.
+                      try {
+                          val currentLanguage =
+                              tts?.voice?.locale?.language
+          
+                          if (!currentLanguage.equals("pt", true)) {
+                              tts?.language = Locale("pt", "BR")
+                          }
+                      } catch (_: Exception) {}
+          
+                      // Sem alterar o gênero da voz com pitch artificial.
+                      GamaVoice.apply(this, tts)
+          
+                      // Não pedimos audio focus. A fala do Gama é misturada ao áudio
+                      // de mídia, em vez de pausar ou silenciar vídeos.
+                      try {
+                          tts?.setAudioAttributes(
+                              AudioAttributes.Builder()
+                                  .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                                  .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                                  .build()
+                          )
+                      } catch (_: Exception) {}
+          
+                      tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                          override fun onStart(utteranceId: String?) {
+                              if (utteranceId != activeUtterance || !running) return
+                                  speaking = true
+          ttsSpeaking = true
+          activeSpeechStartedAt =
+              SystemClock.elapsedRealtime()
+          GamaSupervisor.onSpeaking()
+          animateOrbSpeaking()
+                          }
+                          override fun onDone(utteranceId: String?) = finishTts(utteranceId)
+                          @Deprecated("Deprecated in Java")
+                          override fun onError(utteranceId: String?) = retryOrFinishTts(utteranceId)
+                          override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                              if (interrupted) retryOrFinishTts(utteranceId) else finishTts(utteranceId)
+                          }
+                      })
+          
+                      pendingSpeech?.let { text ->
+                          val closeAfter = pendingCloseAfterSpeech
+                          pendingSpeech = null
+                          pendingCloseAfterSpeech = false
+                          speak(text, closeAfter, false)
+                      }
+                  } else {
+                      ttsFailed = true
+                      updateNotification("TTS indisponível. O reconhecimento continua ativo.")
+                      val id = "tts-init-error"
+                      activeUtterance = id
+                      finishTts(id)
+                  }
+              }
+          
+              fun refreshVoice() { uiHandler.post { if (running && ttsReady) GamaVoice.apply(this, tts) } }
+          
+              private fun restartTtsAfterFailure() {
+                  if (!running || ttsReady) return
+                  try { tts?.stop() } catch (_: Exception) {}
+                  try { tts?.shutdown() } catch (_: Exception) {}
+                  tts = null
+                  ttsFailed = false
+                  uiHandler.postDelayed({
+                      if (!running || ttsReady) return@postDelayed
+                      tts = try {
+                          TextToSpeech(this, this)
+                      } catch (e: Exception) {
+                          ttsFailed = true
+                          Log.e(TAG, "Falha ao reiniciar TTS", e)
+                          null
+                      }
+                  }, 350L)
+              }
+          
+              private fun safeTtsSpeak(text: String, id: String): Int {
+                  CrashRecorder.markComponent("TTS")
+          
+                  val engine = tts ?: return TextToSpeech.ERROR
+                  return try {
+                      engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+                  } catch (e: Exception) {
+                      Log.e(TAG, "Mecanismo TTS falhou durante a resposta; recuperando", e)
+                      ttsReady = false
+                      speaking = false
+                      ttsSpeaking = false
+                      updateNotification("Recuperando a voz do Gama...")
+                      restartTtsAfterFailure()
+                      TextToSpeech.ERROR
+                  }
+              }
+          
+              private fun retryOrFinishTts(id: String?) {
+                  uiHandler.post {
+                      if (id != activeUtterance || !running) return@post
+                      val text = activeSpeechText
+                      if (text.isNullOrBlank() || ttsRetryCount >= 1 || !ttsReady) {
+                          finishTts(id)
+                          return@post
+                      }
+                      ttsRetryCount++
+                      val retryId = "gama-retry-${SystemClock.elapsedRealtimeNanos()}"
+                      activeUtterance = retryId
+                      speaking = true
+                      ttsSpeaking = true
+                      val result = safeTtsSpeak(text, retryId)
+                      if (result == null || result == TextToSpeech.ERROR) {
+                          finishTts(retryId)
+                      } else {
+                          uiHandler.postDelayed(
+                              { if (activeUtterance == retryId) finishTts(retryId) },
+                              maxOf(15000L, text.length * 180L)
+                          )
+                      }
+                  }
+              }
+          
+              private fun finishTts(id: String?) {
+              uiHandler.post {
+                  if (id != activeUtterance || !running) return@post
+                  activeUtterance = null
+                  activeSpeechText = null
+                  ttsRetryCount = 0
+                  speaking = false
+                  ttsSpeaking = false
+                  activeSpeechStartedAt = 0L
+                  bargeVoiceStartedAt = 0L
+          
+                  if (
+                      conversation.active
+                  ) {
+                      GamaSupervisor
+                          .onFollowUpListening()
+                  }
+          
+                  if (pendingLockAfterSpeech) {
+                      pendingLockAfterSpeech = false
+                      queuedSpeechText = null
+                      queuedSpeechCloseAfter = false
+                      queuedSpeechRecord = true
+                      armCommandWindowAfterTts = false
+                      closeUiAfterSpeech = false
+                      hideWakeUi()
+                      uiHandler.postDelayed({
+                          performDeviceLockNow()
+                          continuePlanAfterToolAction(360L)
+                      }, 220L)
+                      return@post
+                  }
+          
+                  val nextText = queuedSpeechText
+                  val nextClose = queuedSpeechCloseAfter
+                  val nextRecord = queuedSpeechRecord
+                  queuedSpeechText = null
+                  queuedSpeechCloseAfter = false
+                  queuedSpeechRecord = true
+          
+                  val now = SystemClock.elapsedRealtime()
+                  ignoreAudioUntil = now + 220L
+                  if (externalActionGuardAfterTts) {
+                      externalActionGuardAfterTts = false
+                      postExternalNoiseGuardUntil = now + 2400L
+                      postExternalNumericGuardUntil = now + 8000L
+                  }
+                  postAudio {
+                      recognizer?.reset()
+                      decoderActive = false
+                      voicedBlocks = 0
+                      preRoll = ByteArray(0)
+                      bargePreRoll = ByteArray(0)
+                      speechHoldUntil = 0L
+                  }
+          
+                  if (!nextText.isNullOrBlank()) {
+                      speak(nextText, nextClose, nextRecord)
+                      return@post
+                  }
+          
+                  // Continue an explicit multi-step plan only after the current tool/reply
+                  // has really finished. Barge-in still cancels the queue in executeAndReply().
+                  if (continuePlanAfterToolAction(160L)) return@post
+          
+                  if (GamaSupervisor.shouldDrainProactiveQueue(conversation.active) &&
+                      proactiveEvents.isNotEmpty()) {
+                      scheduleProactiveDrain(1_200L)
+                  } else if (!conversation.active) {
+                      proactiveEvents.clear()
+                  }
+          
+                  setConversationVisual(GamaEnergyView.Mode.LISTENING)
+                  postAudio {
+                      if (armCommandWindowAfterTts) {
+                          beginCommandWindow()
+                          val queued = queuedWakeCommand
+                          queuedWakeCommand = null
+                          if (queued != null) authorizeCommand(queued.first, queued.second, fromVoice = true)
+                      } else if (conversation.active && transcription == null && !ownerEnrollmentMode) {
+                          touchConversation()
+                          beginCommandWindow()
+                          updateNotification("Conversa contínua • pode falar")
+                      } else if (closeUiAfterSpeech) {
+                          closeUiAfterSpeech = false
+                          hideWakeUi()
+                      }
+                  }
+              }
+          }
+          
+              private fun continuePlanAfterToolAction(delayMs: Long): Boolean {
+                  if (!zevronPlanRunning) return false
+          
+                  // Never let a failed Android/tool step silently cascade into the rest of a plan.
+                  // The failure reply has already been spoken, so the safest behavior is to pause.
+                  if (!lastPlanStepMayContinue) {
+                      if (zevronPlanSteps.isNotEmpty()) GamaMissionStore.pause(this, zevronPlanSteps.toList())
+                      zevronPlanRunning = false
+                      currentPlanStep = ""
+                      updateNotification("Sequência pausada • etapa anterior não confirmada")
+                      return false
+                  }
+          
+                  val nextPlanStep = zevronPlanSteps.poll()
+                  if (!nextPlanStep.isNullOrBlank()) {
+                      currentPlanStep = nextPlanStep
+                      lastPlanStepMayContinue = true
+                      GamaMissionStore.advance(this, nextPlanStep, zevronPlanSteps.toList())
+                      uiHandler.postDelayed({
+                          if (running && zevronPlanRunning) {
+                              executeAndReply(nextPlanStep, fromPlan = true)
+                          }
+                      }, delayMs)
+                      return true
+                  }
+                  zevronPlanRunning = false
+                  currentPlanStep = ""
+                  lastPlanStepMayContinue = true
+                  GamaMissionStore.complete(this)
+                  return false
+              }
+          
+              private fun listenLoop() {
+                  CrashRecorder.markComponent("microphone")
+          
+                  if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      throw SecurityException("Microfone não autorizado")
+                  }
+                  try {
+                      model = Model(ensureModel().absolutePath)
+                      // Speaker vectors are used only to focus on the enrolled owner in a crowd.
+                      // Android credentials remain mandatory for private/sensitive actions.
+                      speakerModel = try {
+                          SpeakerModel(ensureSpeakerModel().absolutePath)
+                      } catch (e: Exception) {
+                          Log.w(TAG, "Modelo de locutor indisponível; mantendo reconhecimento de fala normal", e)
+                          null
+                      }
+                      recognizer = Recognizer(model, SAMPLE_RATE.toFloat())
+                      recognizer?.setWords(true)
+                      speakerModel?.let { runCatching { recognizer?.setSpeakerModel(it) } }
+                      wakeRecognizer = try {
+                          Recognizer(model, SAMPLE_RATE.toFloat(), "[\"gama\", \"gamma\", \"acorda crianca papai chegou\", \"[unk]\"]").also { wake ->
+                              speakerModel?.let { runCatching { wake.setSpeakerModel(it) } }
+                          }
+                      } catch (e: Exception) {
+                          Log.w(TAG, "Detector dedicado de hotword indisponível; usando reconhecedor principal", e)
+                          null
+                      }
+                      sleepRecognizer = try {
+                          Recognizer(
+                              model, SAMPLE_RATE.toFloat(),
+                              "[\"pode descansar\", \"pode descansa\", \"voce pode descansar\", \"pode descansar por agora\", \"pode ir descansar\", \"pare de ouvir\", \"pode parar de ouvir\", \"encerrar conversa\", \"tchau\", \"ate mais\", \"[unk]\"]"
+                          ).also { sleep ->
+                              speakerModel?.let { runCatching { sleep.setSpeakerModel(it) } }
+                          }
+                      } catch (e: Exception) {
+                          Log.w(TAG, "Detector dedicado de descanso indisponível; usando reconhecedor principal", e)
+                          null
+                      }
+                      audioFrontEnd.reset()
+                      lastAudioMetrics = GamaAudioMetrics.initial()
+                      noisyAudioBlocks = 0
+                      wakePreRoll = ByteArray(0)
+                      lastDedicatedWakePartialAt = 0L
+                      wakePartialCandidate = ""
+                      wakePartialHits = 0
+                      wakePartialFirstAt = 0L
+                      lastDedicatedSleepPartialAt = 0L
+                      val minBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                      check(minBuffer > 0) { "Formato de microfone indisponível" }
+                      val recorder = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE,
+                          AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuffer * 2, 8192))
+                      audioRecord = recorder
+                      check(recorder.state == AudioRecord.STATE_INITIALIZED) { "Microfone indisponível" }
+                      if (Build.VERSION.SDK_INT >= 29) {
+                          // Ask devices with multi-mic/beam-forming support to favor the
+                          // person facing the phone. Unsupported devices simply ignore it.
+                          runCatching {
+                              recorder.setPreferredMicrophoneDirection(AudioRecord.MIC_DIRECTION_TOWARDS_USER)
+                              recorder.setPreferredMicrophoneFieldDimension(0.65f)
+                          }
+                      }
+                      if (!running) return
+                      recorder.startRecording()
+                      check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING)
+                      GamaAudioNoiseSupervisor.attachNow(recorder)
+                      voiceReady = true
+                      startEnrollmentWhenReady()
+                      AssistantRuntime.state("Escuta ativa • diga Gama")
+                      updateNotification("Ativo em segundo plano • diga Gama")
+                      val buffer = ByteArray(1024) // 32 ms blocks: lower wake/command latency without polling spin.
+                      while (running) {
+                          val read = recorder.read(buffer, 0, buffer.size)
+                          if (!running) break
+                          if (read < 0) error("Microfone interrompido: $read")
+                          if (read == 0) { drainAudioTasks(); Thread.sleep(20L); continue }
+                          val audioMetrics = audioFrontEnd.processInPlace(buffer, read)
+                          lastAudioMetrics = audioMetrics
+                          // Keep the legacy barge-in gate synchronized with the real environment.
+                          noiseFloor = (noiseFloor * 0.88 + audioMetrics.noiseRms * 0.12).coerceIn(35.0, 4200.0)
+                          if (audioMetrics.severeNoise) {
+                              noisyAudioBlocks++
+                          } else {
+                              noisyAudioBlocks = (noisyAudioBlocks - 1).coerceAtLeast(0)
+                          }
+                          lastAudioReadAt = SystemClock.elapsedRealtime()
+                          drainAudioTasks()
+                          // Cadastro vocal anterior desativado nesta versão.
+                          val rec = recognizer ?: break
+                          val now = SystemClock.elapsedRealtime()
+          
+                          if (
+                              flushSemanticEndpointIfDue(
+                                  now
+                              )
+                          ) {
+                              continue
+                          }
+                          if (ownerEnrollmentMode && (now - enrollmentStartedAt > 180000L || isDeviceLocked())) {
+                              ownerEnrollmentMode = false
+                              ownerEnrollmentVectors.clear()
+                              updateNotification("Abra o Gama para continuar.")
+                          }
+                          if (commandWindow.expired(now) && !conversation.active) {
+                              transcription?.error(android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+                              transcription = null
+                              finishCommandListening()
+                              clearOwnerVoiceRetry()
+                              rec.reset()
+                              decoderActive = false
+                              updateNotification("Gama está aguardando: diga Gama.")
+                              hideWakeUi()
+                          }
+                          if (speaking || ttsSpeaking) {
+                              // Full-duplex conversation: keep listening while Gama talks.
+                              // AEC plus echo-aware language filtering prevents self-interruption.
+                              handleBargeInAudio(rec, buffer, read, now)
+                              continue
+                          }
+                          if (now < ignoreAudioUntil) {
+                              preRoll = ByteArray(0)
+                              wakePreRoll = ByteArray(0)
+                              wakeRecognizer?.reset()
+                              continue
+                          }
+                          bargePreRoll = ByteArray(0)
+          
+                          // Highest-priority conversation exit path.
+                          // GAMA900_SUPERVISOR_SLEEP: partial ASR can never close the session.
+                          val dedicatedSleep = sleepRecognizer
+                          if (conversation.active && transcription == null &&
+                              !ownerEnrollmentMode && !ownerRetryPending && dedicatedSleep != null) {
+                              val sleepEndpoint = dedicatedSleep.acceptWaveForm(buffer, read)
+                              if (sleepEndpoint) {
+                                  val sleepText = try {
+                                      JSONObject(dedicatedSleep.result).optString("text")
+                                  } catch (_: Exception) {
+                                      ""
+                                  }
+                                  val voiceEvidence =
+                                      GamaRecognitionPolicy.hasVoiceEvidence(audioMetrics) ||
+                                          audioMetrics.speechLikely
+                                  if (GamaSupervisor.acceptGoodbye(
+                                          text = sleepText,
+                                          sessionActive = conversation.active,
+                                          voiceEvidence = voiceEvidence,
+                                          finalEndpoint = true,
+                                      )) {
+                                      dedicatedSleep.reset()
+                                      wakeRecognizer?.reset()
+                                      rec.reset()
+                                      decoderActive = false
+                                      lastPartial = ""
+                                      preRoll = ByteArray(0)
+                                      wakePreRoll = ByteArray(0)
+                                      closeConversationForGoodbye()
+                                      continue
+                                  }
+                                  dedicatedSleep.reset()
+                              }
+                          } else {
+                              dedicatedSleep?.reset()
+                          }
+          
+                          // Hotword path: while idle, do NOT gate "Gama" by amplitude. A
+                          // constrained Vosk recognizer continuously receives the raw mic
+                          // stream. The full recognizer stays asleep until the wake word is
+                          // actually heard, which is both cheaper and much more reliable.
+                          val idleHotwordMode = !conversation.active &&
+                              !waitingForCommandStart && !commandSpeechStarted &&
+                              transcription == null && !ownerEnrollmentMode && !ownerRetryPending
+                          val dedicatedWake = wakeRecognizer
+                          if (idleHotwordMode && dedicatedWake != null) {
+                              wakePreRoll = (wakePreRoll + buffer.copyOf(read)).takeLast(16000).toByteArray()
+                              val endpoint = dedicatedWake.acceptWaveForm(buffer, read)
+                              var wakeText = ""
+                              if (endpoint) {
+                                  wakeText = try { JSONObject(dedicatedWake.result).optString("text") } catch (_: Exception) { "" }
+                              } else if (now - lastDedicatedWakePartialAt >= 60L) {
+                                  lastDedicatedWakePartialAt = now
+                                  wakeText = try { JSONObject(dedicatedWake.partialResult).optString("partial") } catch (_: Exception) { "" }
+                              }
+                              val wakeVoiceEvidence =
+                                  GamaRecognitionPolicy.hasVoiceEvidence(audioMetrics) ||
+                                      audioMetrics.speechLikely
+          
+                              val normalizedWake = VoicePolicy.normalize(wakeText)
+                              val partialWakeStable = if (!endpoint && VoicePolicy.hasWake(normalizedWake)) {
+                                  if (normalizedWake == wakePartialCandidate &&
+                                      wakePartialFirstAt > 0L && now - wakePartialFirstAt <= 900L) {
+                                      wakePartialHits += 1
+                                  } else {
+                                      wakePartialCandidate = normalizedWake
+                                      wakePartialHits = 1
+                                      wakePartialFirstAt = now
+                                  }
+                                  // Two stable constrained partials are enough. This keeps the
+                        // response fast while still requiring repeated hotword evidence.
+                        wakePartialHits >= 2
+                              } else {
+                                  if (endpoint || normalizedWake.isBlank() || !VoicePolicy.hasWake(normalizedWake)) {
+                                      wakePartialCandidate = ""
+                                      wakePartialHits = 0
+                                      wakePartialFirstAt = 0L
+                                  }
+                                  false
+                              }
+          
+                              val wakeConfirmed = endpoint || partialWakeStable
+                              // WAKEFIX176: the dedicated recognizer is constrained to the wake vocabulary.
+                              // Trust a stable/final hotword decode even when OEM DSP RMS is low.
+                              val dedicatedWakeAccepted =
+                                  wakeConfirmed &&
+                                  !conversation.active &&
+                                  VoicePolicy.hasWake(wakeText)
+                              if (dedicatedWakeAccepted) {
+                                  wakePartialCandidate = ""
+                                  wakePartialHits = 0
+                                  wakePartialFirstAt = 0L
+                                  dedicatedWake.reset()
+                                  rec.reset()
+                                  decoderActive = true
+                                  utteranceStartedAt = now
+                                  lastPartial = "gama"
+                                  // Feed the audio immediately before/around the hotword to the
+                                  // full decoder. Then open the conversation NOW, instead of
+                                  // spending ~0.5 s in hotword mode and losing the beginning of
+                                  // "Gama, faça X".
+                                  if (wakePreRoll.isNotEmpty()) rec.acceptWaveForm(wakePreRoll, wakePreRoll.size)
+                                  wakePreRoll = ByteArray(0)
+                                  val wakeAcknowledgement = if (VoicePolicy.isSpecialWake(wakeText)) {
+                                      GamaWakePhrasePolicy.specialReply()
+                                  } else {
+                                      "Estou ouvindo."
+                                  }
+                                  acknowledgeWake(
+                                      speakAcknowledgement = true,
+                                      acknowledgement = wakeAcknowledgement,
+                                  )
+                                  beginCommandWindow()
+          
+                                  // If the owner called only "Gama", acknowledge naturally.
+                                  // If they continued the sentence, the first partial cancels
+                                  // this prompt and the command is captured in one shot.
+                                  val wakeInteraction = interactionToken
+                                  uiHandler.postDelayed({
+                                      postAudio {
+                                          if (!running || !conversation.active ||
+                                              interactionToken != wakeInteraction ||
+                                              !waitingForCommandStart || commandSpeechStarted ||
+                                              lastUsefulPartial.isNotBlank() ||
+                                              speaking || ttsSpeaking) return@postAudio
+                                          armCommandWindowAfterTts = true
+                                          speak(wakeAcknowledgement, false)
+                                      }
+                                  }, 360L)
+                                  continue
+                              }
+                              if (endpoint) dedicatedWake.reset()
+                              continue
+                          } else if (idleHotwordMode) {
+                              // Some Vosk model graphs do not accept constrained grammars. In
+                              // that case reliability still wins over the old amplitude gate:
+                              // keep the full decoder running continuously, but process only
+                              // utterances that actually contain the wake word.
+                              decoderActive = true
+                              utteranceStartedAt = if (utteranceStartedAt == 0L) now else utteranceStartedAt
+                              if (rec.acceptWaveForm(buffer, read)) {
+                                  val result = JSONObject(rec.result)
+                                  processFinal(result)
+                                  rec.reset()
+                                  lastPartial = ""
+                                  utteranceStartedAt = 0L
+                              } else if (now - lastPartialAt >= 120L) {
+                                  lastPartialAt = now
+                                  val partial = JSONObject(rec.partialResult).optString("partial").trim()
+                                  if (partial.isNotBlank() && partial != lastPartial) {
+                                      lastPartial = partial
+                                      handlePartialText(partial)
+                                  }
+                              }
+                              continue
+                          } else {
+                              wakePreRoll = ByteArray(0)
+                              wakePartialCandidate = ""
+                              wakePartialHits = 0
+                              wakePartialFirstAt = 0L
+                              dedicatedWake?.reset()
+                          }
+          
+                          if (!shouldDecodeAudio(buffer, read)) {
+                              // Guarde cerca de meio segundo antes do VAD disparar. Isso
+                              // evita cortar o começo de “Gama” quando o usuário fala baixo.
+                              preRoll = (preRoll + buffer.copyOf(read)).takeLast(24000).toByteArray()
+                              continue
+                          }
+                          if (!decoderActive) {
+                              decoderActive = true
+                              utteranceStartedAt = now
+                              lastSpeechAt = 0L
+                              if (preRoll.isNotEmpty()) rec.acceptWaveForm(preRoll, preRoll.size)
+                              preRoll = ByteArray(0)
+                          }
+                              if (rec.acceptWaveForm(buffer, read)) {
+              handleSemanticEndpoint(
+                  JSONObject(rec.result),
+                  now
+              )
+          
+              rec.reset()
+              decoderActive = false
+              utteranceStartedAt = 0L
+              lastPartial = ""
+          } else {
+                              if (now - lastPartialAt >= 140L) {
+                                  lastPartialAt = now
+                                  val partial = JSONObject(rec.partialResult).optString("partial").trim()
+                                  if (partial.isNotBlank() && partial != lastPartial) {
+                                      lastPartial = partial
+                                      handlePartialText(partial)
+                                  }
+                              }
+                              // Only force a final after this decoder instance has actually
+                              // seen speech. Without this guard, an open conversation could
+                              // reset the recognizer every few milliseconds during silence
+                              // and chop the next sentence before Vosk formed a partial.
+                              if (GamaRecognitionPolicy.shouldForceEndpoint(
+                                      decoderActive = decoderActive,
+                                      utteranceStartedAt = utteranceStartedAt,
+                                      lastVoiceEvidenceAt = lastVoiceEvidenceAt,
+                                      lastUsefulPartialAt = lastUsefulPartialAt,
+                                                  lastSpeechAt = lastSpeechAt,
+              now = now,
+              transcript =
+                  lastUsefulPartial
+                      .ifBlank {
+                          lastPartial
+                      },
+          )) {
+                                          handleSemanticEndpoint(
+              JSONObject(rec.finalResult),
+              now
+          )
+          rec.reset()
+                                  decoderActive = false
+                                  utteranceStartedAt = 0L
+                                  lastPartial = ""
+                                  speechHoldUntil = 0L
+                              }
+                          }
+                      }
+                  } finally {
+                      voiceReady = false
+                      lastAudioReadAt = 0L
+                      transcription?.error(android.speech.SpeechRecognizer.ERROR_AUDIO)
+                      transcription = null
+                      val finishingRecorder = audioRecord
+                      try { finishingRecorder?.stop() } catch (_: Exception) {}
+                      try { finishingRecorder?.let { GamaAudioNoiseSupervisor.detach(it) } } catch (_: Exception) {}
+                      try { finishingRecorder?.release() } catch (_: Exception) {}
+                      audioRecord = null
+                      try { recognizer?.close() } catch (_: Exception) {}
+                      recognizer = null
+                      try { wakeRecognizer?.close() } catch (_: Exception) {}
+                      wakeRecognizer = null
+                      wakePreRoll = ByteArray(0)
+                      wakePartialCandidate = ""
+                      wakePartialHits = 0
+                      wakePartialFirstAt = 0L
+                      try { sleepRecognizer?.close() } catch (_: Exception) {}
+                      sleepRecognizer = null
+                      lastDedicatedSleepPartialAt = 0L
+                      try { speakerModel?.close() } catch (_: Exception) {}
+                      speakerModel = null
+                      try { model?.close() } catch (_: Exception) {}
+                      model = null
+                      decoderActive = false
+                  }
+              }
+          
+              private fun clearSemanticEndpoint() {
+                      pendingSemanticText = ""
+                      pendingSemanticJson = null
+                      pendingSemanticUntil = 0L
+                      pendingSemanticStartedAt = 0L
+                  }
+          
+                  private fun handleSemanticEndpoint(
+                      json: JSONObject,
+                      now: Long,
+                  ) {
+                      val finalText =
+                          json.optString("text")
+                              .trim()
+          
+                      val candidate =
+                          GamaRecognitionPolicy
+                              .bestTranscript(
+                                  finalText,
+                                  lastUsefulPartial,
+                                  if (
+                                      lastUsefulPartialAt > 0L
+                                  ) {
+                                      now -
+                                          lastUsefulPartialAt
+                                  } else {
+                                      Long.MAX_VALUE
+                                  },
+                              )
+                      if (
+                          pendingSemanticText.isNotBlank() &&
+                          pendingSemanticStartedAt > 0L &&
+                          candidate.isNotBlank()
+                      ) {
+                          GamaSelfOptimizer
+                              .observeContinuation(
+                                  this,
+                                  now -
+                                      pendingSemanticStartedAt,
+                              )
+                      }
+              
+          
+                      val merged =
+                          SemanticEndpointer.merge(
+                              pendingSemanticText,
+                              candidate,
+                          )
+          
+                      if (merged.isBlank()) {
+                          return
+                      }
+          
+                      val confidence =
+                          averageRecognitionConfidence(
+                              json
+                          )
+          
+                      val continuationMs =
+                              SemanticEndpointer
+                                  .continuationWindowMs(
+                                      merged,
+                                      confidence,
+                                  )
+          
+                      if (continuationMs > 0L) {
+                          if (
+                              pendingSemanticStartedAt <= 0L
+                          ) {
+                              pendingSemanticStartedAt =
+                                  now
+                          }
+          
+                          pendingSemanticText =
+                              merged
+          
+                          pendingSemanticJson =
+                              JSONObject(
+                                  json.toString()
+                              ).apply {
+                                  put(
+                                      "text",
+                                      merged
+                                  )
+                              }
+          
+                          pendingSemanticUntil =
+                              now +
+                                  continuationMs
+          
+                          lastUsefulPartial = ""
+                          lastUsefulPartialAt = 0L
+          
+                          GamaSupervisor
+                              .onEndpointPending()
+          
+                          updateNotification(
+                              "Ouvindo..."
+                          )
+          
+                          return
+                      }
+          
+                      clearSemanticEndpoint()
+          
+                      json.put(
+                          "text",
+                          merged
+                      )
+          
+                      processFinal(json)
+                  }
+          
+                  private fun flushSemanticEndpointIfDue(
+                      now: Long
+                  ): Boolean {
+                      val text =
+                          pendingSemanticText
+          
+                      if (
+                          text.isBlank() ||
+                          pendingSemanticUntil <= 0L ||
+                          now <
+                          pendingSemanticUntil
+                      ) {
+                          return false
+                      }
+          
+                      val json =
+                          pendingSemanticJson
+                              ?: JSONObject()
+          
+                      clearSemanticEndpoint()
+          
+                      json.put(
+                          "text",
+                          text
+                      )
+          
+                      processFinal(json)
+          
+                      return true
+                  }
+          
+                  private fun processFinal(json: JSONObject) {
+                  val finalText = json.optString("text").trim()
+                  val finalNow = SystemClock.elapsedRealtime()
+                  val spoken = GamaRecognitionPolicy.bestTranscript(
+                      finalText = finalText,
+                      recentPartial = lastUsefulPartial,
+                      partialAgeMs = if (lastUsefulPartialAt > 0L) finalNow - lastUsefulPartialAt else Long.MAX_VALUE,
+                  )
+                  lastUsefulPartial = ""
+                  lastUsefulPartialAt = 0L
+                  if (speaking || ttsSpeaking) {
+                      if (!conversation.active || spoken.isBlank()) return
+                      if (!VoicePolicy.shouldBargeIn(spoken, activeSpeechText, headsetAudioOutput(SystemClock.elapsedRealtime()))) return
+                      interruptSpeechForBargeIn()
+                  }
+                  transcription?.let { listener ->
+                      transcription = null
+                      finishCommandListening()
+                      listener.result(spoken)
+                      return
+                  }
+                  if (spoken.isBlank()) return
+                  // Modos explícitos de cadastro/confirmação precisam receber números reais.
+                  if (ownerEnrollmentMode) { handleOwnerEnrollmentSample(spoken, json); return }
+                  if (ownerRetryPending) { verifyChallenge(spoken, json); return }
+          
+                  val postActionNow = SystemClock.elapsedRealtime()
+                  val confidence = averageRecognitionConfidence(json)
+                  val recentHumanSpeech = lastVoiceEvidenceAt > 0L &&
+                      postActionNow - lastVoiceEvidenceAt <= 2200L
+                  val postActionArtifact =
+                      (!recentHumanSpeech && postActionNow < postExternalNoiseGuardUntil &&
+                          VoicePolicy.looksLikePostActionNoise(spoken, confidence)) ||
+                      (!recentHumanSpeech && postActionNow < postExternalNumericGuardUntil &&
+                          VoicePolicy.looksLikeNumericOnly(spoken))
+                  if (postActionArtifact) {
+                      // Ex.: o ruído da troca para o WhatsApp sendo reconhecido como "7667".
+                      // Não enviamos isso para a IA e não respondemos em voz alta.
+                      recognizer?.reset()
+                      decoderActive = false
+                      lastPartial = ""
+                      AssistantRuntime.partial("")
+                      return
+                  }
+          
+                  if (conversation.active || waitingForCommandStart || commandSpeechStarted) {
+                      val recentVoiceEvidence = lastVoiceEvidenceAt > 0L &&
+                          SystemClock.elapsedRealtime() - lastVoiceEvidenceAt <= 2600L
+                      if (!GamaRecognitionPolicy.shouldAcceptSessionFinal(
+                              text = spoken,
+                              commandSpeechStarted = commandSpeechStarted,
+                              recentVoiceEvidence = recentVoiceEvidence,
+                          )) {
+                          // Background chatter/noise can occasionally produce a Vosk final
+                          // while a conversation window is open. Ignore it silently instead
+                          // of answering "não entendi" or executing a phantom command.
+                          recognizer?.reset()
+                          decoderActive = false
+                          lastPartial = ""
+                          AssistantRuntime.partial("")
+                          return
+                      }
+                      if (conversation.active) touchConversation()
+                      authorizeCommand(if (conversation.active) VoicePolicy.followUp(spoken) else VoicePolicy.command(spoken), json, fromVoice = true)
+                  } else if (GamaSupervisor.acceptWake(
+                          text = spoken,
+                          sessionActive = conversation.active,
+                          voiceEvidence = recentHumanSpeech,
+                      )) {
+                      val command = VoicePolicy.command(spoken)
+                      if (command.isBlank()) {
+                          acknowledgeWake(
+                              speakAcknowledgement = true,
+                              acknowledgement = if (VoicePolicy.isSpecialWake(spoken)) {
+                                  GamaWakePhrasePolicy.specialReply()
+                              } else {
+                                  "Estou ouvindo."
+                              },
+                          )
+                      } else {
+                          acknowledgeWake(false)
+                          authorizeCommand(command, json, fromVoice = true)
+                      }
+                  }
+              }
+          
+              private fun currentWakePhrase(): String = "gama"
+          
+              private fun wakePhraseIndex(text: String, phrase: String): Int = VoicePolicy.wakeIndex(text)
+          
+              private fun phraseCloseEnough(heard: String, target: String): Boolean {
+                  val h = norm(heard)
+                  val t = norm(target)
+                  if (h == t) return true
+                  if (t == "gama") return VoicePolicy.hasWake(h)
+          
+                  val hw = h.split(" ").filter { it.isNotBlank() }
+                  val tw = t.split(" ").filter { it.isNotBlank() }
+                  if (tw.isEmpty()) return false
+                  val common = tw.count { word -> hw.contains(word) }
+                  return common >= maxOf(2, (tw.size * 0.75f).toInt())
+              }
+          
+              private fun touchConversation() {
+                      if (!conversation.active) return
+                      conversationLastActivityAt = SystemClock.elapsedRealtime()
+                      conversationIdleToken++
+                  }
+          
+                  private fun beginCommandWindow() {
+                  if (conversation.active && isDeviceLocked()) {
+              sendLockConversationUi(
+                  GamaLockConversationActivity.ACTION_LISTENING
+              )
+          }
+                  armCommandWindowAfterTts = false
+                  waitingForCommandStart = true
+                  commandSpeechStarted = false
+                  lastUsefulPartial = ""
+                  lastUsefulPartialAt = 0L
+                  lastVoiceEvidenceAt = 0L
+                  val now = maxOf(SystemClock.elapsedRealtime(), ignoreAudioUntil)
+                  val duration = when {
+                      ownerRetryPending -> 12_000L
+                      conversation.active -> FOLLOW_UP_START_TIMEOUT_MS
+                      else -> COMMAND_START_TIMEOUT_MS
+                  }
+          
+                  GamaSupervisor.onAwaitingSpeech()
+                  commandWindow.arm(now, duration)
+                  ownerRetryUntil = if (ownerRetryPending) now + 15000L else 0L
+                  conversationUntil = now + duration
+                  val listeningStatus = when {
+                      ownerRetryPending -> "Aguardando confirmação..."
+                      SystemClock.elapsedRealtime() < externalLaunchStatusUntil -> "Abrindo aplicativo..."
+                      else -> "Ouvindo..."
+                  }
+                  updateNotification(listeningStatus)
+              }
+          
+              private fun acknowledgeWake(
+                  speakAcknowledgement: Boolean = true,
+                  acknowledgement: String = "Estou ouvindo.",
+              ) {
+                  transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
+                  transcription = null
+                  clearOwnerVoiceRetry()
+                  commandWindow.clear()
+                  queuedWakeCommand = null
+                  clearSemanticEndpoint()
+                  orchestrator.openSession()
+                  GamaSupervisor.onWakeDetected()
+                  GamaSupervisor.onWakeAccepted()
+                  ZevronContextResolver.reset()
+                  warmBrainSilently()
+                  touchConversation()
+                  interactionToken++
+                  waitingForCommandStart = false
+                  commandSpeechStarted = false
+                  conversationUntil = 0L
+                  wakeUntil = 0L
+                  lastWakeAt = SystemClock.elapsedRealtime()
+                  showWakeUi()
+                  animateOrbWake()
+                  uiHandler.removeCallbacks(uiTimeout)
+                  if (speakAcknowledgement) {
+                      armCommandWindowAfterTts = true
+                      updateNotification("Conversa contínua iniciada")
+                      speak(acknowledgement, false)
+                  } else {
+                      armCommandWindowAfterTts = false
+                      updateNotification("Pedido reconhecido")
+                  }
+              }
+          
+              private fun markCommandSpeechStarted() {
+                  if (!waitingForCommandStart) return
+                  waitingForCommandStart = false
+                  commandSpeechStarted = true
+                  GamaSupervisor.onListening()
+                  interactionToken++
+                  commandWindow.speech(SystemClock.elapsedRealtime())
+                  touchConversation()
+                  conversationUntil = SystemClock.elapsedRealtime() + CONVERSATION_IDLE_TIMEOUT_MS
+                  uiHandler.removeCallbacks(uiTimeout)
+                  updateNotification("Ouvindo...")
+              }
+          
+              private fun armResponseDeadline() {
+                  val token = ++responseWatchToken
+                  responsePending = true
+                  uiHandler.postDelayed({
+                      if (running && responsePending && responseWatchToken == token) {
+                          responsePending = false
+                          updateNotification("Pensando...")
+                          if (isDeviceLocked()) sendLockConversationUi(GamaLockConversationActivity.ACTION_THINKING)
+                      }
+                  }, RESPONSE_WATCHDOG_MS)
+              }
+          
+              private fun markResponseStarted() {
+                  if (responsePending) {
+                      responsePending = false
+                      responseWatchToken++
+                  }
+              }
+          
+              private fun finishCommandListening() {
+                  AssistantRuntime.partial("")
+                  commandWindow.clear()
+                  voicedBlocks = 0
+                  waitingForCommandStart = false
+                  commandSpeechStarted = false
+                  conversationUntil = 0L
+                  wakeUntil = 0L
+                  interactionToken++
+              }
+          
+              private fun handlePartialText(raw: String) {
+                  transcription?.let { listener ->
+                      if (raw.isNotBlank()) { markCommandSpeechStarted(); listener.partial(raw) }
+                      return
+                  }
+                  if ((waitingForCommandStart || commandSpeechStarted) && !isDeviceLocked()) AssistantRuntime.partial(raw)
+                  val text = norm(raw)
+                  val partialNow = SystemClock.elapsedRealtime()
+          
+                  if (
+                      pendingSemanticText.isNotBlank() &&
+                      raw.isNotBlank()
+                  ) {
+                      pendingSemanticUntil =
+                          partialNow +
+                              SemanticEndpointer
+                                  .continuationWindowMs(
+                                      SemanticEndpointer.merge(
+                                          pendingSemanticText,
+                                          raw,
+                                      )
+                                  )
+                  }
+          
+                  if (text.isNotBlank() && text !in setOf("gama", "gamma") &&
+                      GamaRecognitionPolicy.hasVoiceEvidence(lastAudioMetrics)) {
+                      lastUsefulPartial = raw.trim()
+                      lastUsefulPartialAt = partialNow
+                      lastVoiceEvidenceAt = partialNow
+                      lastSpeechAt = partialNow
+                  }
+                  val partialToken = ++partialWakeToken
+                  if (text.isBlank() || speaking || ttsSpeaking || armCommandWindowAfterTts) return
+          
+                  if (waitingForCommandStart) {
+                      if (GamaRecognitionPolicy.hasVoiceEvidence(lastAudioMetrics)) {
+                          markCommandSpeechStarted()
+                      }
+                      return
+                  }
+          
+                  if (commandSpeechStarted) {
+                      touchConversation()
+                      conversationUntil = SystemClock.elapsedRealtime() + CONVERSATION_IDLE_TIMEOUT_MS
+                      return
+                  }
+          
+                  val phrase = currentWakePhrase()
+                  val now = SystemClock.elapsedRealtime()
+                  val hasWake = wakePhraseIndex(text, phrase) >= 0 &&
+                      GamaSupervisor.acceptWake(
+                          text = text,
+                          sessionActive = conversation.active,
+                          voiceEvidence = GamaRecognitionPolicy.hasVoiceEvidence(lastAudioMetrics),
+                      )
+          
+                  if (hasWake && now - lastWakePulse > 900L) {
+                      lastWakePulse = now
+                      showWakeUi()
+                      animateOrbWake()
+                      if (!conversation.active) scheduleUiTimeout(7000L)
+                      updateNotification("Gama reconhecido.")
+                  }
+          
+                  // Se o usuário disser somente "Gama", não esperamos o endpoint final do Vosk.
+                  // O atraso curto é cancelado assim que a parcial cresce, portanto "Gama, abra o zap"
+                  // continua sendo processado como uma única frase completa.
+                  if (!conversation.active && text in setOf("gama", "gamma")) {
+                      uiHandler.postDelayed({
+                          postAudio {
+                              if (!running || conversation.active || speaking || ttsSpeaking || partialToken != partialWakeToken) return@postAudio
+                              if (norm(lastPartial) !in setOf("gama", "gamma")) return@postAudio
+                              if (!GamaSupervisor.acceptWake(
+                                      text = lastPartial,
+                                      sessionActive = conversation.active,
+                                      voiceEvidence = GamaRecognitionPolicy.hasVoiceEvidence(lastAudioMetrics),
+                                  )) return@postAudio
+                              recognizer?.reset()
+                              decoderActive = false
+                              lastPartial = ""
+                              acknowledgeWake()
+                          }
+                      }, 480L)
+                  }
+              }
+          
+              private fun isEndConversation(command: String): Boolean =
+                  ConversationSession.isGoodbye(command)
+          
+              private fun cancelActiveWorkForSleep() {
+                      clearSemanticEndpoint()
+          
+                      orchestrator
+                          .invalidateCurrentTurn()
+          
+                      requestGeneration++
+                      responsePending = false
+                      responseWatchToken++
+          
+                      researchBusy = false
+                      liveBusy = false
+          
+                      if (brainBusy) {
+                          cancelObsoleteBrainRequest()
+                      }
+          
+                      pendingSuggestedCommand = null
+                      pendingSuggestedAt = 0L
+                      pendingWhatsAppTarget = null
+                      pendingWhatsAppAt = 0L
+          
+                      queuedSpeechText = null
+                      queuedSpeechCloseAfter = false
+                      pendingSpeech = null
+                      pendingCloseAfterSpeech = false
+          
+                      transcription?.error(
+                          android.speech.SpeechRecognizer
+                              .ERROR_CLIENT
+                      )
+          
+                      transcription = null
+                  }
+          
+                  private fun closeConversationForGoodbye() {
+              requestGeneration++
+                  finishCommandListening()
+                  cancelActiveWorkForSleep()
+                      orchestrator.closeSession()
+                  GamaSupervisor.onConversationClosed()
+                  ZevronContextResolver.reset()
+                  zevronPlanSteps.clear()
+                  zevronPlanRunning = false
+                  currentPlanStep = ""
+                  lastPlanStepMayContinue = true
+                  conversationIdleToken++
+                  conversationLastActivityAt = 0L
+                  conversationUntil = 0L
+                  wakeUntil = 0L
+                  creatorResearchUntil = 0L
+                  armCommandWindowAfterTts = false
+                  closeUiAfterSpeech = true
+                  queuedWakeCommand = null
+                  pendingSuggestedCommand = null
+                  pendingSuggestedAt = 0L
+                  updateNotification("Em espera • diga Gama quando precisar.")
+                  uiHandler.post {
+                      try { tts?.stop() } catch (_: Exception) {}
+                      speak("Certo. Vou ficar em espera. Diga Gama quando precisar.", true)
+                  }
+              }
+          
+              fun endConversation() { postAudio { closeConversationForGoodbye() } }
+          
+              /** Stops TTS without resetting Vosk, preserving the utterance that interrupted Gama. */
+              private fun interruptSpeechForBargeIn() {
+                  if (!conversation.active || !(speaking || ttsSpeaking)) return
+                  activeUtterance = null
+                  speaking = false
+                  ttsSpeaking = false
+                  closeUiAfterSpeech = false
+                  pendingSpeech = null
+                  pendingCloseAfterSpeech = false
+                  queuedSpeechText = null
+                  queuedSpeechCloseAfter = false
+                  queuedSpeechRecord = true
+                  activeSpeechText = null
+                  ttsRetryCount = 0
+                  ignoreAudioUntil = 0L
+                  armCommandWindowAfterTts = false
+                  waitingForCommandStart = false
+                  commandSpeechStarted = true
+                  touchConversation()
+                  conversationUntil = SystemClock.elapsedRealtime() + CONVERSATION_IDLE_TIMEOUT_MS
+                  uiHandler.post {
+                      try { tts?.stop() } catch (_: Exception) {}
+                      setOrbListening()
+                  }
+                  updateNotification("Ouvindo sua interrupção...")
+              }
+          
+              private fun audioAmplitude(buffer: ByteArray, read: Int): Double {
+                  var total = 0.0
+                  var count = 0
+                  var i = 0
+                  while (i + 1 < read) {
+                      val value = ((buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 255)).toDouble()
+                      total += kotlin.math.abs(value)
+                      count++
+                      i += 8
+                  }
+                  return if (count == 0) 0.0 else total / count
+              }
+          
+              private fun shouldDecodeBargeInAudio(
+                      buffer: ByteArray,
+                      read: Int,
+                      now: Long,
+                  ): Boolean {
+                      if (
+                          !conversation.active ||
+                          now < ignoreAudioUntil
+                      ) {
+                          bargeVoiceStartedAt = 0L
+                          return false
+                      }
+          
+                      val voiceEvidence =
+                          GamaRecognitionPolicy
+                              .hasVoiceEvidence(
+                                  lastAudioMetrics
+                              )
+          
+                      if (voiceEvidence) {
+                          if (
+                              bargeVoiceStartedAt <= 0L
+                          ) {
+                              bargeVoiceStartedAt =
+                                  now
+                          }
+          
+                          lastSpeechAt = now
+                          speechHoldUntil =
+                              now + 900L
+                      } else if (
+                          !decoderActive &&
+                          now >= speechHoldUntil
+                      ) {
+                          bargeVoiceStartedAt = 0L
+                      }
+          
+                      val sustained =
+                          bargeVoiceStartedAt > 0L &&
+                              now -
+                              bargeVoiceStartedAt >=
+                              160L
+          
+                      return sustained ||
+                          decoderActive ||
+                          now < speechHoldUntil
+                  }
+          
+                  private fun handleBargeInAudio(
+                      rec: Recognizer,
+                      buffer: ByteArray,
+                      read: Int,
+                      now: Long,
+                  ) {
+                      if (!conversation.active) {
+                          bargePreRoll = ByteArray(0)
+                          bargeVoiceStartedAt = 0L
+                          return
+                      }
+          
+                      if (
+                          !shouldDecodeBargeInAudio(
+                              buffer,
+                              read,
+                              now,
+                          )
+                      ) {
+                          bargePreRoll =
+                              (
+                                  bargePreRoll +
+                                      buffer.copyOf(read)
+                                  )
+                                  .takeLast(10_000)
+                                  .toByteArray()
+          
+                          return
+                      }
+          
+                      if (!decoderActive) {
+                          decoderActive = true
+                          utteranceStartedAt = now
+          
+                          if (
+                              bargePreRoll.isNotEmpty()
+                          ) {
+                              rec.acceptWaveForm(
+                                  bargePreRoll,
+                                  bargePreRoll.size,
+                              )
+                          }
+          
+                          bargePreRoll =
+                              ByteArray(0)
+                      }
+          
+                      val voicedFor =
+                          if (
+                              bargeVoiceStartedAt > 0L
+                          ) {
+                              now -
+                                  bargeVoiceStartedAt
+                          } else {
+                              0L
+                          }
+          
+                      if (
+                          rec.acceptWaveForm(
+                              buffer,
+                              read,
+                          )
+                      ) {
+                          val result =
+                              JSONObject(
+                                  rec.result
+                              )
+          
+                          val text =
+                              result.optString(
+                                  "text"
+                              ).trim()
+          
+                          val interrupt =
+                              GamaSelfSpeechGuard
+                                  .shouldInterrupt(
+                                      text,
+                                      activeSpeechText,
+                                      lastAudioMetrics,
+                                      voicedFor,
+                                      activeSpeechStartedAt,
+                                      now,
+                                      headsetAudioOutput(
+                                          now
+                                      ),
+                                  )
+          
+                          if (interrupt) {
+                              interruptSpeechForBargeIn()
+                              processFinal(result)
+                          } else {
+                              rec.reset()
+                              decoderActive = false
+                              lastPartial = ""
+                              bargeVoiceStartedAt = 0L
+                          }
+          
+                          return
+                      }
+          
+                      if (
+                          now - lastPartialAt >=
+                          120L
+                      ) {
+                          lastPartialAt = now
+          
+                          val partial =
+                              JSONObject(
+                                  rec.partialResult
+                              )
+                                  .optString(
+                                      "partial"
+                                  )
+                                  .trim()
+          
+                          if (partial.isNotBlank()) {
+                              lastPartial =
+                                  partial
+          
+                              val interrupt =
+                                  GamaSelfSpeechGuard
+                                      .shouldInterrupt(
+                                          partial,
+                                          activeSpeechText,
+                                          lastAudioMetrics,
+                                          voicedFor,
+                                          activeSpeechStartedAt,
+                                          now,
+                        
