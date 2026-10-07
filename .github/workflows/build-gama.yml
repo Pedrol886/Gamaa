@@ -1,4 +1,4 @@
-name: Build Gama 12.1 LOCAL VOICE FIX184 APK
+name: Build Gama 12.1 LOCAL VOICE FIX185 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-12-1-local-voice-fix184-${{ github.ref }}
+  group: gama-12-1-local-voice-fix185-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -811,6 +811,24 @@ jobs:
           tar -xzf "$RUNNER_TEMP/gama184-overlay.tar.gz" -C _gama_build
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaLocalLlm.kt
 
+      - name: Align Kotlin compiler with LiteRT-LM
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_KOTLIN'
+          from pathlib import Path
+          p = Path("_gama_build/build.gradle.kts")
+          text = p.read_text(encoding="utf-8")
+          old = 'id("org.jetbrains.kotlin.android") version "2.0.21" apply false'
+          new = 'id("org.jetbrains.kotlin.android") version "2.4.0" apply false'
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit("Versão do Kotlin inesperada em build.gradle.kts")
+          p.write_text(text, encoding="utf-8")
+          print("Kotlin Android plugin aligned to 2.4.0")
+          PY_KOTLIN
+          grep -F 'id("org.jetbrains.kotlin.android") version "2.4.0" apply false' _gama_build/build.gradle.kts
+
       - name: Bundle local conversational model
         run: |
           set -euo pipefail
@@ -835,7 +853,7 @@ jobs:
           echo "$GAMA_MODEL_SHA256  $MODEL" | sha256sum -c -
           ls -lh "$MODEL"
 
-      - name: Set version and audit FIX184 architecture
+      - name: Set version and audit FIX185 architecture
         run: |
           set -euo pipefail
           python3 - <<'PY_AUDIT'
@@ -846,13 +864,17 @@ jobs:
           root = Path("_gama_build")
           src = root / "app/src/main/java/com/gama/assistant"
           gradle = root / "app/build.gradle.kts"
+          root_gradle = root / "build.gradle.kts"
           manifest_path = root / "app/src/main/AndroidManifest.xml"
           model = root / "app/src/main/assets/llm/Qwen3-0.6B-int4.litertlm"
 
           text = gradle.read_text(encoding="utf-8")
+          root_gradle_text = root_gradle.read_text(encoding="utf-8")
+          if 'id("org.jetbrains.kotlin.android") version "2.4.0" apply false' not in root_gradle_text:
+              raise SystemExit("Kotlin 2.4.0 não aplicado; LiteRT-LM exige metadata Kotlin 2.4")
           version_code = 28_000_000 + int(os.environ["GITHUB_RUN_NUMBER"])
           text, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {version_code}", text, count=1)
-          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.1 Local Voice Core FIX184"', text, count=1)
+          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.1 Local Voice Core FIX185"', text, count=1)
           if c1 != 1 or c2 != 1:
               raise SystemExit("Falha ao configurar versão FIX184")
           gradle.write_text(text, encoding="utf-8")
@@ -899,14 +921,14 @@ jobs:
           }
           missing = [name for name, ok in checks.items() if not ok]
           if missing:
-              raise SystemExit("FIX184 incompleto: " + ", ".join(missing))
+              raise SystemExit("FIX185 incompleto: " + ", ".join(missing))
 
           kt_files = list(src.glob("*.kt"))
           kt_lines = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines()) for p in kt_files)
           if len(kt_files) < 125 or kt_lines < 28500:
               raise SystemExit(f"Regressão de fonte: {len(kt_files)} arquivos / {kt_lines} linhas Kotlin")
 
-          print(f"PASS FIX184: {len(kt_files)} Kotlin files / {kt_lines} lines / versionCode={version_code}")
+          print(f"PASS FIX185: {len(kt_files)} Kotlin files / {kt_lines} lines / versionCode={version_code}")
           for name in checks:
               print("PASS", name)
           PY_AUDIT
@@ -945,25 +967,25 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama184-compile.log"
+          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama185-compile.log"
 
       - name: Unit tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama184-tests.log"
+          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama185-tests.log"
 
       - name: Android lint
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:lintRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama184-lint.log"
+          ./gradlew --no-daemon :app:lintRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama185-lint.log"
 
       - name: Assemble Release
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama184-release.log"
+          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama185-release.log"
 
       - name: Zipalign sign and verify APK
         env:
@@ -1029,7 +1051,7 @@ jobs:
           unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
           "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
           grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
-          grep -Fq "versionName='Gama 12.1 Local Voice Core FIX184'" _gama_build/dist/apk-info.txt
+          grep -Fq "versionName='Gama 12.1 Local Voice Core FIX185'" _gama_build/dist/apk-info.txt
           (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
           rm -f _gama_build/dist/Gama-aligned.apk
           ls -lh _gama_build/dist/Gama.apk
@@ -1037,7 +1059,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.1-LOCAL-VOICE-FIX184-APK
+          name: Gama-12.1-LOCAL-VOICE-FIX185-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1050,7 +1072,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.1-LOCAL-VOICE-FIX184-source
+          name: Gama-12.1-LOCAL-VOICE-FIX185-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -1064,12 +1086,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.1-FIX184-diagnostics
+          name: Gama-12.1-FIX185-diagnostics
           path: |
-            gama184-compile.log
-            gama184-tests.log
-            gama184-lint.log
-            gama184-release.log
+            gama185-compile.log
+            gama185-tests.log
+            gama185-lint.log
+            gama185-release.log
             _gama_build/app/build/reports/**
             _gama_build/app/build/test-results/**
           if-no-files-found: ignore
