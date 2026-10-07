@@ -1,4 +1,4 @@
-name: Build Gama 12.1 LOCAL VOICE FIX186 APK
+name: Build Gama 12.1 LOCAL VOICE FIX187 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-12-1-local-voice-fix186-${{ github.ref }}
+  group: gama-12-1-local-voice-fix187-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -880,6 +880,48 @@ jobs:
             exit 1
           fi
 
+      - name: Fix Android package visibility
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_VISIBILITY'
+          from pathlib import Path
+          import re
+
+          path = Path("_gama_build/app/src/main/AndroidManifest.xml")
+          text = path.read_text(encoding="utf-8")
+
+          text = re.sub(
+              r'\s*<uses-permission\s+android:name="android\.permission\.QUERY_ALL_PACKAGES"\s*/>\s*',
+              "\n",
+              text,
+              count=1,
+          )
+
+          if "<queries>" not in text:
+              queries = """    <queries>
+                  <intent>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent>
+                  <package android:name="com.whatsapp" />
+                  <package android:name="com.whatsapp.w4b" />
+              </queries>
+
+          """
+              marker = "<application"
+              if marker not in text:
+                  raise SystemExit("AndroidManifest sem <application>")
+              text = text.replace(marker, queries + marker, 1)
+
+          if "android.permission.QUERY_ALL_PACKAGES" in text:
+              raise SystemExit("QUERY_ALL_PACKAGES ainda presente")
+          if "android.intent.category.LAUNCHER" not in text:
+              raise SystemExit("Consulta MAIN/LAUNCHER ausente")
+
+          path.write_text(text, encoding="utf-8")
+          print("Package visibility corrigida; QUERY_ALL_PACKAGES removido.")
+          PY_VISIBILITY
+
       - name: Bundle local conversational model
         run: |
           set -euo pipefail
@@ -904,7 +946,7 @@ jobs:
           echo "$GAMA_MODEL_SHA256  $MODEL" | sha256sum -c -
           ls -lh "$MODEL"
 
-      - name: Set version and audit FIX186 architecture
+      - name: Set version and audit FIX187 architecture
         run: |
           set -euo pipefail
           python3 - <<'PY_AUDIT'
@@ -929,9 +971,9 @@ jobs:
               raise SystemExit("compilerOptions JVM 17 não configurado")
           version_code = 28_000_000 + int(os.environ["GITHUB_RUN_NUMBER"])
           text, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {version_code}", text, count=1)
-          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.1 Local Voice Core FIX186"', text, count=1)
+          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.1 Local Voice Core FIX187"', text, count=1)
           if c1 != 1 or c2 != 1:
-              raise SystemExit("Falha ao configurar versão FIX186")
+              raise SystemExit("Falha ao configurar versão FIX187")
           gradle.write_text(text, encoding="utf-8")
 
           manifest = manifest_path.read_text(encoding="utf-8")
@@ -966,7 +1008,7 @@ jobs:
               "preaquecimento": "localLlm.warmUp()" in brain and "warmIntent(this)" in service,
               "sessao continua": "Long.MAX_VALUE" in service and "ConversationSession" in conversation,
               "sem maxOutputToken invalido": "maxOutputToken" not in llm,
-              "todos os apps visiveis": "QUERY_ALL_PACKAGES" in manifest and "getInstalledApplications" in catalog,
+              "apps launchable visiveis": "QUERY_ALL_PACKAGES" not in manifest and "<queries>" in manifest and "android.intent.category.LAUNCHER" in manifest and "getInstalledApplications" in catalog,
               "resolucao dinamica": "GamaInstalledAppCatalog.resolve(context, raw)" in registry,
               "launcher por acessibilidade": "ACCESSIBILITY_SERVICE" in launcher and "launchPackage(packageName)" in launcher,
               "ponte de acessibilidade": "fun launchPackage(packageName: String)" in accessibility,
@@ -976,14 +1018,14 @@ jobs:
           }
           missing = [name for name, ok in checks.items() if not ok]
           if missing:
-              raise SystemExit("FIX186 incompleto: " + ", ".join(missing))
+              raise SystemExit("FIX187 incompleto: " + ", ".join(missing))
 
           kt_files = list(src.glob("*.kt"))
           kt_lines = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines()) for p in kt_files)
           if len(kt_files) < 125 or kt_lines < 28500:
               raise SystemExit(f"Regressão de fonte: {len(kt_files)} arquivos / {kt_lines} linhas Kotlin")
 
-          print(f"PASS FIX186: {len(kt_files)} Kotlin files / {kt_lines} lines / versionCode={version_code}")
+          print(f"PASS FIX187: {len(kt_files)} Kotlin files / {kt_lines} lines / versionCode={version_code}")
           for name in checks:
               print("PASS", name)
           PY_AUDIT
@@ -1022,25 +1064,25 @@ jobs:
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama186-compile.log"
+          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-compile.log"
 
       - name: Unit tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama186-tests.log"
+          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-tests.log"
 
       - name: Android lint
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:lintRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama186-lint.log"
+          ./gradlew --no-daemon :app:lintRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-lint.log"
 
       - name: Assemble Release
         working-directory: _gama_build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama186-release.log"
+          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-release.log"
 
       - name: Zipalign sign and verify APK
         env:
@@ -1106,7 +1148,7 @@ jobs:
           unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
           "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
           grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
-          grep -Fq "versionName='Gama 12.1 Local Voice Core FIX186'" _gama_build/dist/apk-info.txt
+          grep -Fq "versionName='Gama 12.1 Local Voice Core FIX187'" _gama_build/dist/apk-info.txt
           (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
           rm -f _gama_build/dist/Gama-aligned.apk
           ls -lh _gama_build/dist/Gama.apk
@@ -1114,7 +1156,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.1-LOCAL-VOICE-FIX186-APK
+          name: Gama-12.1-LOCAL-VOICE-FIX187-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1127,7 +1169,7 @@ jobs:
       - name: Upload source
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.1-LOCAL-VOICE-FIX186-source
+          name: Gama-12.1-LOCAL-VOICE-FIX187-source
           path: |
             _gama_build/**
             !_gama_build/.gradle/**
@@ -1141,12 +1183,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-12.1-FIX186-diagnostics
+          name: Gama-12.1-FIX187-diagnostics
           path: |
-            gama186-compile.log
-            gama186-tests.log
-            gama186-lint.log
-            gama186-release.log
+            gama187-compile.log
+            gama187-tests.log
+            gama187-lint.log
+            gama187-release.log
             _gama_build/app/build/reports/**
             _gama_build/app/build/test-results/**
           if-no-files-found: ignore
