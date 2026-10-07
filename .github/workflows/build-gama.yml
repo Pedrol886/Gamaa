@@ -1,4 +1,4 @@
-name: Build Gama 12.1 LOCAL VOICE FIX187 APK
+name: Build Gama 12.4 SYSTEM LAUNCHER FIX191 APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-12-1-local-voice-fix187-${{ github.ref }}
+  group: gama-12-4-system-launcher-fix191-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -29,6 +29,10 @@ jobs:
       GAMA_MODEL_URL: "https://huggingface.co/litert-community/Qwen3-0.6B-int4/resolve/main/qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm?download=true"
       GAMA_MODEL_SHA256: "2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139"
       GAMA_MODEL_SIZE: "347251840"
+      GAMA_RUNTIME_FIX_SHA256: "b968c73a5253acde0f925d700b8df78bc5330f75904c0c32b60dd40cce096243"
+      GAMA_FIX189_SHA256: "5053a861a9f296b17f31443a3fcabec1718523cf161891403e7367e9add5bbee"
+      GAMA_FIX190_SHA256: "14606ff59abbd3a7a3f82bf7288cea95fe0997a08d9e76866c359e6e31cc9dbf"
+      GAMA_FIX191_SHA256: "078ca9b2bc3e75e9ac8c19793946bd030f4c144a9d3ca54d9f2a1692c4b47662"
 
     steps:
       - name: Checkout repository
@@ -811,385 +815,218 @@ jobs:
           tar -xzf "$RUNNER_TEMP/gama184-overlay.tar.gz" -C _gama_build
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaLocalLlm.kt
 
-      - name: Align Kotlin compiler and compilerOptions with LiteRT-LM
+      - name: Apply FIX188 routing and conversation repair
         run: |
           set -euo pipefail
-          python3 - <<'PY_KOTLIN'
-          from pathlib import Path
-          import re
-
-          root = Path("_gama_build")
-          root_gradle = root / "build.gradle.kts"
-          app_gradle = root / "app/build.gradle.kts"
-
-          root_text = root_gradle.read_text(encoding="utf-8")
-          old = 'id("org.jetbrains.kotlin.android") version "2.0.21" apply false'
-          new = 'id("org.jetbrains.kotlin.android") version "2.4.0" apply false'
-          if old in root_text:
-              root_text = root_text.replace(old, new, 1)
-          elif new not in root_text:
-              raise SystemExit("Versão do Kotlin inesperada em build.gradle.kts")
-          root_gradle.write_text(root_text, encoding="utf-8")
-
-          app_text = app_gradle.read_text(encoding="utf-8")
-          legacy_pattern = re.compile(
-              r'\n\s*kotlinOptions\s*\{\s*jvmTarget\s*=\s*"17"\s*\}\s*',
-              re.S,
-          )
-          app_text, removed = legacy_pattern.subn("\n", app_text, count=1)
-          if "kotlinOptions" in app_text:
-              raise SystemExit("Bloco kotlinOptions legado ainda presente em app/build.gradle.kts")
-
-          compiler_block = (
-              "\nkotlin {\n"
-              "    compilerOptions {\n"
-              "        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(\"17\")\n"
-              "    }\n"
-              "}\n\n"
-          )
-          if "compilerOptions" not in app_text:
-              marker = "\ndependencies {"
-              if marker not in app_text:
-                  raise SystemExit("Bloco dependencies não encontrado em app/build.gradle.kts")
-              app_text = app_text.replace(marker, compiler_block + "dependencies {", 1)
-
-          app_gradle.write_text(app_text, encoding="utf-8")
-
-          llm_path = root / "app/src/main/java/com/gama/assistant/GamaLocalLlm.kt"
-          llm_text = llm_path.read_text(encoding="utf-8")
-          llm_text = llm_text.replace(
-              "conv.sendMessage(prompt).text",
-              "conv.sendMessage(prompt).toString()",
-          )
-          if "conv.sendMessage(prompt).toString()" not in llm_text:
-              raise SystemExit("API LiteRT-LM sendMessage não alinhada")
-          if "conv.sendMessage(prompt).text" in llm_text:
-              raise SystemExit("Uso inválido de Message.text ainda presente")
-          llm_path.write_text(llm_text, encoding="utf-8")
-
-          if removed:
-              print("Migrated android.kotlinOptions to kotlin.compilerOptions")
-          else:
-              print("compilerOptions already configured")
-          print("Kotlin Android plugin aligned to 2.4.0")
-          PY_KOTLIN
-          grep -F 'id("org.jetbrains.kotlin.android") version "2.4.0" apply false' _gama_build/build.gradle.kts
-          grep -F 'jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17")' _gama_build/app/build.gradle.kts
-          if grep -Fq 'kotlinOptions' _gama_build/app/build.gradle.kts; then
-            echo "::error::kotlinOptions legado ainda presente"
-            exit 1
-          fi
-
-      - name: Fix Android package visibility
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_VISIBILITY'
-          from pathlib import Path
-          import re
-
-          path = Path("_gama_build/app/src/main/AndroidManifest.xml")
-          text = path.read_text(encoding="utf-8")
-
-          text = re.sub(
-              r'\s*<uses-permission\s+android:name="android\.permission\.QUERY_ALL_PACKAGES"\s*/>\s*',
-              "\n",
-              text,
-              count=1,
-          )
-
-          if "<queries>" not in text:
-              queries = """    <queries>
-                  <intent>
-                      <action android:name="android.intent.action.MAIN" />
-                      <category android:name="android.intent.category.LAUNCHER" />
-                  </intent>
-                  <package android:name="com.whatsapp" />
-                  <package android:name="com.whatsapp.w4b" />
-              </queries>
-
-          """
-              marker = "<application"
-              if marker not in text:
-                  raise SystemExit("AndroidManifest sem <application>")
-              text = text.replace(marker, queries + marker, 1)
-
-          if "android.permission.QUERY_ALL_PACKAGES" in text:
-              raise SystemExit("QUERY_ALL_PACKAGES ainda presente")
-          if "android.intent.category.LAUNCHER" not in text:
-              raise SystemExit("Consulta MAIN/LAUNCHER ausente")
-
-          path.write_text(text, encoding="utf-8")
-          print("Package visibility corrigida; QUERY_ALL_PACKAGES removido.")
-          PY_VISIBILITY
-
-      - name: Bundle local conversational model
-        run: |
-          set -euo pipefail
-          MODEL_DIR="$GITHUB_WORKSPACE/_gama_build/app/src/main/assets/llm"
-          MODEL="$MODEL_DIR/Qwen3-0.6B-int4.litertlm"
-          mkdir -p "$MODEL_DIR"
-          rm -f "$MODEL"
-          curl -L \
-            --fail \
-            --retry 5 \
-            --retry-all-errors \
-            --connect-timeout 30 \
-            --max-time 1800 \
-            --output "$MODEL" \
-            "$GAMA_MODEL_URL"
-          test -s "$MODEL"
-          ACTUAL_SIZE="$(stat -c%s "$MODEL")"
-          if [ "$ACTUAL_SIZE" != "$GAMA_MODEL_SIZE" ]; then
-            echo "::error::Modelo local com tamanho inesperado: $ACTUAL_SIZE; esperado: $GAMA_MODEL_SIZE"
-            exit 1
-          fi
-          echo "$GAMA_MODEL_SHA256  $MODEL" | sha256sum -c -
-          ls -lh "$MODEL"
-
-      - name: Set version and audit FIX187 architecture
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_AUDIT'
-          from pathlib import Path
-          import os
-          import re
-
-          root = Path("_gama_build")
-          src = root / "app/src/main/java/com/gama/assistant"
-          gradle = root / "app/build.gradle.kts"
-          root_gradle = root / "build.gradle.kts"
-          manifest_path = root / "app/src/main/AndroidManifest.xml"
-          model = root / "app/src/main/assets/llm/Qwen3-0.6B-int4.litertlm"
-
-          text = gradle.read_text(encoding="utf-8")
-          root_gradle_text = root_gradle.read_text(encoding="utf-8")
-          if 'id("org.jetbrains.kotlin.android") version "2.4.0" apply false' not in root_gradle_text:
-              raise SystemExit("Kotlin 2.4.0 não aplicado; LiteRT-LM exige metadata Kotlin 2.4")
-          if "kotlinOptions" in text:
-              raise SystemExit("DSL Kotlin legado detectado: kotlinOptions")
-          if 'jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17")' not in text:
-              raise SystemExit("compilerOptions JVM 17 não configurado")
-          version_code = 28_000_000 + int(os.environ["GITHUB_RUN_NUMBER"])
-          text, c1 = re.subn(r"versionCode\s*=\s*\d+", f"versionCode = {version_code}", text, count=1)
-          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.1 Local Voice Core FIX187"', text, count=1)
-          if c1 != 1 or c2 != 1:
-              raise SystemExit("Falha ao configurar versão FIX187")
-          gradle.write_text(text, encoding="utf-8")
-
-          manifest = manifest_path.read_text(encoding="utf-8")
-          service = (src / "GamaService.kt").read_text(encoding="utf-8")
-          brain = (src / "LocalBrain.kt").read_text(encoding="utf-8")
-          llm = (src / "GamaLocalLlm.kt").read_text(encoding="utf-8")
-          registry = (src / "GamaAppRegistry.kt").read_text(encoding="utf-8")
-          catalog = (src / "GamaInstalledAppCatalog.kt").read_text(encoding="utf-8")
-          launcher = (src / "GamaReliableAppLauncher.kt").read_text(encoding="utf-8")
-          accessibility = (src / "GamaScreenContextService.kt").read_text(encoding="utf-8")
-          conversation = (src / "ConversationSession.kt").read_text(encoding="utf-8")
-          brain_service = (src / "GamaBrainProcessService.kt").read_text(encoding="utf-8")
-
-          files_to_scan = list(src.glob("*.kt")) + [manifest_path, gradle]
-          all_source = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in files_to_scan)
-
-          forbidden = [
-              "GamaGeminiClient", "GamaGeminiControl", "GamaGeminiPolicy",
-              "GamaGeminiSecureStore", "GamaGeminiSettingsActivity",
-              "gemini-3.", "generativelanguage.googleapis.com",
-              "tasks-genai", "gemma.task", "AIza",
-          ]
-          bad = [token for token in forbidden if token in all_source]
-          if bad:
-              raise SystemExit("Dependência externa proibida presente: " + ", ".join(bad))
-
-          checks = {
-              "LiteRT-LM local": 'com.google.ai.edge.litertlm:litertlm-android:0.17.1' in text,
-              "modelo Qwen local": model.is_file() and model.stat().st_size == int(os.environ["GAMA_MODEL_SIZE"]),
-              "conversa gerativa": "class GamaLocalLlm" in llm and "sendMessage(prompt).toString()" in llm,
-              "memoria de conversa": "ConversationConfig" in llm and "conversationHistory" in brain,
-              "preaquecimento": "localLlm.warmUp()" in brain and "warmIntent(this)" in service,
-              "sessao continua": "Long.MAX_VALUE" in service and "ConversationSession" in conversation,
-              "sem maxOutputToken invalido": "maxOutputToken" not in llm,
-              "apps launchable visiveis": "QUERY_ALL_PACKAGES" not in manifest and "<queries>" in manifest and "android.intent.category.LAUNCHER" in manifest and "getInstalledApplications" in catalog,
-              "resolucao dinamica": "GamaInstalledAppCatalog.resolve(context, raw)" in registry,
-              "launcher por acessibilidade": "ACCESSIBILITY_SERVICE" in launcher and "launchPackage(packageName)" in launcher,
-              "ponte de acessibilidade": "fun launchPackage(packageName: String)" in accessibility,
-              "fallback de launcher": "PACKAGE_LAUNCH_INTENT" in launcher and "LAUNCHER_APPS" in launcher,
-              "brain isolado": "30L * 60L * 1000L" in brain_service,
-              "Vosk": (root / "app/src/main/assets/model/final.mdl").is_file(),
-          }
-          missing = [name for name, ok in checks.items() if not ok]
-          if missing:
-              raise SystemExit("FIX187 incompleto: " + ", ".join(missing))
-
-          kt_files = list(src.glob("*.kt"))
-          kt_lines = sum(len(p.read_text(encoding="utf-8", errors="ignore").splitlines()) for p in kt_files)
-          if len(kt_files) < 125 or kt_lines < 28500:
-              raise SystemExit(f"Regressão de fonte: {len(kt_files)} arquivos / {kt_lines} linhas Kotlin")
-
-          print(f"PASS FIX187: {len(kt_files)} Kotlin files / {kt_lines} lines / versionCode={version_code}")
-          for name in checks:
-              print("PASS", name)
-          PY_AUDIT
-
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Android SDK 35
-        run: |
-          set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          test -d "$SDK_ROOT"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          fi
-          test -x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" >/dev/null
-
-      - name: Gradle cache
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Clean
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon clean --stacktrace
-
-      - name: Compile Release Kotlin
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-compile.log"
-
-      - name: Unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-tests.log"
-
-      - name: Android lint
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:lintRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-lint.log"
-
-      - name: Assemble Release
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama187-release.log"
-
-      - name: Zipalign sign and verify APK
-        env:
-          GAMA_KEYSTORE_B64: ${{ secrets.GAMA_KEYSTORE_B64 }}
-          GAMA_KEYSTORE_PASSWORD: ${{ secrets.GAMA_KEYSTORE_PASSWORD }}
-          GAMA_KEY_ALIAS: ${{ secrets.GAMA_KEY_ALIAS }}
-          GAMA_KEY_PASSWORD: ${{ secrets.GAMA_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-          input_apk="$(find _gama_build/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print | head -n 1 || true)"
-          if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
-            echo "::error::assembleRelease terminou sem APK."
-            exit 1
-          fi
-
-          mkdir -p _gama_build/dist
-          "$BT/zipalign" -f -p 4 "$input_apk" _gama_build/dist/Gama-aligned.apk
-
-          if [ -n "${GAMA_KEYSTORE_B64:-}" ] && [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && [ -n "${GAMA_KEY_ALIAS:-}" ] && [ -n "${GAMA_KEY_PASSWORD:-}" ]; then
-            echo "$GAMA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gama-release.jks"
-            KS="$RUNNER_TEMP/gama-release.jks"
-            SP="$GAMA_KEYSTORE_PASSWORD"
-            KA="$GAMA_KEY_ALIAS"
-            KP="$GAMA_KEY_PASSWORD"
-            echo "stable-update-capable" > _gama_build/dist/install-mode.txt
-          else
-            KS="$RUNNER_TEMP/gama-test.jks"
-            SP="gama-test-pass"
-            KA="gama-test"
-            KP="gama-test-pass"
-            keytool -genkeypair \
-              -keystore "$KS" \
-              -storepass "$SP" \
-              -keypass "$KP" \
-              -alias "$KA" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 3650 \
-              -dname "CN=Gama Test,O=Gama,C=BR" \
-              -noprompt
-            echo "fresh-install-only" > _gama_build/dist/install-mode.txt
-          fi
-
-          "$BT/apksigner" sign \
-            --ks "$KS" \
-            --ks-pass "pass:$SP" \
-            --ks-key-alias "$KA" \
-            --key-pass "pass:$KP" \
-            --out _gama_build/dist/Gama.apk \
-            _gama_build/dist/Gama-aligned.apk
-
-          "$BT/apksigner" verify --verbose --print-certs _gama_build/dist/Gama.apk | tee _gama_build/dist/signature-info.txt
-          test -s _gama_build/dist/Gama.apk
-          APK_SIZE="$(stat -c%s _gama_build/dist/Gama.apk)"
-          if [ "$APK_SIZE" -lt 350000000 ]; then
-            echo "::error::APK não contém o cérebro local completo: $APK_SIZE bytes"
-            exit 1
-          fi
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/model/final.mdl'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/model/Gr.fst'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/llm/Qwen3-0.6B-int4.litertlm'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
-          "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
-          grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
-          grep -Fq "versionName='Gama 12.1 Local Voice Core FIX187'" _gama_build/dist/apk-info.txt
-          (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
-          rm -f _gama_build/dist/Gama-aligned.apk
-          ls -lh _gama_build/dist/Gama.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-12.1-LOCAL-VOICE-FIX187-APK
-          path: |
-            _gama_build/dist/Gama.apk
-            _gama_build/dist/Gama.apk.sha256
-            _gama_build/dist/apk-info.txt
-            _gama_build/dist/signature-info.txt
-            _gama_build/dist/install-mode.txt
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload source
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-12.1-LOCAL-VOICE-FIX187-source
-          path: |
-            _gama_build/**
-            !_gama_build/.gradle/**
-            !_gama_build/app/build/**
-            !_gama_build/dist/**
-            !_gama_build/app/src/main/assets/llm/**
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-12.1-FIX187-diagnostics
-          path: |
-            gama187-compile.log
-            gama187-tests.log
-            gama187-lint.log
-            gama187-release.log
-            _gama_build/app/build/reports/**
-            _gama_build/app/build/test-results/**
-          if-no-files-found: ignore
-          retention-days: 7
+          cat > "$RUNNER_TEMP/gama188-runtime-fix.b64" <<'GAMA188_RUNTIME_PAYLOAD'
+          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
