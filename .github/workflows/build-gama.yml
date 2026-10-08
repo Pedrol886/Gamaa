@@ -1,4 +1,4 @@
-name: Build Gama 12.8 FIX195 COMPLETE APK
+name: Build Gama 12.9 FIX196 COMPLETE APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-12-8-fix195-${{ github.ref }}
+  group: gama-12-9-fix196-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,8 +28,7 @@ jobs:
       GAMA_BASE_RUN_ID: "37609751648"
       GAMA_BASE_ARTIFACT: "Gama-12.1-LOCAL-VOICE-FIX187-source"
 
-      # Commit do #189.
-      # Ele contém o FIX193 COMPLETO, com 1171 linhas.
+      # Commit do run #189 que contém o FIX193 completo.
       GAMA_FIX193_COMMIT: "5602684eca7dd692f32be3c3d6a9e28e3d5d4b33"
 
       GAMA_MODEL_URL: "https://huggingface.co/litert-community/Qwen3-0.6B-int4/resolve/main/qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm?download=true"
@@ -37,18 +36,10 @@ jobs:
       GAMA_MODEL_SIZE: "347251840"
 
     steps:
-      # ============================================================
-      # 1. REPOSITÓRIO
-      # ============================================================
-
       - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # ============================================================
-      # 2. BASE ANDROID COMPROVADAMENTE COMPILADA
-      # ============================================================
 
       - name: Restore proven FIX187 source
         env:
@@ -70,9 +61,7 @@ jobs:
           test -s _gama_build/settings.gradle.kts
           test -s _gama_build/build.gradle.kts
           test -s _gama_build/app/build.gradle.kts
-
-          test -s \
-            _gama_build/app/src/main/AndroidManifest.xml
+          test -s _gama_build/app/src/main/AndroidManifest.xml
 
           test -s \
             _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
@@ -89,13 +78,9 @@ jobs:
           test -s \
             _gama_build/app/src/main/assets/spk-model/final.ext.raw
 
-          echo "FIX187 source restored."
+          echo "Base FIX187 restaurada."
 
-      # ============================================================
-      # 3. RECUPERAR FIX193 COMPLETO DO HISTÓRICO
-      # ============================================================
-
-      - name: Recover complete FIX193 from verified commit
+      - name: Recover complete FIX193 workflow
         run: |
           set -euo pipefail
 
@@ -114,42 +99,30 @@ jobs:
               < "$RUNNER_TEMP/fix193-complete.yml"
           )"
 
-          echo "FIX193 original lines: $FIX193_LINES"
+          echo "FIX193 histórico: $FIX193_LINES linhas"
 
           if [ "$FIX193_LINES" -lt 1100 ]; then
-            echo "::error::FIX193 histórico está incompleto."
+            echo "::error::FIX193 histórico incompleto."
             exit 1
           fi
 
           grep -Fq \
-            "Build Gama 12.6 FIX193 SINGLE FILE APK" \
+            'GAMA193_PATCH' \
             "$RUNNER_TEMP/fix193-complete.yml"
 
-          grep -Fq \
-            "GAMA193_PATCH" \
-            "$RUNNER_TEMP/fix193-complete.yml"
-
-      # ============================================================
-      # 4. EXTRAIR PATCH REAL DO FIX193
-      # ============================================================
-
-      - name: Extract FIX193 application patch
+      - name: Extract complete FIX193 patch
         run: |
           set -euo pipefail
 
-          python3 - <<'PY_FIX193'
+          python3 - <<'PY'
           from pathlib import Path
+          import os
           import textwrap
 
-          source = Path(
-              "/home/runner/work/_temp/fix193-complete.yml"
+          source = (
+              Path(os.environ["RUNNER_TEMP"])
+              / "fix193-complete.yml"
           )
-
-          if not source.exists():
-              import os
-              source = Path(
-                  os.environ["RUNNER_TEMP"]
-              ) / "fix193-complete.yml"
 
           text = source.read_text(
               encoding="utf-8"
@@ -164,7 +137,9 @@ jobs:
               if (
                   'cat > "$RUNNER_TEMP/gama193.patch"'
                   in line
-                  and "GAMA193_PATCH" in line
+                  and
+                  "GAMA193_PATCH"
+                  in line
               ):
                   start = index + 1
                   break
@@ -187,40 +162,41 @@ jobs:
 
           if end is None:
               raise SystemExit(
-                  "Final do patch FIX193 não encontrado."
+                  "Fim do patch FIX193 não encontrado."
               )
 
-          payload = "\n".join(
-              lines[start:end]
-          )
-
-          payload = textwrap.dedent(
-              payload
+          patch = textwrap.dedent(
+              "\n".join(
+                  lines[start:end]
+              )
           ).rstrip() + "\n"
 
           required = [
-              "--- a/app/src/main/java/com/gama/assistant/GamaService.kt",
+              "GamaService.kt",
+              "LocalBrain.kt",
+              "GamaLocalLlm.kt",
+              "SemanticEndpointer.kt",
+              "GamaInstalledAppCatalog.kt",
+              "GamaReliableAppLauncher.kt",
+              "GamaOnlineRouter.kt",
+              "GamaInternetHub.kt",
+              "GamaKnowledgePolicy.kt",
               "tryHandleRawBatteryBeforeContext",
               "tryHandleRawAppBeforeContext",
               "tryHandleRawOnlineBeforeContext",
-              "GamaInstalledAppCatalog.kt",
-              "GamaReliableAppLauncher.kt",
               "Intent.makeMainActivity",
-              "GamaOnlineRouter.kt",
-              "GamaInternetHub.kt",
               "www.bing.com/search?format=rss",
-              "GamaKnowledgePolicy.kt",
           ]
 
           missing = [
               item
               for item in required
-              if item not in payload
+              if item not in patch
           ]
 
           if missing:
               raise SystemExit(
-                  "FIX193 incompleto: "
+                  "Patch FIX193 incompleto: "
                   + ", ".join(missing)
               )
 
@@ -229,26 +205,19 @@ jobs:
           )
 
           output.write_text(
-              payload,
+              patch,
               encoding="utf-8",
           )
 
           print(
-              "FIX193 patch bytes:",
-              len(payload.encode("utf-8")),
+              "Patch FIX193:",
+              len(patch.splitlines()),
+              "linhas",
           )
+          PY
 
-          print(
-              "FIX193 patch lines:",
-              len(payload.splitlines()),
-          )
-          PY_FIX193
-
-          test -s /tmp/gama193.patch
-
-      # ============================================================
-      # 5. APLICAR FIX193 SOBRE A BASE FIX187
-      # ============================================================
+          test -s \
+            /tmp/gama193.patch
 
       - name: Apply complete FIX193
         working-directory: _gama_build
@@ -292,21 +261,23 @@ jobs:
             "$SERVICE"
 
           grep -Fq \
-            'Intent.ACTION_BATTERY_CHANGED' \
+            'ACTION_BATTERY_CHANGED' \
             "$SERVICE"
 
           grep -Fq \
             'Intent.makeMainActivity' \
             "$LAUNCHER"
 
+          # FIX196:
+          # O #191 procurava PackageManager.MATCH_ALL,
+          # mas o código Kotlin real usa .MATCH_ALL.
           grep -Fq \
-            'PackageManager.MATCH_ALL' \
+            'MATCH_ALL' \
             "$LAUNCHER"
 
           if grep -Fq \
             'MATCH_DEFAULT_ONLY' \
             "$LAUNCHER"; then
-
             echo "::error::MATCH_DEFAULT_ONLY ainda presente."
             exit 1
           fi
@@ -324,6 +295,18 @@ jobs:
             "$CATALOG"
 
           grep -Fq \
+            'pesquise' \
+            "$ONLINE"
+
+          grep -Fq \
+            'procure' \
+            "$ONLINE"
+
+          grep -Fq \
+            'busque' \
+            "$ONLINE"
+
+          grep -Fq \
             'www.bing.com/search?format=rss' \
             "$INTERNET"
 
@@ -339,17 +322,13 @@ jobs:
             '2_200L' \
             "$ENDPOINTER"
 
-          echo "FIX193 applied."
+          echo "FIX193 aplicado e verificado."
 
-      # ============================================================
-      # 6. VERSÃO FIX195
-      # ============================================================
-
-      - name: Configure FIX195 version
+      - name: Configure FIX196 version
         run: |
           set -euo pipefail
 
-          python3 - <<'PY_VERSION'
+          python3 - <<'PY'
           from pathlib import Path
           import os
           import re
@@ -363,7 +342,7 @@ jobs:
           )
 
           version_code = (
-              35_000_000
+              36_000_000
               + int(
                   os.environ[
                       "GITHUB_RUN_NUMBER"
@@ -380,7 +359,7 @@ jobs:
 
           text, name_count = re.subn(
               r'versionName\s*=\s*"[^"]*"',
-              'versionName = "Gama 12.8 Core FIX195"',
+              'versionName = "Gama 12.9 Core FIX196"',
               text,
               count=1,
           )
@@ -391,7 +370,7 @@ jobs:
               name_count != 1
           ):
               raise SystemExit(
-                  "Falha ao configurar versão."
+                  "Falha ao configurar versão FIX196."
               )
 
           path.write_text(
@@ -403,15 +382,11 @@ jobs:
               "versionCode:",
               version_code,
           )
-          PY_VERSION
+          PY
 
           grep -Fq \
-            'versionName = "Gama 12.8 Core FIX195"' \
+            'versionName = "Gama 12.9 Core FIX196"' \
             _gama_build/app/build.gradle.kts
-
-      # ============================================================
-      # 7. MODELO LOCAL QWEN
-      # ============================================================
 
       - name: Bundle local Qwen model
         run: |
@@ -439,10 +414,10 @@ jobs:
             stat -c%s "$MODEL"
           )"
 
-          echo "Model size: $ACTUAL_SIZE"
+          echo "Modelo: $ACTUAL_SIZE bytes"
 
           if [ "$ACTUAL_SIZE" != "$GAMA_MODEL_SIZE" ]; then
-            echo "::error::Modelo incompleto."
+            echo "::error::Modelo local incompleto."
             echo "Esperado: $GAMA_MODEL_SIZE"
             echo "Recebido: $ACTUAL_SIZE"
             exit 1
@@ -452,15 +427,11 @@ jobs:
             "$GAMA_MODEL_SHA256  $MODEL" \
             | sha256sum -c -
 
-      # ============================================================
-      # 8. AUDITORIA ANTES DA COMPILAÇÃO
-      # ============================================================
-
       - name: Architecture audit
         run: |
           set -euo pipefail
 
-          python3 - <<'PY_AUDIT'
+          python3 - <<'PY'
           from pathlib import Path
           import os
 
@@ -471,7 +442,7 @@ jobs:
               / "app/src/main/java/com/gama/assistant"
           )
 
-          required_files = [
+          required = [
               "GamaService.kt",
               "LocalBrain.kt",
               "GamaLocalLlm.kt",
@@ -482,10 +453,10 @@ jobs:
               "SemanticEndpointer.kt",
           ]
 
-          for name in required_files:
-              path = src / name
-
-              if not path.is_file():
+          for name in required:
+              if not (
+                  src / name
+              ).is_file():
                   raise SystemExit(
                       f"Arquivo ausente: {name}"
                   )
@@ -554,11 +525,11 @@ jobs:
           )
 
           checks = {
-              "FIX195 version":
-                  "Gama 12.8 Core FIX195"
+              "version":
+                  "Gama 12.9 Core FIX196"
                   in gradle,
 
-              "Qwen":
+              "qwen":
                   model.is_file()
                   and
                   model.stat().st_size
@@ -583,8 +554,11 @@ jobs:
                   "resolveBareName"
                   in catalog,
 
-              "system launcher":
+              "launcher":
                   "Intent.makeMainActivity"
+                  in launcher
+                  and
+                  "MATCH_ALL"
                   in launcher
                   and
                   "MATCH_DEFAULT_ONLY"
@@ -595,20 +569,20 @@ jobs:
                   in service,
 
               "research verbs":
-                  "pesquise"
-                  in online
-                  and
-                  "procure"
-                  in online
-                  and
-                  "busque"
-                  in online,
+                  all(
+                      word in online
+                      for word in (
+                          "pesquise",
+                          "procure",
+                          "busque",
+                      )
+                  ),
 
               "DuckDuckGo":
                   "html.duckduckgo.com"
                   in internet,
 
-              "Bing RSS":
+              "Bing":
                   "www.bing.com/search?format=rss"
                   in internet,
 
@@ -619,7 +593,7 @@ jobs:
                   "usableModelAnswer"
                   in brain,
 
-              "package visibility":
+              "queries":
                   "<queries>"
                   in manifest
                   and
@@ -651,8 +625,7 @@ jobs:
                       errors="ignore",
                   ).splitlines()
               )
-              for path
-              in kotlin_files
+              for path in kotlin_files
           )
 
           print(
@@ -667,7 +640,7 @@ jobs:
 
           if len(kotlin_files) < 125:
               raise SystemExit(
-                  "Quantidade de Kotlin abaixo do esperado."
+                  "Quantidade de arquivos Kotlin abaixo do esperado."
               )
 
           if kotlin_lines < 28500:
@@ -678,11 +651,7 @@ jobs:
           print(
               "Architecture audit PASS."
           )
-          PY_AUDIT
-
-      # ============================================================
-      # 9. JAVA
-      # ============================================================
+          PY
 
       - name: Java 17
         uses: actions/setup-java@v4
@@ -690,30 +659,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # ============================================================
-      # 10. ANDROID SDK
-      #
-      # NÃO usar android-actions/setup-android@v3.
-      # Foi ele que derrubou o #189 tentando instalar "tools".
-      # ============================================================
-
       - name: Locate Android SDK
         run: |
           set -euo pipefail
 
-          SDK_ROOT="${
-            ANDROID_SDK_ROOT:-
-            ${ANDROID_HOME:-/usr/local/lib/android/sdk}
-          }"
-
-          SDK_ROOT="$(
-            echo "$SDK_ROOT" \
-              | tr -d '\n ' \
-          )"
+          # FIX196:
+          # expressão inteira em uma linha.
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
 
           if [ ! -d "$SDK_ROOT" ]; then
-            echo "::error::Android SDK não encontrado."
-            echo "Tentativa: $SDK_ROOT"
+            echo "::error::Android SDK não encontrado em $SDK_ROOT"
             exit 1
           fi
 
@@ -741,14 +696,9 @@ jobs:
             )"
           fi
 
-          if [ -z "$SDKMANAGER" ]; then
+          if [ -z "$SDKMANAGER" ] || \
+             [ ! -x "$SDKMANAGER" ]; then
             echo "::error::sdkmanager não encontrado."
-            exit 1
-          fi
-
-          if [ ! -x "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não é executável."
-            echo "$SDKMANAGER"
             exit 1
           fi
 
@@ -760,11 +710,8 @@ jobs:
             "$(dirname "$SDKMANAGER")" \
             >> "$GITHUB_PATH"
 
-          echo "SDK root:"
-          echo "$SDK_ROOT"
-
-          echo "sdkmanager:"
-          echo "$SDKMANAGER"
+          echo "Android SDK: $SDK_ROOT"
+          echo "sdkmanager: $SDKMANAGER"
 
           "$SDKMANAGER" --version
 
@@ -778,7 +725,7 @@ jobs:
           fi
 
           if [ ! -x "$SDKMANAGER" ]; then
-            echo "::error::SDKMANAGER inválido."
+            echo "::error::SDKMANAGER não é executável."
             exit 1
           fi
 
@@ -805,18 +752,10 @@ jobs:
           test -x \
             "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
 
-          echo "Android SDK 35 ready."
-
-      # ============================================================
-      # 11. GRADLE
-      # ============================================================
+          echo "Android SDK 35 pronto."
 
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v4
-
-      # ============================================================
-      # 12. CLEAN
-      # ============================================================
 
       - name: Clean
         working-directory: _gama_build
@@ -827,10 +766,6 @@ jobs:
             --no-daemon \
             clean \
             --stacktrace
-
-      # ============================================================
-      # 13. KOTLIN
-      # ============================================================
 
       - name: Compile Release Kotlin
         working-directory: _gama_build
@@ -843,11 +778,7 @@ jobs:
             --stacktrace \
             2>&1 \
             | tee \
-              "$GITHUB_WORKSPACE/gama195-compile.log"
-
-      # ============================================================
-      # 14. TESTES
-      # ============================================================
+              "$GITHUB_WORKSPACE/gama196-compile.log"
 
       - name: Unit tests
         working-directory: _gama_build
@@ -860,11 +791,7 @@ jobs:
             --stacktrace \
             2>&1 \
             | tee \
-              "$GITHUB_WORKSPACE/gama195-tests.log"
-
-      # ============================================================
-      # 15. LINT
-      # ============================================================
+              "$GITHUB_WORKSPACE/gama196-tests.log"
 
       - name: Android lint
         working-directory: _gama_build
@@ -877,11 +804,7 @@ jobs:
             --stacktrace \
             2>&1 \
             | tee \
-              "$GITHUB_WORKSPACE/gama195-lint.log"
-
-      # ============================================================
-      # 16. APK RELEASE
-      # ============================================================
+              "$GITHUB_WORKSPACE/gama196-lint.log"
 
       - name: Assemble Release
         working-directory: _gama_build
@@ -894,11 +817,7 @@ jobs:
             --stacktrace \
             2>&1 \
             | tee \
-              "$GITHUB_WORKSPACE/gama195-release.log"
-
-      # ============================================================
-      # 17. LOCALIZAR APK
-      # ============================================================
+              "$GITHUB_WORKSPACE/gama196-release.log"
 
       - name: Locate generated APK
         run: |
@@ -916,7 +835,7 @@ jobs:
           )"
 
           if [ -z "$INPUT_APK" ]; then
-            echo "::error::Nenhum APK foi encontrado."
+            echo "::error::Nenhum APK encontrado."
             exit 1
           fi
 
@@ -931,17 +850,14 @@ jobs:
 
           ls -lh "$INPUT_APK"
 
-      # ============================================================
-      # 18. ZIPALIGN
-      # ============================================================
-
       - name: Zipalign APK
         run: |
           set -euo pipefail
 
           BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
 
-          test -x "$BT/zipalign"
+          test -x \
+            "$BT/zipalign"
 
           mkdir -p \
             _gama_build/dist
@@ -956,10 +872,6 @@ jobs:
           test -s \
             _gama_build/dist/Gama-aligned.apk
 
-      # ============================================================
-      # 19. ASSINATURA
-      # ============================================================
-
       - name: Sign APK
         env:
           GAMA_KEYSTORE_B64: ${{ secrets.GAMA_KEYSTORE_B64 }}
@@ -971,7 +883,8 @@ jobs:
 
           BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
 
-          test -x "$BT/apksigner"
+          test -x \
+            "$BT/apksigner"
 
           if [ -n "${GAMA_KEYSTORE_B64:-}" ] && \
              [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && \
@@ -1028,10 +941,6 @@ jobs:
           test -s \
             _gama_build/dist/Gama.apk
 
-      # ============================================================
-      # 20. VERIFICAR ASSINATURA
-      # ============================================================
-
       - name: Verify APK signature
         run: |
           set -euo pipefail
@@ -1049,10 +958,6 @@ jobs:
           test -s \
             _gama_build/dist/signature-info.txt
 
-      # ============================================================
-      # 21. VERIFICAR CONTEÚDO REAL DO APK
-      # ============================================================
-
       - name: Verify APK contents
         run: |
           set -euo pipefail
@@ -1066,11 +971,12 @@ jobs:
             stat -c%s "$APK"
           )"
 
-          echo "Final APK size: $APK_SIZE"
+          echo \
+            "APK final: $APK_SIZE bytes"
 
           if [ "$APK_SIZE" -lt 350000000 ]; then
             echo "::error::APK pequeno demais."
-            echo "O Qwen local provavelmente não foi incluído."
+            echo "::error::Modelo Qwen provavelmente não entrou."
             exit 1
           fi
 
@@ -1108,7 +1014,7 @@ jobs:
             _gama_build/dist/apk-info.txt
 
           grep -Fq \
-            "versionName='Gama 12.8 Core FIX195'" \
+            "versionName='Gama 12.9 Core FIX196'" \
             _gama_build/dist/apk-info.txt
 
           (
@@ -1126,16 +1032,12 @@ jobs:
           rm -f \
             _gama_build/dist/Gama-aligned.apk
 
-          echo "=================================="
-          echo "FINAL APK VERIFIED"
-          echo "=================================="
+          echo "=============================="
+          echo "GAMA APK VERIFICADO"
+          echo "=============================="
 
           ls -lh \
             _gama_build/dist/Gama.apk
-
-      # ============================================================
-      # 22. GARANTIA FINAL
-      # ============================================================
 
       - name: Final APK gate
         run: |
@@ -1147,46 +1049,4 @@ jobs:
           test -s \
             _gama_build/dist/Gama.apk.sha256
 
-          test -s \
-            _gama_build/dist/apk-info.txt
-
-          test -s \
-            _gama_build/dist/signature-info.txt
-
-          echo "Gama.apk exists and passed final gate."
-
-      # ============================================================
-      # 23. PUBLICAR APK
-      # ============================================================
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-12.8-FIX195-APK
-          path: |
-            _gama_build/dist/Gama.apk
-            _gama_build/dist/Gama.apk.sha256
-            _gama_build/dist/apk-info.txt
-            _gama_build/dist/signature-info.txt
-            _gama_build/dist/install-mode.txt
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 30
-
-      # ============================================================
-      # DIAGNÓSTICO SE QUALQUER ETAPA FALHAR
-      # ============================================================
-
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-FIX195-diagnostics
-          path: |
-            gama195-compile.log
-            gama195-tests.log
-            gama195-lint.log
-            gama195-release.log
-            _gama_build/app/build/reports/
-          if-no-files-found: ignore
-          retention-days: 7
+          test -
