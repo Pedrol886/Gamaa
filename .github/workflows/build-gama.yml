@@ -1,4 +1,4 @@
-name: Build Gama 12.6 FIX193 SINGLE FILE APK
+name: Build Gama 12.7 FIX194 SDK REPAIR APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-12-6-fix193-${{ github.ref }}
+  group: gama-12-7-fix194-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +44,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name "$GAMA_BASE_ARTIFACT" \
             --dir _gama_build
+
           test -s _gama_build/app/build.gradle.kts
           test -s _gama_build/app/src/main/AndroidManifest.xml
           test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
@@ -55,6 +56,7 @@ jobs:
       - name: Apply FIX193 voice router apps battery and research
         run: |
           set -euo pipefail
+
           cat > "$RUNNER_TEMP/gama193.patch" <<'GAMA193_PATCH'
           --- a/app/src/main/java/com/gama/assistant/GamaService.kt
           +++ b/app/src/main/java/com/gama/assistant/GamaService.kt
@@ -67,40 +69,48 @@ jobs:
                private var bargeVoiceStartedAt = 0L
                private var activeSpeechStartedAt = 0L
                @Volatile private var activeBrainTurnStamp: GamaTurnCoordinator.Stamp? = null
+
           @@ -1385,15 +1387,16 @@
                                    } else {
                                        "Estou ouvindo."
                                    }
-          +                        // Do not talk over "Gama, abra X". Open the session silently first.
-          +                        // A single acknowledgement is spoken only when the owner really stopped
-          +                        // after the wake word. This prevents duplicated "Estou ouvindo" replies
-          +                        // and prevents TTS from chopping the beginning of the command.
+
+          +                        // Não interromper "Gama, abra X".
                                    acknowledgeWake(
           -                            speakAcknowledgement = true,
           +                            speakAcknowledgement = false,
                                        acknowledgement = wakeAcknowledgement,
                                    )
                                    beginCommandWindow()
- 
-          -                        // If the owner called only "Gama", acknowledge naturally.
-          -                        // If they continued the sentence, the first partial cancels
-          -                        // this prompt and the command is captured in one shot.
+
                                    val wakeInteraction = interactionToken
                                    uiHandler.postDelayed({
                                        postAudio {
-          @@ -1405,7 +1408,7 @@
+                                           if (
+                                               !running ||
+                                               interactionToken != wakeInteraction ||
+                                               conversation.active ||
+                                               lastPartial.isNotBlank()
+                                           ) {
+                                               return@postAudio
+                                           }
+
                                            armCommandWindowAfterTts = true
                                            speak(wakeAcknowledgement, false)
                                        }
           -                        }, 360L)
           +                        }, 700L)
+
                                    continue
                                }
+
                                if (endpoint) dedicatedWake.reset()
+
           @@ -1736,6 +1739,13 @@
                            AssistantRuntime.partial("")
                            return
                        }
+
           +            if (duplicateVoiceFinal(spoken, finalNow)) {
           +                recognizer?.reset()
           +                decoderActive = false
@@ -108,50 +118,96 @@ jobs:
           +                AssistantRuntime.partial("")
           +                return
           +            }
+          +
                        if (conversation.active) touchConversation()
-                       authorizeCommand(if (conversation.active) VoicePolicy.followUp(spoken) else VoicePolicy.command(spoken), json, fromVoice = true)
-                   } else if (GamaSupervisor.acceptWake(
-          @@ -1743,6 +1753,7 @@
+
+                       authorizeCommand(
+                           if (conversation.active) {
+                               VoicePolicy.followUp(spoken)
+                           } else {
+                               VoicePolicy.command(spoken)
+                           },
+                           json,
+                           fromVoice = true,
+                       )
+                   } else if (
+                       GamaSupervisor.acceptWake(
+                           spoken,
                            sessionActive = conversation.active,
                            voiceEvidence = recentHumanSpeech,
-                       )) {
+                       )
+                   ) {
           +            if (duplicateVoiceFinal(spoken, finalNow)) return
+          +
                        val command = VoicePolicy.command(spoken)
+
                        if (command.isBlank()) {
                            acknowledgeWake(
-          @@ -1760,6 +1771,17 @@
+                               speakAcknowledgement = true,
+                           )
+                           beginCommandWindow()
+                           return
+                       }
+
+                       authorizeCommand(command, json, fromVoice = true)
                    }
                }
- 
-          +    private fun duplicateVoiceFinal(spoken: String, now: Long): Boolean {
+
+          +    private fun duplicateVoiceFinal(
+          +        spoken: String,
+          +        now: Long,
+          +    ): Boolean {
           +        val normalized = norm(spoken)
+          +
           +        if (normalized.isBlank()) return false
-          +        if (normalized == lastVoiceDispatchText && now - lastVoiceDispatchAt in 0L..1800L) {
+          +
+          +        if (
+          +            normalized == lastVoiceDispatchText &&
+          +            now - lastVoiceDispatchAt in 0L..1800L
+          +        ) {
           +            return true
           +        }
+          +
           +        lastVoiceDispatchText = normalized
           +        lastVoiceDispatchAt = now
+          +
           +        return false
           +    }
           +
                private fun currentWakePhrase(): String = "gama"
- 
-               private fun wakePhraseIndex(text: String, phrase: String): Int = VoicePolicy.wakeIndex(text)
+
+               private fun wakePhraseIndex(
+                   text: String,
+                   phrase: String,
+               ): Int = VoicePolicy.wakeIndex(text)
+
           @@ -3111,6 +3133,22 @@
                        speakCommandReply(reply, privateData)
                        return
                    }
-          +        // App actions have absolute priority over the conversational brain.
-          +        // Resolve both natural "abra X" requests and a bare installed app name.
+
           +        val resolvedVoiceApp =
           +            GamaAppRegistry.resolveOpenRequest(this, command)
-          +                ?: GamaInstalledAppCatalog.resolveBareName(this, command)
+          +                ?: GamaInstalledAppCatalog.resolveBareName(
+          +                    this,
+          +                    command,
+          +                )
+          +
           +        if (resolvedVoiceApp != null) {
           +            deferredLaunch = false
-          +            val baseReply = launchResolvedVoiceApp(resolvedVoiceApp)
-          +            val reply = withHabitSuggestion(baseReply, "abra ${resolvedVoiceApp.label}")
+          +
+          +            val baseReply =
+          +                launchResolvedVoiceApp(resolvedVoiceApp)
+          +
+          +            val reply =
+          +                withHabitSuggestion(
+          +                    baseReply,
+          +                    "abra ${resolvedVoiceApp.label}",
+          +                )
+          +
           +            conversationUntil = 0L
           +            wakeUntil = 0L
+          +
           +            updateNotification(reply)
           +            speakCommandReply(reply, privateData)
           +            return
@@ -160,1011 +216,77 @@ jobs:
                    CommandRouter.appToOpen(command)?.let { app ->
                        deferredLaunch = false
                        val baseReply = openByLabel(app)
-          @@ -3197,9 +3235,9 @@
+                       val reply =
+                           withHabitSuggestion(
+                               baseReply,
+                               "abra $app",
+                           )
+
+                       updateNotification(reply)
+                       speakCommandReply(reply, privateData)
+                       return
+                   }
+
+          @@ -3197,9 +3235,7 @@
                            return
                        }
- 
+
           -            answerWithBrainAsync(
           -                ZevronJarvisCore.brainInstruction(normalizedCommand)
           -            )
-          +            // The local model already has its own system prompt. Send the user's
-          +            // actual words, not a second policy essay as if it were the question.
           +            answerWithBrainAsync(normalizedCommand)
                        return
                    }
- 
+
           @@ -3471,12 +3509,24 @@
                        val requestId = ++brainRequestSerial
                        val generation = requestGeneration
-                       val transientContext = if (!cleanContext && conversation.active) {
-          -                listOfNotNull(
-          -                    conversation.historyBeforeCurrent(),
-          -                    ZevronContextResolver.brainContext(),
-          -                ).filter { it.isNotBlank() }.joinToString("\n").takeIf { it.isNotBlank() }
-          +                conversation.historyBeforeCurrent()
-          +                    .take(BrainProcessProtocol.MAX_HISTORY_CHARS)
-          +                    .takeIf { it.isNotBlank() }
-                       } else null
-          -            val dialogueContext = ZevronJarvisCore.enrichBrainContext(this, transientContext).orEmpty()
-          +
-          +            // Screen/accessibility state is useful only when the user actually refers
-          +            // to the device UI. Feeding it into every knowledge question made the
-          +            // small local model answer unrelated questions with accessibility text.
+
+                       val transientContext =
+                           if (
+                               !cleanContext &&
+                               conversation.active
+                           ) {
+          -                    listOfNotNull(
+          -                        conversation.historyBeforeCurrent(),
+          -                        ZevronContextResolver.brainContext(),
+          -                    )
+          -                        .filter { it.isNotBlank() }
+          -                        .joinToString("\n")
+          -                        .takeIf { it.isNotBlank() }
+          +                    conversation
+          +                        .historyBeforeCurrent()
+          +                        .take(
+          +                            BrainProcessProtocol
+          +                                .MAX_HISTORY_CHARS
+          +                        )
+          +                        .takeIf { it.isNotBlank() }
+                           } else {
+                               null
+                           }
+
+          -            val dialogueContext =
+          -                ZevronJarvisCore
+          -                    .enrichBrainContext(
+          -                        this,
+          -                        transientContext,
+          -                    )
+          -                    .orEmpty()
           +            val wantsDeviceContext =
-          +                ZevronPerceptionPolicy.wantsVisibleContext(raw) ||
-          +                listOf("tela", "aqui", "isso na tela", "aplicativo atual", "app atual")
-          +                    .any { raw.contains(it, ignoreCase = true) }
+          +                ZevronPerceptionPolicy
+          +                    .wantsVisibleContext(raw) ||
+          +                    listOf(
+          +                        "tela",
+          +                        "aqui",
+          +                        "isso na tela",
+          +                        "aplicativo atual",
+          +                        "app atual",
+          +                    ).any {
+          +                        raw.contains(
+          +                            it,
+          +                            ignoreCase = true,
+          +                        )
+          +                    }
           +
-          +            val dialogueContext = if (wantsDeviceContext) {
-          +                ZevronJarvisCore.enrichBrainContext(this, transientContext).orEmpty()
-          +            } else {
-          +                transientContext.orEmpty()
-          +            }
- 
-                       brainBusy = true
-                       activeBrainRequestId = requestId
-          @@ -3791,14 +3841,7 @@
-                       c in setOf("diagnostico", "diagnóstico", "ultimo erro", "último erro", "qual foi o ultimo erro", "qual foi o último erro") -> crashDiagnosticReply()
- 
-                       isTimeQuestion(c) -> currentTimeReply()
-          -            c.contains("bateria") -> {
-          -                val level = (getSystemService(BATTERY_SERVICE) as android.os.BatteryManager)
-          -                    .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-          -                if (level in 0..100) {
-          -                    val advice = GamaPersona.batteryAdvice(level)
-          -                    "A bateria está em $level por cento." + if (advice.isBlank()) "" else " $advice"
-          -                } else "Não consegui ler a bateria."
-          -            }
-          +            c.contains("bateria") -> batteryStatusReply()
- 
-                       c.contains("internet") || c.contains("conexao") || c.contains("rede") -> {
-                           val cm = getSystemService(android.net.ConnectivityManager::class.java)
-          @@ -4764,6 +4807,20 @@
-                   }
-               }
- 
-          +    private fun launchResolvedVoiceApp(app: GamaAppRegistry.AppSpec): String {
-          +        for (attempt in 0..GamaReliableAppLauncher.maxAttemptIndex()) {
-          +            val result = runCatching {
-          +                GamaAppRegistry.launch(this, app, attempt)
-          +            }.getOrNull()
-          +            if (result?.started == true) {
-          +                return "Abrindo ${app.label}."
-          +            }
-          +        }
-          +
-          +        // Keep the proven label/package fallbacks as the final route.
-          +        return openByLabel(app.label)
-          +    }
-          +
-               private fun openByLabel(
-                   query: String
-               ): String {
-          @@ -5266,8 +5323,125 @@
-                   speak("Ouvi $kind. Confirmo?", false)
-               }
- 
-          +    private fun isBatteryQuestionRaw(rawCommand: String): Boolean {
-          +        val c = norm(rawCommand)
-          +        if ("bateria" !in c && "carga" !in c) return false
-          +        return c.contains("bateria") ||
-          +            c.contains("porcentagem da carga") ||
-          +            c.contains("nivel da carga") ||
-          +            c.contains("nível da carga")
-          +    }
-          +
-          +    private fun batteryStatusReply(): String {
-          +        val sticky = runCatching {
-          +            registerReceiver(
-          +                null,
-          +                IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-          +            )
-          +        }.getOrNull()
-          +
-          +        val levelRaw = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
-          +        val scale = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
-          +        val percent = if (levelRaw >= 0 && scale > 0) {
-          +            ((levelRaw * 100f) / scale).toInt().coerceIn(0, 100)
-          +        } else {
-          +            runCatching {
-          +                (getSystemService(BATTERY_SERVICE) as android.os.BatteryManager)
-          +                    .getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-          +            }.getOrDefault(-1)
-          +        }
-          +
-          +        if (percent !in 0..100) return "Não consegui ler a bateria agora."
-          +
-          +        val status = sticky?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
-          +        val charging =
-          +            status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
-          +                status == android.os.BatteryManager.BATTERY_STATUS_FULL
-          +
-          +        val advice = GamaPersona.batteryAdvice(percent)
-          +        return buildString {
-          +            append("A bateria está em $percent por cento")
-          +            if (charging) append(" e o celular está carregando")
-          +            append(".")
-          +            if (advice.isNotBlank()) append(" $advice")
-          +        }
-          +    }
-          +
-          +    private fun tryHandleRawBatteryBeforeContext(rawCommand: String): Boolean {
-          +        if (!isBatteryQuestionRaw(rawCommand)) return false
-          +        markResponseStarted()
-          +        speak(batteryStatusReply(), false)
-          +        return true
-          +    }
-          +
-          +    private fun tryHandleRawOnlineBeforeContext(rawCommand: String): Boolean {
-          +        val mode = GamaOnlineRouter.classify(rawCommand)
-          +        if (mode == GamaOnlineRouter.Mode.NONE) return false
-          +
-          +        val sequence = userCommandSequence + 1L
-          +        userCommandSequence = sequence
-          +        markResponseStarted()
-          +        setConversationVisual(GamaEnergyView.Mode.THINKING)
-          +        updateNotification("Consultando a Internet...")
-          +
-          +        return GamaOnlineRouter.handleAsync(this, rawCommand) { answer ->
-          +            uiHandler.post {
-          +                if (running && userCommandSequence == sequence) {
-          +                    speak(answer, false)
-          +                }
-          +            }
-          +        }
-          +    }
-          +
-          +    private fun tryHandleRawAppBeforeContext(rawCommand: String): Boolean {
-          +        val raw = rawCommand.trim()
-          +        if (raw.isBlank()) return false
-          +        val normalized = norm(raw)
-          +
-          +        // Message composition is not an app-open request. Let the WhatsApp parser
-          +        // keep ownership of those commands.
-          +        if (WhatsAppCommandParser.looksLikeSendCommand(normalized)) return false
-          +
-          +        val app =
-          +            GamaAppRegistry.resolveOpenRequest(this, raw)
-          +                ?: GamaInstalledAppCatalog.resolveBareName(this, raw)
-          +                ?: return false
-          +
-          +        transcription?.error(android.speech.SpeechRecognizer.ERROR_CLIENT)
-          +        transcription = null
-          +        finishCommandListening()
-          +        clearOwnerVoiceRetry()
-          +        clearSemanticEndpoint()
-          +        pendingSuggestedCommand = null
-          +        pendingSuggestedAt = 0L
-          +        pendingCommand.clear()
-          +        requestGeneration++
-          +
-          +        if (isDeviceLocked()) {
-          +            pendingCommand.set(raw, SystemClock.elapsedRealtime())
-          +            speak(requestSecureUnlockReply(), true)
-          +            return true
-          +        }
-          +
-          +        userCommandSequence += 1L
-          +        val sequence = userCommandSequence
-          +        ZevronContextResolver.rememberCommand("abra ${app.label}")
-          +        GamaReferenceMemory.observe(this, "abra ${app.label}")
-          +        markResponseStarted()
-          +        GamaSupervisor.onExecuting()
-          +        launchKnownAppRoute(app, sequence, 0)
-          +        return true
-          +    }
-          +
-               private fun authorizeCommand(command: String, json: JSONObject, fromVoice: Boolean = false) {
-                   if (command.isBlank()) return
-          +
-          +        // Deterministic commands are decided from the literal utterance BEFORE
-          +        // contextual rewriting or the conversational brain.
-          +        if (tryHandleRawBatteryBeforeContext(command)) return
-          +        if (tryHandleRawAppBeforeContext(command)) return
-          +        if (tryHandleRawOnlineBeforeContext(command)) return
-          +
-                   val durableResolved = GamaReferenceMemory.resolve(this, command)
-                   val resolvedCommand = ZevronContextResolver.resolve(durableResolved)
-                   if (resolvedCommand.isBlank()) return
-          --- a/app/src/main/java/com/gama/assistant/LocalBrain.kt
-          +++ b/app/src/main/java/com/gama/assistant/LocalBrain.kt
-          @@ -35,31 +35,71 @@
- 
-                   localConversation(normalized, raw, history)?.let { return it }
-                   localFacts(normalized)?.let { return it }
-          -        val math = ZevronMathTool.handle(context, raw)
-          -        if (math != null) return math
-          +        ZevronMathTool.handle(context, raw)?.let { return it }
- 
-                   val resolved = resolvePublicFollowUp(raw, history)
-          -
-          -        // Current/fresh information goes to direct public retrieval. Everything
-          -        // conversational is answered by the on-device Qwen brain first.
-                   val explicitResearch = normalized.startsWith("pesquise ") ||
-                       normalized.startsWith("procure ") ||
-                       normalized.contains("noticia") ||
-                       normalized.contains("previsao") ||
-                       normalized.contains("cotacao")
-          -        if (explicitResearch || isFreshQuestion(normalized)) {
-          -            return publicAnswer(resolved)
-          +        val fresh = isFreshQuestion(normalized)
-          +        val knowledge = looksLikeKnowledgeRequest(normalized)
-          +        val followUp = looksLikeFollowUp(normalized)
-          +
-          +        // Current information belongs to the public-research path. Ordinary factual
-          +        // questions do not. "Quem é Albert Einstein?" goes to the local model first
-          +        // instead of dumping search-result titles into the voice conversation.
-          +        if (explicitResearch || fresh) {
-          +            val public = publicAnswer(resolved)
-          +            if (usablePublicAnswer(public)) return public
-          +        }
-          +
-          +        val modelAnswer = if (knowledge && !followUp) {
-          +            localLlm.answerFresh(raw)
-          +        } else {
-          +            localLlm.answer(raw, history)
-                   }
- 
-          -        localLlm.answer(raw, history)?.let { return it }
-          +        modelAnswer?.let { answer ->
-          +            if (usableModelAnswer(normalized, answer)) return answer
-          +        }
- 
-          -        if (GamaKnowledgePolicy.canUsePublicFallback(resolved) || looksLikeKnowledgeRequest(normalized)) {
-          -            return publicAnswer(resolved)
-          +        if (knowledge && GamaKnowledgePolicy.canUsePublicFallback(resolved)) {
-          +            val public = publicAnswer(resolved)
-          +            if (usablePublicAnswer(public)) return public
-          +            return "Não consegui responder isso com confiança agora. Pode reformular a pergunta?"
-                   }
- 
-                   return contextualContinuation(normalized, history)
-               }
- 
-          +    private fun usableModelAnswer(question: String, answer: String): Boolean {
-          +        val clean = answer.trim()
-          +        if (clean.isBlank()) return false
-          +        val unrelatedDeviceReply =
-          +            !question.contains("acessibilidade") &&
-          +            !question.contains("android") &&
-          +            !question.contains("tela") &&
-          +            (clean.contains("acessibilidade", ignoreCase = true) ||
-          +                clean.contains("Gama Contexto da Tela", ignoreCase = true) ||
-          +                clean.contains("configuração de acessibilidade", ignoreCase = true))
-          +        if (unrelatedDeviceReply) return false
-          +        if (clean.equals("Estou acompanhando o contexto. Pode continuar.", ignoreCase = true)) return false
-          +        return true
-          +    }
-          +
-          +    private fun usablePublicAnswer(answer: String): Boolean =
-          +        answer.isNotBlank() &&
-          +            !answer.startsWith("Não consegui") &&
-          +            !answer.startsWith("Não encontrei")
-          +
-          +    private fun looksLikeFollowUp(n: String): Boolean =
-          +        n.startsWith("e ") || n.startsWith("mas ") || n.startsWith("entao ") ||
-          +            n in setOf("por que", "porque", "e depois", "e antes", "onde", "quando") ||
-          +            listOf("isso", "ele", "ela", "esse", "essa", "sobre isso", "mais sobre")
-          +                .any { " $n ".contains(" $it ") }
-          +
-               private fun localConversation(n: String, raw: String, history: String): String? {
-                   if (n in setOf("oi", "ola", "e ai", "bom dia", "boa tarde", "boa noite")) {
-                       return when {
-          @@ -180,10 +220,9 @@
-               private fun contextualContinuation(n: String, history: String): String {
-                   val previousUser = lastUser(history)
-                   return when {
-          -            previousUser != null && (n.startsWith("e ") || n.startsWith("mas ") || n.contains("isso")) ->
-          -                "Entendi a continuação sobre ${previousUser.take(180)}. Diga exatamente o que você quer saber ou fazer e eu continuo desse ponto."
-          -            previousUser != null -> "Estou acompanhando o contexto. Pode continuar."
-          -            else -> "Estou ouvindo. Pode falar normalmente."
-          +            previousUser != null && looksLikeFollowUp(n) ->
-          +                "Entendi a continuação sobre ${previousUser.take(180)}. Pode completar o que você quer saber."
-          +            else -> "Não consegui formular uma resposta útil para isso agora. Pode reformular em uma frase?"
-                   }
-               }
- 
-          --- a/app/src/main/java/com/gama/assistant/GamaLocalLlm.kt
-          +++ b/app/src/main/java/com/gama/assistant/GamaLocalLlm.kt
-          @@ -41,6 +41,12 @@
-               }.onFailure { Log.w(TAG, "Local model warm-up failed", it) }.getOrDefault(false)
- 
-               @Synchronized
-          +    fun answerFresh(question: String): String? {
-          +        resetConversationOnly()
-          +        return answer(question, null)
-          +    }
-          +
-          +    @Synchronized
-               fun answer(question: String, history: String?): String? {
-                   val clean = question.trim()
-                   if (clean.isBlank()) return null
-          @@ -70,17 +76,21 @@
-               private fun ensureConversation(): Conversation {
-                   conversation?.let { return it }
- 
-          -        val model = ensureModelFile()
-          -        val createdEngine = Engine(
-          -            EngineConfig(
-          -                modelPath = model.absolutePath,
-          -                backend = Backend.CPU(),
-          -                cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }.absolutePath,
-          -            )
-          -        )
-          -        runBlocking { createdEngine.initialize() }
-          +        val activeEngine = engine ?: run {
-          +            val model = ensureModelFile()
-          +            Engine(
-          +                EngineConfig(
-          +                    modelPath = model.absolutePath,
-          +                    backend = Backend.CPU(),
-          +                    cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }.absolutePath,
-          +                )
-          +            ).also { created ->
-          +                runBlocking { created.initialize() }
-          +                engine = created
-          +            }
-          +        }
- 
-          -        val createdConversation = createdEngine.createConversation(
-          +        val createdConversation = activeEngine.createConversation(
-                       ConversationConfig(
-                           systemInstruction = Contents.of(SYSTEM_PROMPT.trimIndent()),
-                           samplerConfig = SamplerConfig(
-          @@ -91,7 +101,6 @@
-                       )
-                   )
- 
-          -        engine = createdEngine
-                   conversation = createdConversation
-                   turns = 0
-                   return createdConversation
-          @@ -123,6 +132,12 @@
-                   return dst
-               }
- 
-          +    private fun resetConversationOnly() {
-          +        runCatching { conversation?.close() }
-          +        conversation = null
-          +        turns = 0
-          +    }
-          +
-               private fun resetRuntime() {
-                   runCatching { conversation?.close() }
-                   runCatching { engine?.close() }
-          --- a/app/src/main/java/com/gama/assistant/SemanticEndpointer.kt
-          +++ b/app/src/main/java/com/gama/assistant/SemanticEndpointer.kt
-          @@ -154,24 +154,27 @@
-                   confidence: Double = 1.0,
-               ): Long =
-                   when {
-          +            // Natural speech frequently contains half-second pauses. Do not execute
-          +            // a command on the first Vosk endpoint while the owner is still speaking.
-                       looksIncomplete(raw) ->
-          -                GamaOptimizationRuntime
-          -                    .incompleteContinuationMs
-          +                maxOf(
-          +                    2_200L,
-          +                    GamaOptimizationRuntime.incompleteContinuationMs,
-          +                )
- 
-                       confidence.isFinite() &&
-          -                confidence >=
-          -                0.0 &&
-          -                confidence <
-          -                0.45 ->
-          +                confidence >= 0.0 &&
-          +                confidence < 0.45 ->
-                           maxOf(
-          -                    1_200L,
-          -                    GamaOptimizationRuntime
-          -                        .completeContinuationMs,
-          +                    1_600L,
-          +                    GamaOptimizationRuntime.completeContinuationMs,
-                           )
- 
-                       else ->
-          -                GamaOptimizationRuntime
-          -                    .completeContinuationMs
-          +                maxOf(
-          +                    1_000L,
-          +                    GamaOptimizationRuntime.completeContinuationMs,
-          +                )
-                   }
- 
-               fun merge(
-          --- a/app/src/main/java/com/gama/assistant/GamaInstalledAppCatalog.kt
-          +++ b/app/src/main/java/com/gama/assistant/GamaInstalledAppCatalog.kt
-          @@ -13,6 +13,19 @@
-           object GamaInstalledAppCatalog {
-               data class Entry(val label: String, val packageName: String)
- 
-          +    private val knownPackages = mapOf(
-          +        "netflix" to "com.netflix.mediaclient",
-          +        "duolingo" to "com.duolingo",
-          +        "chrome" to "com.android.chrome",
-          +        "gmail" to "com.google.android.gm",
-          +        "maps" to "com.google.android.apps.maps",
-          +        "google maps" to "com.google.android.apps.maps",
-          +        "telegram" to "org.telegram.messenger",
-          +        "discord" to "com.discord",
-          +        "facebook" to "com.facebook.katana",
-          +        "messenger" to "com.facebook.orca",
-          +    )
-          +
-               private val openWords = setOf(
-                   "abra", "abre", "abrir", "abri", "acesse", "acessar", "entre", "entra", "entrar",
-                   "inicie", "iniciar", "execute", "executar", "rode", "rodar", "vai", "va", "ir"
-          @@ -32,18 +45,31 @@
-                       entry to similarity(target, label)
-                   }.sortedByDescending { it.second }
- 
-          -        val best = ranked.firstOrNull() ?: return null
-          +        val best = ranked.firstOrNull()
-                   val second = ranked.getOrNull(1)?.second ?: 0.0
-                   val threshold = if (target.length <= 4) 0.82 else 0.62
-          -        if (best.second < threshold) return null
-          -        if (best.second < 0.84 && best.second - second < 0.08) return null
-          -
-          -        return GamaAppRegistry.AppSpec(
-          -            id = "installed:${best.first.packageName}",
-          -            label = best.first.label,
-          -            packages = listOf(best.first.packageName),
-          -            aliases = setOf(best.first.label, requested),
-          -        )
-          +        if (best != null && best.second >= threshold &&
-          +            (best.second >= 0.84 || best.second - second >= 0.08)) {
-          +            return GamaAppRegistry.AppSpec(
-          +                id = "installed:${best.first.packageName}",
-          +                label = best.first.label,
-          +                packages = listOf(best.first.packageName),
-          +                aliases = setOf(best.first.label, requested),
-          +            )
-          +        }
-          +
-          +        // Safety net for a few very common package names. Dynamic launcher discovery
-          +        // above remains the main path and supports arbitrary installed apps.
-          +        val known = knownPackages.entries.maxByOrNull { similarity(target, it.key) }
-          +        if (known != null && similarity(target, known.key) >= 0.82 && isLaunchable(context, known.value)) {
-          +            return GamaAppRegistry.AppSpec(
-          +                id = "installed:${known.value}",
-          +                label = known.key.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() },
-          +                packages = listOf(known.value),
-          +                aliases = setOf(known.key, requested),
-          +            )
-          +        }
-          +        return null
-               }
- 
-               fun availableAppNames(context: Context, limit: Int = 90): List<String> =
-          @@ -53,6 +79,36 @@
-                       .sortedBy { normalize(it) }
-                       .take(limit)
- 
-          +    /**
-          +     * Resolves a short utterance that is only an installed app name, such as
-          +     * "WhatsApp", "Chrome" or "Calculadora". This is intentionally strict so
-          +     * normal questions such as "Albert Einstein" are never mistaken for apps.
-          +     */
-          +    fun resolveBareName(context: Context, raw: String): GamaAppRegistry.AppSpec? {
-          +        val target = normalize(ZevronConversationEngine.stripWakeWord(raw))
-          +        if (target.isBlank() || target.length > 40) return null
-          +        if (target.split(' ').filter { it.isNotBlank() }.size > 4) return null
-          +        val questionStarts = listOf(
-          +            "quem ", "o que ", "oque ", "qual ", "quais ", "quando ", "onde ",
-          +            "por que ", "porque ", "como ", "explique ", "me fale ", "fale sobre ",
-          +            "pesquise ", "procure "
-          +        )
-          +        if (questionStarts.any { target.startsWith(it) }) return null
-          +
-          +        val compact = target.replace(" ", "")
-          +        val exact = entries(context).firstOrNull { entry ->
-          +            val label = normalize(entry.label)
-          +            label == target || label.replace(" ", "") == compact
-          +        } ?: return null
-          +
-          +        return GamaAppRegistry.AppSpec(
-          +            id = "installed:${exact.packageName}",
-          +            label = exact.label,
-          +            packages = listOf(exact.packageName),
-          +            aliases = setOf(exact.label, target),
-          +        )
-          +    }
-          +
-               fun requestedName(raw: String): String? {
-                   val n = normalize(ZevronConversationEngine.stripWakeWord(raw))
-                   if (n.isBlank()) return null
-          @@ -75,6 +131,13 @@
-                   return tail.joinToString(" ").trim().takeIf { it.isNotBlank() }
-               }
- 
-          +    private fun isLaunchable(context: Context, packageName: String): Boolean = runCatching {
-          +        context.packageManager.getLaunchIntentForPackage(packageName) != null ||
-          +            context.getSystemService(LauncherApps::class.java)
-          +                ?.getActivityList(packageName, Process.myUserHandle())
-          +                ?.isNotEmpty() == true
-          +    }.getOrDefault(false)
-          +
-               @Suppress("DEPRECATION")
-               private fun entries(context: Context): List<Entry> {
-                   val result = linkedMapOf<String, Entry>()
-          --- a/app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt
-          +++ b/app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt
-          @@ -1,6 +1,7 @@
-           package com.gama.assistant
- 
-           import android.content.Context
-          +import android.content.ComponentName
-           import android.content.Intent
-           import android.content.pm.LauncherApps
-           import android.content.pm.PackageManager
-          @@ -26,8 +27,16 @@
-                   val packageName: String? = null,
-               )
- 
-          -    private val routes =
-          -        Route.entries
-          +    // Prefer the normal Android launcher path first. Accessibility is only a late fallback.
-          +    private val routes = listOf(
-          +        Route.EXPLICIT_LAUNCHER_ACTIVITY,
-          +        Route.PACKAGE_LAUNCH_INTENT,
-          +        Route.INTENT_SENDER,
-          +        Route.CATEGORY_LAUNCHER,
-          +        Route.LAUNCHER_APPS,
-          +        Route.ACCESSIBILITY_SERVICE,
-          +        Route.APP_DEEP_LINK,
-          +    )
- 
-               fun maxAttemptIndex(): Int =
-                   routes.lastIndex
-          @@ -115,11 +124,15 @@
-                   context: Context,
-                   packageName: String,
-               ): Boolean =
-          -        openWithPackageLaunchIntent(
-          +        openWithExplicitLauncher(
-                       context,
-                       packageName,
-                   ) ||
-          -            openWithExplicitLauncher(
-          +            openWithPackageLaunchIntent(
-          +                context,
-          +                packageName,
-          +            ) ||
-          +            openWithIntentSender(
-                           context,
-                           packageName,
-                       ) ||
-          @@ -130,7 +143,8 @@
-                       openWithLauncherApps(
-                           context,
-                           packageName,
-          -            )
-          +            ) ||
-          +            GamaScreenContextService.launchPackage(packageName)
- 
-               private fun openWithIntentSender(
-                   context: Context,
-          @@ -206,7 +220,7 @@
-                               .queryIntentActivities(
-                                   query,
-                                   PackageManager
-          -                            .MATCH_DEFAULT_ONLY,
-          +                            .MATCH_ALL,
-                               )
-                       }.getOrDefault(
-                           emptyList()
-          @@ -221,20 +235,15 @@
-                               ?: continue
- 
-                       val explicit =
-          -                Intent(
-          -                    Intent.ACTION_MAIN
-          -                )
-          -                    .addCategory(
-          -                        Intent.CATEGORY_LAUNCHER
-          -                    )
-          -                    .setClassName(
-          +                Intent.makeMainActivity(
-          +                    ComponentName(
-                                   info.packageName,
-                                   info.name,
-                               )
-          -                    .addFlags(
-          -                        Intent.FLAG_ACTIVITY_NEW_TASK or
-          -                            Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-          -                    )
-          +                ).addFlags(
-          +                    Intent.FLAG_ACTIVITY_NEW_TASK or
-          +                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-          +                )
- 
-                       if (
-                           start(
-          --- a/app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt
-          +++ b/app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt
-          @@ -23,8 +23,13 @@
-                   if (any(c, "eleicao", "eleicoes", "votacao", "horario de votacao", "urna", "urnas")) return Mode.LIVE_SEARCH
-                   if (any(c, "que horas comeca", "que horas inicia", "quando comeca", "quando inicia", "quando abre", "quando fecha") &&
-                       any(c, "hoje", "amanha", "domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado")) return Mode.LIVE_SEARCH
-          -        if (any(c, "pesquise na internet", "procure na internet", "pesquise sobre", "pesquisar sobre", "pesquisa sobre")) return Mode.RESEARCH
-          -        if (any(c, "abra o site", "abrir o site", "pesquise no google", "buscar no google", "busque no google")) return Mode.WEB_SEARCH
-          +        if (
-          +            starts(c,
-          +                "pesquise ", "pesquisar ", "procure ", "procurar ", "busque ", "buscar ",
-          +                "pesquisa sobre ", "pesquise na internet ", "procure na internet "
-          +            )
-          +        ) return Mode.RESEARCH
-          +        if (starts(c, "abra o site ", "abrir o site ", "pesquise no google ", "buscar no google ", "busque no google ")) return Mode.WEB_SEARCH
-                   return Mode.NONE
-               }
- 
-          @@ -62,7 +67,23 @@
-                   }
-                   Mode.WEATHER -> GamaInternetHub.weather(weatherPlace(raw))
-                   Mode.CURRENCY -> GamaInternetHub.currency(raw)
-          -        Mode.RESEARCH -> GamaInternetHub.liveSearch(after(raw, "pesquise na internet", "procure na internet", "pesquise sobre", "pesquisar sobre", "pesquisa sobre"))
-          +        Mode.RESEARCH -> {
-          +            val q = after(
-          +                raw,
-          +                "pesquise na internet", "procure na internet", "pesquise sobre", "pesquisar sobre",
-          +                "pesquisa sobre", "pesquise", "pesquisar", "procure", "procurar", "busque", "buscar"
-          +            )
-          +            if (q.isBlank()) {
-          +                "Diga o assunto que você quer pesquisar."
-          +            } else {
-          +                val answer = GamaInternetHub.liveSearch(q)
-          +                if (answer.startsWith("Não consegui") && GamaInternetHub.openSearch(context, q)) {
-          +                    "Não consegui resumir uma fonte confiável agora, então abri a pesquisa de $q no navegador."
-          +                } else {
-          +                    answer
-          +                }
-          +            }
-          +        }
-                   Mode.LIVE_SEARCH -> GamaInternetHub.liveSearch(liveQuery(raw))
-                   Mode.PAGE_SUMMARY -> extractUrl(raw)?.let { GamaInternetHub.summarizeUrl(it) } ?: "Não encontrei o link na sua frase."
-                   Mode.SPORTS -> {
-          @@ -112,6 +133,7 @@
-               private fun extractUrl(raw: String): String? = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE).find(raw)
-                   ?.value?.trimEnd('.', ',', ';', ')', ']', '}', '"', '\'')
- 
-          +    private fun starts(c: String, vararg terms: String): Boolean = terms.any { c.startsWith(it) }
-               private fun any(c: String, vararg terms: String): Boolean = terms.any { it in c }
-               private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
-                   .replace(Regex("""\p{M}+"""), "").replace(Regex("""[^a-z0-9:/?&.=_%+\- ]+"""), " ")
-          --- a/app/src/main/java/com/gama/assistant/GamaInternetHub.kt
-          +++ b/app/src/main/java/com/gama/assistant/GamaInternetHub.kt
-          @@ -65,18 +65,39 @@
-                   if (html != null) {
-                       val titles = Regex(
-                           """(?is)<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*>(.*?)</a>"""
-          -            ).findAll(html).map { htmlText(it.groupValues[1]) }.filter { it.isNotBlank() }.take(6).toList()
-          +            ).findAll(html)
-          +                .map { htmlText(it.groupValues[1]) }
-          +                .filter { it.length >= 3 }
-          +                .take(6)
-          +                .toList()
-                       val snippets = Regex(
-                           """(?is)<(?:a|div)[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>(.*?)</(?:a|div)>"""
-          -            ).findAll(html).map { htmlText(it.groupValues[1]) }.filter { it.isNotBlank() }.take(6).toList()
-          -
-          +            ).findAll(html)
-          +                .map { htmlText(it.groupValues[1]) }
-          +                .filter { it.length >= 12 }
-          +                .take(6)
-          +                .toList()
-                       val results = titles.indices.mapNotNull { index ->
-                           val title = titles.getOrNull(index).orEmpty()
-                           val snippet = snippets.getOrNull(index).orEmpty()
-          -                listOf(title, snippet).filter { it.isNotBlank() }.distinct().joinToString(". ").take(520)
-          +                listOf(title, snippet)
-          +                    .filter { it.isNotBlank() }
-          +                    .distinct()
-          +                    .joinToString(". ")
-          +                    .take(520)
-                               .takeIf { it.isNotBlank() }
-          -            }.distinct().take(5)
-          +            }.distinct().take(4)
-          +            if (results.isNotEmpty()) {
-          +                return "Pesquisei agora na Internet. " + results.joinToString("; ") + "."
-          +            }
-          +        }
- 
-          +        val rss = get(
-          +            "https://www.bing.com/search?format=rss&q=${enc(clean)}",
-          +            "application/rss+xml, application/xml, text/xml",
-          +        )
-          +        if (rss != null) {
-          +            val results = parseRss(rss, 5)
-                       if (results.isNotEmpty()) {
-                           return "Pesquisei agora na Internet. " + results.joinToString("; ") + "."
-                       }
-          @@ -84,9 +105,9 @@
- 
-                   val news = newsAbout(clean.removeSuffix(" site:tse.jus.br").trim())
-                   return if (news.isNotEmpty()) {
-          -            "Não consegui ler os resultados gerais, mas encontrei estas fontes recentes: ${news.take(5).joinToString("; ")}."
-          +            "Encontrei estas fontes recentes: ${news.take(5).joinToString("; ")}."
-                   } else {
-          -            "Não consegui obter uma fonte atual confiável agora. Tente novamente em instantes."
-          +            "Não consegui obter uma fonte atual confiável agora."
-                   }
-               }
- 
-          --- a/app/src/main/java/com/gama/assistant/GamaKnowledgePolicy.kt
-          +++ b/app/src/main/java/com/gama/assistant/GamaKnowledgePolicy.kt
-          @@ -38,6 +38,11 @@
-                       return false
-                   }
- 
-          +        val explicitResearch = Regex(
-          +            "^(?:pesquise|pesquisar|procure|procurar|busque|buscar|pesquisa sobre)\\b"
-          +        )
-          +        if (explicitResearch.containsMatchIn(q)) return true
-          +
-                   val questionStart = Regex(
-                       "^(?:quem|qual|quais|o que|oque|quando|onde|por que|porque|como|" +
-                           "explique|explica|me fale sobre|fale sobre|conte sobre)\\b"
-          GAMA193_PATCH
-          cd _gama_build
-          patch -p1 --forward --batch < "$RUNNER_TEMP/gama193.patch"
-
-          SERVICE="app/src/main/java/com/gama/assistant/GamaService.kt"
-          LAUNCHER="app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt"
-          CATALOG="app/src/main/java/com/gama/assistant/GamaInstalledAppCatalog.kt"
-          ONLINE="app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt"
-          INTERNET="app/src/main/java/com/gama/assistant/GamaInternetHub.kt"
-          BRAIN="app/src/main/java/com/gama/assistant/LocalBrain.kt"
-          LLM="app/src/main/java/com/gama/assistant/GamaLocalLlm.kt"
-          ENDPOINTER="app/src/main/java/com/gama/assistant/SemanticEndpointer.kt"
-
-          grep -Fq 'tryHandleRawBatteryBeforeContext(command)' "$SERVICE"
-          grep -Fq 'tryHandleRawAppBeforeContext(command)' "$SERVICE"
-          grep -Fq 'tryHandleRawOnlineBeforeContext(command)' "$SERVICE"
-          grep -Fq 'Intent.ACTION_BATTERY_CHANGED' "$SERVICE"
-          grep -Fq 'Intent.makeMainActivity' "$LAUNCHER"
-          grep -Fq 'PackageManager' "$LAUNCHER"
-          if grep -Fq 'MATCH_DEFAULT_ONLY' "$LAUNCHER"; then
-            echo "::error::Launcher legado MATCH_DEFAULT_ONLY ainda presente"
-            exit 1
-          fi
-          grep -Fq 'resolveBareName' "$CATALOG"
-          grep -Fq 'com.netflix.mediaclient' "$CATALOG"
-          grep -Fq 'com.duolingo' "$CATALOG"
-          grep -Fq 'starts(c,' "$ONLINE"
-          grep -Fq 'www.bing.com/search?format=rss' "$INTERNET"
-          grep -Fq 'answerFresh(question: String)' "$LLM"
-          grep -Fq '1_000L' "$ENDPOINTER"
-          grep -Fq '2_200L' "$ENDPOINTER"
-
-      - name: Set FIX193 version
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_VERSION'
-          from pathlib import Path
-          import os, re
-
-          p = Path('_gama_build/app/build.gradle.kts')
-          text = p.read_text(encoding='utf-8')
-          version_code = 32_000_000 + int(os.environ['GITHUB_RUN_NUMBER'])
-          text, c1 = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {version_code}', text, count=1)
-          text, c2 = re.subn(r'versionName\s*=\s*"[^"]*"', 'versionName = "Gama 12.6 Single File Core FIX193"', text, count=1)
-          if c1 != 1 or c2 != 1:
-              raise SystemExit('Não consegui configurar a versão FIX193')
-          p.write_text(text, encoding='utf-8')
-          print('versionCode', version_code)
-          PY_VERSION
-
-      - name: Bundle local Qwen model
-        run: |
-          set -euo pipefail
-          MODEL_DIR="$GITHUB_WORKSPACE/_gama_build/app/src/main/assets/llm"
-          MODEL="$MODEL_DIR/Qwen3-0.6B-int4.litertlm"
-          mkdir -p "$MODEL_DIR"
-          rm -f "$MODEL"
-          curl -L \
-            --fail \
-            --retry 5 \
-            --retry-all-errors \
-            --connect-timeout 30 \
-            --max-time 1800 \
-            --output "$MODEL" \
-            "$GAMA_MODEL_URL"
-          test -s "$MODEL"
-          ACTUAL_SIZE="$(stat -c%s "$MODEL")"
-          if [ "$ACTUAL_SIZE" != "$GAMA_MODEL_SIZE" ]; then
-            echo "::error::Modelo local incompleto: $ACTUAL_SIZE bytes; esperado $GAMA_MODEL_SIZE"
-            exit 1
-          fi
-          echo "$GAMA_MODEL_SHA256  $MODEL" | sha256sum -c -
-
-      - name: Architecture audit
-        run: |
-          set -euo pipefail
-          python3 - <<'PY_AUDIT'
-          from pathlib import Path
-          import os
-
-          root = Path('_gama_build')
-          src = root / 'app/src/main/java/com/gama/assistant'
-          manifest = (root / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
-          gradle = (root / 'app/build.gradle.kts').read_text(encoding='utf-8')
-          service = (src / 'GamaService.kt').read_text(encoding='utf-8')
-          launcher = (src / 'GamaReliableAppLauncher.kt').read_text(encoding='utf-8')
-          catalog = (src / 'GamaInstalledAppCatalog.kt').read_text(encoding='utf-8')
-          online = (src / 'GamaOnlineRouter.kt').read_text(encoding='utf-8')
-          internet = (src / 'GamaInternetHub.kt').read_text(encoding='utf-8')
-          brain = (src / 'LocalBrain.kt').read_text(encoding='utf-8')
-          llm = (src / 'GamaLocalLlm.kt').read_text(encoding='utf-8')
-          model = root / 'app/src/main/assets/llm/Qwen3-0.6B-int4.litertlm'
-
-          checks = {
-              'FIX193 version': 'Gama 12.6 Single File Core FIX193' in gradle,
-              'Qwen local': model.is_file() and model.stat().st_size == int(os.environ['GAMA_MODEL_SIZE']),
-              'battery fast lane': 'tryHandleRawBatteryBeforeContext(command)' in service and 'ACTION_BATTERY_CHANGED' in service,
-              'app fast lane': 'tryHandleRawAppBeforeContext(command)' in service and 'resolveBareName' in catalog,
-              'system launcher': 'Intent.makeMainActivity' in launcher and 'MATCH_DEFAULT_ONLY' not in launcher,
-              'research fast lane': 'tryHandleRawOnlineBeforeContext(command)' in service,
-              'research commands': 'pesquise' in online and 'procure' in online and 'busque' in online,
-              'multi source research': 'html.duckduckgo.com' in internet and 'www.bing.com/search?format=rss' in internet,
-              'conversation fix': 'answerFresh(question: String)' in llm and 'usableModelAnswer' in brain,
-              'package visibility': '<queries>' in manifest and 'android.intent.category.LAUNCHER' in manifest,
-          }
-          missing = [name for name, ok in checks.items() if not ok]
-          if missing:
-              raise SystemExit('FIX193 incompleto: ' + ', '.join(missing))
-
-          kt = list(src.glob('*.kt'))
-          lines = sum(len(p.read_text(encoding='utf-8', errors='ignore').splitlines()) for p in kt)
-          if len(kt) < 125 or lines < 28500:
-              raise SystemExit(f'Regressão de fonte: {len(kt)} arquivos / {lines} linhas Kotlin')
-          print(f'PASS FIX193: {len(kt)} Kotlin files / {lines} lines')
-          PY_AUDIT
-
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 35
-        run: |
-          set -euo pipefail
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          fi
-          test -x "$SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" >/dev/null
-
-      - name: Gradle cache
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Clean
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon clean --stacktrace
-
-      - name: Compile Release Kotlin
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:compileReleaseKotlin --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama193-compile.log"
-
-      - name: Unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama193-tests.log"
-
-      - name: Android lint
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:lintRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama193-lint.log"
-
-      - name: Assemble Release
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama193-release.log"
-
-      - name: Zipalign sign and verify APK
-        env:
-          GAMA_KEYSTORE_B64: ${{ secrets.GAMA_KEYSTORE_B64 }}
-          GAMA_KEYSTORE_PASSWORD: ${{ secrets.GAMA_KEYSTORE_PASSWORD }}
-          GAMA_KEY_ALIAS: ${{ secrets.GAMA_KEY_ALIAS }}
-          GAMA_KEY_PASSWORD: ${{ secrets.GAMA_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-          input_apk="$(find _gama_build/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print | head -n 1 || true)"
-          if [ -z "$input_apk" ] || [ ! -s "$input_apk" ]; then
-            echo "::error::assembleRelease terminou sem APK."
-            exit 1
-          fi
-
-          mkdir -p _gama_build/dist
-          "$BT/zipalign" -f -p 4 "$input_apk" _gama_build/dist/Gama-aligned.apk
-
-          if [ -n "${GAMA_KEYSTORE_B64:-}" ] && [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && [ -n "${GAMA_KEY_ALIAS:-}" ] && [ -n "${GAMA_KEY_PASSWORD:-}" ]; then
-            echo "$GAMA_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/gama-release.jks"
-            KS="$RUNNER_TEMP/gama-release.jks"
-            SP="$GAMA_KEYSTORE_PASSWORD"
-            KA="$GAMA_KEY_ALIAS"
-            KP="$GAMA_KEY_PASSWORD"
-            echo "stable-update-capable" > _gama_build/dist/install-mode.txt
-          else
-            KS="$RUNNER_TEMP/gama-test.jks"
-            SP="gama-test-pass"
-            KA="gama-test"
-            KP="gama-test-pass"
-            keytool -genkeypair \
-              -keystore "$KS" \
-              -storepass "$SP" \
-              -keypass "$KP" \
-              -alias "$KA" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 3650 \
-              -dname "CN=Gama Test,O=Gama,C=BR" \
-              -noprompt
-            echo "fresh-install-only" > _gama_build/dist/install-mode.txt
-          fi
-
-          "$BT/apksigner" sign \
-            --ks "$KS" \
-            --ks-pass "pass:$SP" \
-            --ks-key-alias "$KA" \
-            --key-pass "pass:$KP" \
-            --out _gama_build/dist/Gama.apk \
-            _gama_build/dist/Gama-aligned.apk
-
-          "$BT/apksigner" verify --verbose --print-certs _gama_build/dist/Gama.apk | tee _gama_build/dist/signature-info.txt
-          test -s _gama_build/dist/Gama.apk
-          APK_SIZE="$(stat -c%s _gama_build/dist/Gama.apk)"
-          if [ "$APK_SIZE" -lt 350000000 ]; then
-            echo "::error::APK não contém o modelo local completo: $APK_SIZE bytes"
-            exit 1
-          fi
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/model/final.mdl'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/model/Gr.fst'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'assets/llm/Qwen3-0.6B-int4.litertlm'
-          unzip -l _gama_build/dist/Gama.apk | grep -Fq 'classes.dex'
-          "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
-          grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
-          grep -Fq "versionName='Gama 12.6 Single File Core FIX193'" _gama_build/dist/apk-info.txt
-          (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
-          rm -f _gama_build/dist/Gama-aligned.apk
-          ls -lh _gama_build/dist/Gama.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-12.6-FIX193-APK
-          path: |
-            _gama_build/dist/Gama.apk
-            _gama_build/dist/Gama.apk.sha256
-            _gama_build/dist/apk-info.txt
-            _gama_build/dist/signature-info.txt
-            _gama_build/dist/install-mode.txt
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gama-FIX193-diagnostics
-          path: |
-            gama193-compile.log
-            gama193-tests.log
-            gama193-lint.log
-            gama193-release.log
-          if-no-files-found: ignore
-          retention-days: 7
+          +            val dialogueContext =
+          +                if (w
