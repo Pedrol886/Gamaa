@@ -552,7 +552,7 @@ jobs:
                   assertEquals("spotify", GamaUniversalAppLauncher.target("Gama, abrir Spotify"))
               }
               @Test fun voskAbril() {
-                  assertEquals("calculadora", GamaUniversalAppLauncher.target("Gama, abril calculadora"))
+                  assertEquals("calculator", GamaUniversalAppLauncher.target("Gama, abril calculadora"))
               }
               @Test fun questionIsNotApp() {
                   assertNull(GamaUniversalAppLauncher.target("Gama, quem foi Einstein"))
