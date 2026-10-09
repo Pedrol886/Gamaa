@@ -1,4 +1,4 @@
-name: Build Gama 13.6 FIX203 RED CORE LEARNING APK
+name: Build Gama 13.7 FIX204 APP AND WAKE REPAIR APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-fix203-${{ github.ref }}
+  group: gama-fix204-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -583,7 +583,7 @@ jobs:
           p=Path('_gama_build/app/build.gradle.kts'); s=p.read_text()
           s,n=re.subn(r'versionCode\s*=\s*\d+',f'versionCode = {40000000+int(os.environ["GITHUB_RUN_NUMBER"])}',s,count=1)
           if n!=1: raise SystemExit('versionCode missing')
-          s,n=re.subn(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 13.5 RED ASSISTANT FIX202"',s,count=1)
+          s,n=re.subn(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 13.7 RED CORE FIX204"',s,count=1)
           if n!=1: raise SystemExit('versionName missing')
           p.write_text(s)
           p=Path('_gama_build/app/src/main/AndroidManifest.xml'); s=p.read_text()
@@ -599,6 +599,141 @@ jobs:
               s=s.replace('<application',insert+'\n    <application',1)
           p.write_text(s)
           PY
+
+      - name: FIX204 repair universal apps and wake phrases
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaUniversalAppLauncher.kt <<'KOTLIN'
+          package com.gama.assistant
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.content.pm.LauncherApps
+          import android.os.Process
+          import java.text.Normalizer
+          import java.util.Locale
+
+          object GamaUniversalAppLauncher {
+              data class Result(val started: Boolean, val label: String)
+              fun normalize(raw: String): String = Normalizer.normalize(raw.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+                  .replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z0-9 ]+"), " ")
+                  .replace(Regex("\\s+"), " ").trim()
+              private val aliases = mapOf(
+                  "zap" to "whatsapp", "watsap" to "whatsapp", "watsapp" to "whatsapp",
+                  "insta" to "instagram", "yt" to "youtube", "face" to "facebook",
+                  "calculadora" to "calculator", "relogio" to "clock", "camera" to "camera",
+                  "configuracoes" to "settings", "ajustes" to "settings"
+              )
+              fun target(raw: String): String? {
+                  val s = normalize(raw).removePrefix("gama ").trim()
+                  val match = Regex("^(abrir|abra|abre|abri|abril|abertura|iniciar|inicie|executar|execute|entre|entrar) (.+)$").find(s) ?: return null
+                  val name = match.groupValues[2].replace(Regex("^(o|a|app|aplicativo|do|da|no|na) +"), "").trim()
+                  if (name.isBlank() || name.startsWith("site ") || name.contains(" site ") || name.contains(" ponto ")) return null
+                  return aliases[name] ?: name
+              }
+              @Suppress("DEPRECATION")
+              fun launchIfRequested(context: Context, raw: String): Result? {
+                  val name = target(raw) ?: return null
+                  val pm = context.packageManager
+                  val known = mapOf(
+                      "whatsapp" to "com.whatsapp", "instagram" to "com.instagram.android",
+                      "youtube" to "com.google.android.youtube", "chrome" to "com.android.chrome",
+                      "telegram" to "org.telegram.messenger", "spotify" to "com.spotify.music",
+                      "discord" to "com.discord", "facebook" to "com.facebook.katana",
+                      "netflix" to "com.netflix.mediaclient", "tiktok" to "com.zhiliaoapp.musically",
+                      "calculator" to "com.google.android.calculator", "settings" to "com.android.settings"
+                  )
+                  val launcherQuery = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                  val entries = runCatching { pm.queryIntentActivities(launcherQuery, PackageManager.MATCH_ALL) }.getOrDefault(emptyList())
+                  val catalog = entries.mapNotNull { info ->
+                      val activity = info.activityInfo ?: return@mapNotNull null
+                      Triple(normalize(info.loadLabel(pm).toString()), activity.packageName, activity.name)
+                  }
+                  val desired = known[name]
+                  val best = catalog.firstOrNull { it.first == name }
+                      ?: catalog.firstOrNull { it.second == desired }
+                      ?: catalog.firstOrNull { it.first.replace(" ", "") == name.replace(" ", "") }
+                      ?: catalog.firstOrNull { it.first.startsWith("$name ") || name.startsWith("${it.first} ") }
+                  val pkg = best?.second ?: desired
+                  val intent = best?.let { Intent.makeMainActivity(ComponentName(it.second, it.third)) }
+                      ?: pkg?.let { pm.getLaunchIntentForPackage(it) }
+                  if (intent != null) {
+                      val started = runCatching {
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                          context.startActivity(intent)
+                          true
+                      }.getOrDefault(false)
+                      if (started) return Result(true, name)
+                  }
+                  val launcherApps = context.getSystemService(LauncherApps::class.java)
+                  val activities = runCatching { launcherApps?.getActivityList(null, Process.myUserHandle()).orEmpty() }.getOrDefault(emptyList())
+                  val fallback = activities.firstOrNull { normalize(it.label.toString()) == name }
+                      ?: activities.firstOrNull { it.componentName.packageName == pkg }
+                  val success = if (fallback == null || launcherApps == null) false else runCatching {
+                      launcherApps.startMainActivity(fallback.componentName, Process.myUserHandle(), null, null)
+                      true
+                  }.getOrDefault(false)
+                  return Result(success, name)
+              }
+          }
+          KOTLIN
+          python3 - <<'PY_FIX204'
+          from pathlib import Path
+          import re
+          manifest=Path('app/src/main/AndroidManifest.xml')
+          m=manifest.read_text()
+          queries="""<queries>
+              <intent>
+                  <action android:name="android.intent.action.MAIN"/>
+                  <category android:name="android.intent.category.LAUNCHER"/>
+              </intent>
+              <package android:name="com.whatsapp"/>
+              <package android:name="com.instagram.android"/>
+              <package android:name="com.google.android.youtube"/>
+              <package android:name="com.spotify.music"/>
+              <package android:name="com.discord"/>
+              <package android:name="com.netflix.mediaclient"/>
+              <package android:name="com.zhiliaoapp.musically"/>
+          </queries>"""
+          if '<queries>' in m:
+              m=re.sub(r'<queries>.*?</queries>',queries,m,count=1,flags=re.S)
+          else:
+              m=m.replace('<application',queries+'\n    <application',1)
+          manifest.write_text(m)
+          service=Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          t=service.read_text()
+          # Wake commands must be handled before the ordinary wake-word gate.
+          start=t.find('private fun processFinal(')
+          if start<0: raise SystemExit('processFinal not found; cannot wire wake phrases safely')
+          tail=t[start:]
+          m=re.search(r'(?m)^([ \t]*)if\s*\(\s*conversation\.active\s*\|\|',tail)
+          if not m: raise SystemExit('wake gate not found; cannot wire wake phrases safely')
+          indentation=m.group(1)
+          wake="""if (GamaReturnBrief.isReturnWake(spoken)) {
+              acknowledgeWake(speakAcknowledgement = false)
+              markResponseStarted()
+              speak(GamaReturnBrief.build(this), false)
+              return
+          }
+          if (GamaReturnBrief.isPresenceWake(spoken)) {
+              acknowledgeWake(speakAcknowledgement = false)
+              markResponseStarted()
+              speak("Estou aqui. Pode falar.", false)
+              return
+          }
+          """
+          offset=start+m.start()
+          if 'GamaReturnBrief.isReturnWake(spoken)' not in t:
+              t=t[:offset]+''.join(indentation+line if line.strip() else line for line in wake.splitlines(True))+t[offset:]
+          service.write_text(t)
+          gradle=Path('app/build.gradle.kts')
+          g=gradle.read_text().replace('Gama 13.7 RED CORE FIX204','Gama 13.7 RED CORE FIX204')
+          gradle.write_text(g)
+          PY_FIX204
+          grep -Fq 'GamaReturnBrief.isReturnWake(spoken)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'LauncherApps' app/src/main/java/com/gama/assistant/GamaUniversalAppLauncher.kt
 
       - name: Download and verify local Qwen
         run: |
@@ -675,7 +810,7 @@ jobs:
           grep -Fq 'classes.dex' _gama_build/dist/apk-files.txt
           "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
           grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
-          grep -Fq "versionName='Gama 13.5 RED ASSISTANT FIX202'" _gama_build/dist/apk-info.txt
+          grep -Fq "versionName='Gama 13.7 RED CORE FIX204'" _gama_build/dist/apk-info.txt
           (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
 
       - name: Upload APK
