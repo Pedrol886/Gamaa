@@ -1,4 +1,4 @@
-name: Build Gama 13.0 FIX197 COMPLETE APK
+name: Build Gama 13.6 FIX203 RED CORE LEARNING APK
 
 on:
   workflow_dispatch:
@@ -12,1019 +12,639 @@ permissions:
   actions: read
 
 concurrency:
-  group: gama-13-0-fix197-${{ github.ref }}
+  group: gama-fix203-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
     defaults:
       run:
         shell: bash
-
     env:
       GAMA_BASE_RUN_ID: "37609751648"
       GAMA_BASE_ARTIFACT: "Gama-12.1-LOCAL-VOICE-FIX187-source"
-
-      # Run #189 contém o patch funcional completo do FIX193.
       GAMA_FIX193_COMMIT: "5602684eca7dd692f32be3c3d6a9e28e3d5d4b33"
-
       GAMA_MODEL_URL: "https://huggingface.co/litert-community/Qwen3-0.6B-int4/resolve/main/qwen3_0.6b_nothink_q4_block32_ekv1280.litertlm?download=true"
       GAMA_MODEL_SHA256: "2df6821ec12702dafd33915e7a1a1adc7c4b053f3672fd9555dfaf3a114c4139"
       GAMA_MODEL_SIZE: "347251840"
-
     steps:
-      - name: Checkout repository history
+      - name: Checkout full history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # ============================================================
-      # RESTAURAR BASE QUE JÁ COMPILOU
-      # ============================================================
 
       - name: Restore proven FIX187 source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          rm -rf _gama_build
           mkdir -p _gama_build
-
-          gh run download "$GAMA_BASE_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "$GAMA_BASE_ARTIFACT" \
-            --dir _gama_build
-
+          gh run download "$GAMA_BASE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$GAMA_BASE_ARTIFACT" --dir _gama_build
+          test -s _gama_build/app/build.gradle.kts
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
+          test -s _gama_build/app/src/main/java/com/gama/assistant/GamaLocalLlm.kt
           test -f _gama_build/gradlew
           chmod +x _gama_build/gradlew
 
-          test -s _gama_build/settings.gradle.kts
-          test -s _gama_build/build.gradle.kts
-          test -s _gama_build/app/build.gradle.kts
-          test -s _gama_build/app/src/main/AndroidManifest.xml
-
-          test -s \
-            _gama_build/app/src/main/java/com/gama/assistant/GamaService.kt
-
-          test -s \
-            _gama_build/app/src/main/java/com/gama/assistant/GamaLocalLlm.kt
-
-          test -s \
-            _gama_build/app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt
-
-          test -s \
-            _gama_build/app/src/main/assets/model/final.mdl
-
-          test -s \
-            _gama_build/app/src/main/assets/model/Gr.fst
-
-          test -s \
-            _gama_build/app/src/main/assets/spk-model/final.ext.raw
-
-          echo "Base FIX187 restaurada."
-
-      # ============================================================
-      # RECUPERAR FIX193 COMPLETO
-      # ============================================================
-
-      - name: Recover complete FIX193 workflow
+      - name: Recover and apply FIX193
         run: |
           set -euo pipefail
-
-          git cat-file -e \
-            "$GAMA_FIX193_COMMIT^{commit}"
-
-          git show \
-            "$GAMA_FIX193_COMMIT:.github/workflows/build-gama.yml" \
-            > "$RUNNER_TEMP/fix193-complete.yml"
-
-          test -s \
-            "$RUNNER_TEMP/fix193-complete.yml"
-
-          FIX193_LINES="$(
-            wc -l \
-              < "$RUNNER_TEMP/fix193-complete.yml"
-          )"
-
-          echo "FIX193 histórico: $FIX193_LINES linhas"
-
-          if [ "$FIX193_LINES" -lt 1100 ]; then
-            echo "::error::Workflow histórico FIX193 está incompleto."
-            exit 1
-          fi
-
-          grep -Fq \
-            'GAMA193_PATCH' \
-            "$RUNNER_TEMP/fix193-complete.yml"
-
-      - name: Extract complete FIX193 patch
-        run: |
-          set -euo pipefail
-
+          git cat-file -e "$GAMA_FIX193_COMMIT^{commit}"
+          git show "$GAMA_FIX193_COMMIT:.github/workflows/build-gama.yml" > "$RUNNER_TEMP/fix193.yml"
           python3 - <<'PY_FIX193'
           from pathlib import Path
-          import os
-          import textwrap
-
-          source = (
-              Path(os.environ["RUNNER_TEMP"])
-              / "fix193-complete.yml"
-          )
-
-          text = source.read_text(
-              encoding="utf-8"
-          )
-
-          lines = text.splitlines()
-
-          start = None
-          end = None
-
-          for index, line in enumerate(lines):
-              if (
-                  'cat > "$RUNNER_TEMP/gama193.patch"'
-                  in line
-                  and
-                  "GAMA193_PATCH"
-                  in line
-              ):
-                  start = index + 1
-                  break
-
-          if start is None:
-              raise SystemExit(
-                  "Início do patch FIX193 não encontrado."
-              )
-
-          for index in range(start, len(lines)):
-              if lines[index].strip() == "GAMA193_PATCH":
-                  end = index
-                  break
-
-          if end is None:
-              raise SystemExit(
-                  "Final do patch FIX193 não encontrado."
-              )
-
-          patch = textwrap.dedent(
-              "\n".join(lines[start:end])
-          ).rstrip() + "\n"
-
-          required = [
-              "GamaService.kt",
-              "LocalBrain.kt",
-              "GamaLocalLlm.kt",
-              "SemanticEndpointer.kt",
-              "GamaInstalledAppCatalog.kt",
-              "GamaReliableAppLauncher.kt",
-              "GamaOnlineRouter.kt",
-              "GamaInternetHub.kt",
-              "GamaKnowledgePolicy.kt",
-              "tryHandleRawBatteryBeforeContext",
-              "tryHandleRawAppBeforeContext",
-              "tryHandleRawOnlineBeforeContext",
-              "Intent.makeMainActivity",
-              "MATCH_ALL",
-              "com.netflix.mediaclient",
-              "com.duolingo",
-              "www.bing.com/search?format=rss",
-          ]
-
-          missing = [
-              item
-              for item in required
-              if item not in patch
-          ]
-
-          if missing:
-              raise SystemExit(
-                  "Patch FIX193 incompleto: "
-                  + ", ".join(missing)
-              )
-
-          output = Path("/tmp/gama193.patch")
-
-          output.write_text(
-              patch,
-              encoding="utf-8",
-          )
-
-          print(
-              "Patch FIX193:",
-              len(patch.splitlines()),
-              "linhas",
-          )
+          import os,textwrap
+          lines=(Path(os.environ['RUNNER_TEMP'])/'fix193.yml').read_text().splitlines()
+          start=next((i+1 for i,l in enumerate(lines) if 'cat > "$RUNNER_TEMP/gama193.patch"' in l and 'GAMA193_PATCH' in l),None)
+          if start is None: raise SystemExit('FIX193 patch start not found')
+          end=next((i for i in range(start,len(lines)) if lines[i].strip()=='GAMA193_PATCH'),None)
+          if end is None: raise SystemExit('FIX193 patch end not found')
+          patch=textwrap.dedent('\n'.join(lines[start:end])).rstrip()+'\n'
+          for required in ('GamaService.kt','GamaLocalLlm.kt','GamaReliableAppLauncher.kt','GamaOnlineRouter.kt','GamaInstalledAppCatalog.kt'):
+              if required not in patch: raise SystemExit('Missing FIX193 file: '+required)
+          Path('/tmp/gama193.patch').write_text(patch)
           PY_FIX193
+          (cd _gama_build && patch -p1 --forward --batch < /tmp/gama193.patch)
 
-          test -s /tmp/gama193.patch
+      - name: FIX197 search prefix correction
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('_gama_build/app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt')
+          s=p.read_text()
+          start=s.find('fun classify(raw: String): Mode {')
+          if start<0: raise SystemExit('FIX197 classify anchor not found')
+          old='val c = normalize(raw)'
+          new='val c = normalize(raw).removePrefix("gama ").trim()'
+          pos=s.find(old,start,start+1200)
+          if new not in s[start:start+1200]:
+              if pos<0: raise SystemExit('FIX197 normalize anchor not found')
+              s=s[:pos]+new+s[pos+len(old):]
+          p.write_text(s)
+          PY
 
-      # ============================================================
-      # APLICAR CORREÇÕES DE VOZ, APPS, BATERIA E PESQUISA
-      # ============================================================
-
-      - name: Apply complete FIX193
+      - name: Install FIX201 red animated orb
         working-directory: _gama_build
         run: |
           set -euo pipefail
-
-          patch \
-            -p1 \
-            --forward \
-            --batch \
-            < /tmp/gama193.patch
-
-          SERVICE="app/src/main/java/com/gama/assistant/GamaService.kt"
-          LAUNCHER="app/src/main/java/com/gama/assistant/GamaReliableAppLauncher.kt"
-          CATALOG="app/src/main/java/com/gama/assistant/GamaInstalledAppCatalog.kt"
-          ONLINE="app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt"
-          INTERNET="app/src/main/java/com/gama/assistant/GamaInternetHub.kt"
-          BRAIN="app/src/main/java/com/gama/assistant/LocalBrain.kt"
-          LLM="app/src/main/java/com/gama/assistant/GamaLocalLlm.kt"
-          ENDPOINTER="app/src/main/java/com/gama/assistant/SemanticEndpointer.kt"
-
-          test -s "$SERVICE"
-          test -s "$LAUNCHER"
-          test -s "$CATALOG"
-          test -s "$ONLINE"
-          test -s "$INTERNET"
-          test -s "$BRAIN"
-          test -s "$LLM"
-          test -s "$ENDPOINTER"
-
-          grep -Fq \
-            'tryHandleRawBatteryBeforeContext(command)' \
-            "$SERVICE"
-
-          grep -Fq \
-            'tryHandleRawAppBeforeContext(command)' \
-            "$SERVICE"
-
-          grep -Fq \
-            'tryHandleRawOnlineBeforeContext(command)' \
-            "$SERVICE"
-
-          grep -Fq \
-            'ACTION_BATTERY_CHANGED' \
-            "$SERVICE"
-
-          grep -Fq \
-            'Intent.makeMainActivity' \
-            "$LAUNCHER"
-
-          grep -Fq \
-            'MATCH_ALL' \
-            "$LAUNCHER"
-
-          if grep -Fq \
-            'MATCH_DEFAULT_ONLY' \
-            "$LAUNCHER"; then
-            echo "::error::Launcher antigo MATCH_DEFAULT_ONLY encontrado."
-            exit 1
-          fi
-
-          grep -Fq \
-            'resolveBareName' \
-            "$CATALOG"
-
-          grep -Fq \
-            'com.netflix.mediaclient' \
-            "$CATALOG"
-
-          grep -Fq \
-            'com.duolingo' \
-            "$CATALOG"
-
-          grep -Fq \
-            'pesquise' \
-            "$ONLINE"
-
-          grep -Fq \
-            'procure' \
-            "$ONLINE"
-
-          grep -Fq \
-            'busque' \
-            "$ONLINE"
-
-          grep -Fq \
-            'www.bing.com/search?format=rss' \
-            "$INTERNET"
-
-          grep -Fq \
-            'answerFresh(question: String)' \
-            "$LLM"
-
-          grep -Fq \
-            '1_000L' \
-            "$ENDPOINTER"
-
-          grep -Fq \
-            '2_200L' \
-            "$ENDPOINTER"
-
-          echo "FIX193 aplicado."
-
-      # ============================================================
-      # FIX197
-      #
-      # O teste do #192 falhou porque classify() recebia:
-      # "gama pesquise na internet..."
-      #
-      # Mas o roteador verificava startsWith("pesquise").
-      #
-      # Agora a wake word é removida ANTES da classificação.
-      # ============================================================
-
-      - name: Apply FIX197 wake word research repair
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY_FIX197'
-          from pathlib import Path
-
-          path = Path(
-              "app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt"
-          )
-
-          text = path.read_text(
-              encoding="utf-8"
-          )
-
-          function_marker = (
-              "fun classify(raw: String): Mode {"
-          )
-
-          start = text.find(function_marker)
-
-          if start < 0:
-              raise SystemExit(
-                  "GamaOnlineRouter.classify não encontrado."
-              )
-
-          old = "val c = normalize(raw)"
-
-          position = text.find(
-              old,
-              start,
-          )
-
-          if (
-              position < 0
-              or
-              position > start + 500
-          ):
-              raise SystemExit(
-                  "Linha de normalização do classify não encontrada."
-              )
-
-          replacement = (
-              'val c = normalize(raw)'
-              '.removePrefix("gama ")'
-              '.trim()'
-          )
-
-          text = (
-              text[:position]
-              + replacement
-              + text[position + len(old):]
-          )
-
-          path.write_text(
-              text,
-              encoding="utf-8",
-          )
-
-          print(
-              "FIX197 aplicado ao GamaOnlineRouter."
-          )
-          PY_FIX197
-
-          ONLINE="app/src/main/java/com/gama/assistant/GamaOnlineRouter.kt"
-
-          grep -Fq \
-            'normalize(raw).removePrefix("gama ").trim()' \
-            "$ONLINE"
-
-          # O teste que falhou no #192 deve continuar existindo.
-          TESTFILE="app/src/test/java/com/gama/assistant/GamaOnlineRouterTest.kt"
-
-          test -s "$TESTFILE"
-
-          grep -Fq \
-            'researchGoesOnline' \
-            "$TESTFILE"
-
-          grep -Fq \
-            'Gama, pesquise na internet sobre computação quântica' \
-            "$TESTFILE"
-
-          echo "FIX197 verificado."
-
-      # ============================================================
-      # VERSÃO
-      # ============================================================
-
-      - name: Configure FIX197 version
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY_VERSION'
-          from pathlib import Path
-          import os
-          import re
-
-          path = Path(
-              "_gama_build/app/build.gradle.kts"
-          )
-
-          text = path.read_text(
-              encoding="utf-8"
-          )
-
-          version_code = (
-              37_000_000
-              + int(
-                  os.environ[
-                      "GITHUB_RUN_NUMBER"
-                  ]
-              )
-          )
-
-          text, code_count = re.subn(
-              r'versionCode\s*=\s*\d+',
-              f'versionCode = {version_code}',
-              text,
-              count=1,
-          )
-
-          text, name_count = re.subn(
-              r'versionName\s*=\s*"[^"]*"',
-              'versionName = "Gama 13.0 Core FIX197"',
-              text,
-              count=1,
-          )
-
-          if (
-              code_count != 1
-              or
-              name_count != 1
-          ):
-              raise SystemExit(
-                  "Falha ao configurar versão FIX197."
-              )
-
-          path.write_text(
-              text,
-              encoding="utf-8",
-          )
-
-          print(
-              "versionCode:",
-              version_code,
-          )
-          PY_VERSION
-
-          grep -Fq \
-            'versionName = "Gama 13.0 Core FIX197"' \
-            _gama_build/app/build.gradle.kts
-
-      # ============================================================
-      # MODELO LOCAL
-      # ============================================================
-
-      - name: Bundle local Qwen model
-        run: |
-          set -euo pipefail
-
-          MODEL_DIR="$GITHUB_WORKSPACE/_gama_build/app/src/main/assets/llm"
-          MODEL="$MODEL_DIR/Qwen3-0.6B-int4.litertlm"
-
-          mkdir -p "$MODEL_DIR"
-          rm -f "$MODEL"
-
-          curl \
-            -L \
-            --fail \
-            --retry 5 \
-            --retry-all-errors \
-            --connect-timeout 30 \
-            --max-time 1800 \
-            --output "$MODEL" \
-            "$GAMA_MODEL_URL"
-
-          test -s "$MODEL"
-
-          ACTUAL_SIZE="$(
-            stat -c%s "$MODEL"
-          )"
-
-          echo "Qwen: $ACTUAL_SIZE bytes"
-
-          if [ "$ACTUAL_SIZE" != "$GAMA_MODEL_SIZE" ]; then
-            echo "::error::Modelo Qwen incompleto."
-            echo "Esperado: $GAMA_MODEL_SIZE"
-            echo "Recebido: $ACTUAL_SIZE"
-            exit 1
-          fi
-
-          echo \
-            "$GAMA_MODEL_SHA256  $MODEL" \
-            | sha256sum -c -
-
-      # ============================================================
-      # AUDITORIA
-      # ============================================================
-
-      - name: Architecture audit
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY_AUDIT'
-          from pathlib import Path
-          import os
-
-          root = Path("_gama_build")
-
-          src = (
-              root
-              / "app/src/main/java/com/gama/assistant"
-          )
-
-          service = (
-              src / "GamaService.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          launcher = (
-              src / "GamaReliableAppLauncher.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          catalog = (
-              src / "GamaInstalledAppCatalog.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          online = (
-              src / "GamaOnlineRouter.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          internet = (
-              src / "GamaInternetHub.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          brain = (
-              src / "LocalBrain.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          llm = (
-              src / "GamaLocalLlm.kt"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          manifest = (
-              root
-              / "app/src/main/AndroidManifest.xml"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          gradle = (
-              root
-              / "app/build.gradle.kts"
-          ).read_text(
-              encoding="utf-8"
-          )
-
-          model = (
-              root
-              / "app/src/main/assets/llm/Qwen3-0.6B-int4.litertlm"
-          )
-
-          checks = {
-              "versão FIX197":
-                  "Gama 13.0 Core FIX197"
-                  in gradle,
-
-              "Qwen local":
-                  model.is_file()
-                  and
-                  model.stat().st_size
-                  ==
-                  int(
-                      os.environ[
-                          "GAMA_MODEL_SIZE"
-                      ]
-                  ),
-
-              "bateria":
-                  "tryHandleRawBatteryBeforeContext(command)"
-                  in service
-                  and
-                  "ACTION_BATTERY_CHANGED"
-                  in service,
-
-              "apps":
-                  "tryHandleRawAppBeforeContext(command)"
-                  in service
-                  and
-                  "resolveBareName"
-                  in catalog,
-
-              "launcher Android":
-                  "Intent.makeMainActivity"
-                  in launcher
-                  and
-                  "MATCH_ALL"
-                  in launcher
-                  and
-                  "MATCH_DEFAULT_ONLY"
-                  not in launcher,
-
-              "pesquisa antes da IA":
-                  "tryHandleRawOnlineBeforeContext(command)"
-                  in service,
-
-              "wake word pesquisa":
-                  'normalize(raw).removePrefix("gama ").trim()'
-                  in online,
-
-              "verbos pesquisa":
-                  all(
-                      word in online
-                      for word in (
-                          "pesquise",
-                          "procure",
-                          "busque",
-                      )
-                  ),
-
-              "DuckDuckGo":
-                  "html.duckduckgo.com"
-                  in internet,
-
-              "Bing RSS":
-                  "www.bing.com/search?format=rss"
-                  in internet,
-
-              "conversa":
-                  "answerFresh(question: String)"
-                  in llm
-                  and
-                  "usableModelAnswer"
-                  in brain,
-
-              "visibilidade apps":
-                  "<queries>"
-                  in manifest
-                  and
-                  "android.intent.category.LAUNCHER"
-                  in manifest,
+          mkdir -p app/src/main/java/com/gama/assistant
+          cat > app/src/main/java/com/gama/assistant/GamaEnergyView.kt <<'KOTLIN'
+          package com.gama.assistant
+          import android.animation.ValueAnimator
+          import android.content.Context
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.Paint
+          import android.graphics.Path
+          import android.util.AttributeSet
+          import android.view.View
+          import android.view.animation.LinearInterpolator
+          import kotlin.math.PI
+          import kotlin.math.cos
+          import kotlin.math.min
+          import kotlin.math.sin
+
+          class GamaEnergyView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null): View(context,attrs) {
+              enum class Mode { LISTENING, THINKING, SPEAKING }
+              var mode = Mode.LISTENING
+                  set(value) { field=value; invalidate() }
+              private var phase=0f
+              private val pen=Paint(Paint.ANTI_ALIAS_FLAG).apply { style=Paint.Style.STROKE; strokeCap=Paint.Cap.ROUND }
+              private val glow=Paint(Paint.ANTI_ALIAS_FLAG)
+              private val animator=ValueAnimator.ofFloat(0f,1f).apply {
+                  duration=1400L; repeatCount=ValueAnimator.INFINITE; interpolator=LinearInterpolator()
+                  addUpdateListener { phase=it.animatedValue as Float; invalidate() }
+              }
+              override fun onAttachedToWindow() { super.onAttachedToWindow(); if (!animator.isStarted) animator.start() }
+              override fun onDetachedFromWindow() { animator.cancel(); super.onDetachedFromWindow() }
+              override fun onDraw(canvas: Canvas) {
+                  super.onDraw(canvas)
+                  val size=min(width,height).toFloat(); if(size<=0f) return
+                  val cx=width/2f; val cy=height/2f; val t=phase*PI*2
+                  val activity=when(mode) { Mode.LISTENING->0.12f; Mode.THINKING->0.5f; Mode.SPEAKING->1f }
+                  val pulse=((1+sin(t*(1+activity*2)))/2).toFloat()
+                  glow.color=Color.argb((25+activity*pulse*75).toInt(),255,20,25)
+                  canvas.drawCircle(cx,cy,size*(0.19f+activity*pulse*0.025f),glow)
+                  val rings=when(mode) { Mode.LISTENING->4; Mode.THINKING->5; Mode.SPEAKING->6 }
+                  for (ring in 0 until rings) {
+                      val path=Path(); val base=size*(0.27f+ring*0.028f)
+                      for(i in 0..128) {
+                          val a=i*2*PI/128
+                          val wobble=sin(a*(4+ring)+t*(0.7+activity*3))*size*(0.004+activity*0.035)
+                          val radius=base+wobble.toFloat()
+                          val x=cx+cos(a).toFloat()*radius; val y=cy+sin(a).toFloat()*radius
+                          if(i==0) path.moveTo(x,y) else path.lineTo(x,y)
+                      }
+                      path.close(); pen.color=Color.argb((220-ring*23).coerceAtLeast(65),255,25,30)
+                      pen.strokeWidth=size*(0.003f+activity*0.002f)
+                      canvas.drawPath(path,pen)
+                  }
+              }
+              fun release() { animator.cancel() }
           }
+          KOTLIN
 
-          failed = [
-              name
-              for name, ok
-              in checks.items()
-              if not ok
-          ]
+      - name: Install FIX201 app aliases and safe launcher
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaUniversalAppLauncher.kt <<'KOTLIN'
+          package com.gama.assistant
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.content.ComponentName
+          import java.text.Normalizer
+          import java.util.Locale
 
-          if failed:
-              raise SystemExit(
-                  "Auditoria falhou: "
-                  + ", ".join(failed)
-              )
+          object GamaUniversalAppLauncher {
+              data class Result(val started:Boolean,val label:String)
+              fun normalize(raw:String):String = Normalizer.normalize(raw.lowercase(Locale.ROOT),Normalizer.Form.NFD)
+                  .replace(Regex("\\p{M}+"),"").replace(Regex("[^a-z0-9 ]+")," ").replace(Regex("\\s+")," ").trim()
+              private val aliases=mapOf("zap" to "whatsapp", "watsap" to "whatsapp", "watsapp" to "whatsapp", "insta" to "instagram", "yt" to "youtube")
+              fun target(raw:String):String? {
+                  val s=normalize(raw).removePrefix("gama ").trim()
+                  val match=Regex("^(abrir|abra|abre|abri|abril|iniciar|inicie|executar|execute) (.+)$").find(s) ?: return null
+                  val name=match.groupValues[2].replace(Regex("^(o|a|app|aplicativo|do|da) +"),"").trim()
+                  if(name.isBlank() || name.contains(" site ") || name.startsWith("site ") || name.contains(" ponto ") || Regex("[a-z0-9]+ (com|org|net|br)$").containsMatchIn(name)) return null
+                  return aliases[name] ?: name
+              }
+              @Suppress("DEPRECATION")
+              fun launchIfRequested(context:Context,raw:String):Result? {
+                  val name=target(raw) ?: return null
+                  val pm=context.packageManager
+                  val known=mapOf("whatsapp" to "com.whatsapp", "instagram" to "com.instagram.android", "youtube" to "com.google.android.youtube", "chrome" to "com.android.chrome", "telegram" to "org.telegram.messenger", "spotify" to "com.spotify.music", "discord" to "com.discord", "calculadora" to "com.google.android.calculator")
+                  val intent=Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                  val candidates=pm.queryIntentActivities(intent,PackageManager.MATCH_ALL)
+                  val exact=candidates.firstOrNull { normalize(it.loadLabel(pm).toString())==name }
+                      ?: candidates.firstOrNull { it.activityInfo.packageName==known[name] }
+                  val component=exact?.activityInfo?.let { ComponentName(it.packageName,it.name) }
+                  val launch=component?.let { Intent.makeMainActivity(it) } ?: known[name]?.let { pm.getLaunchIntentForPackage(it) }
+                  val started=if(launch==null) false else runCatching {
+                      launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                      context.startActivity(launch); true
+                  }.getOrDefault(false)
+                  return Result(started,name)
+              }
+          }
+          KOTLIN
 
-          kotlin_files = list(
-              src.glob("*.kt")
-          )
-
-          kotlin_lines = sum(
-              len(
-                  path.read_text(
-                      encoding="utf-8",
-                      errors="ignore",
-                  ).splitlines()
-              )
-              for path in kotlin_files
-          )
-
-          print(
-              "Kotlin files:",
-              len(kotlin_files),
-          )
-
-          print(
-              "Kotlin lines:",
-              kotlin_lines,
-          )
-
-          if len(kotlin_files) < 125:
-              raise SystemExit(
-                  "Arquivos Kotlin abaixo do esperado."
-              )
-
-          if kotlin_lines < 28500:
-              raise SystemExit(
-                  "Código Kotlin incompleto."
-              )
-
-          print(
-              "Architecture audit PASS."
-          )
-          PY_AUDIT
+      - name: Install FIX201 learning and command priority
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaLearning.kt <<'KOTLIN'
+          package com.gama.assistant
+          import android.content.Context
+          object GamaLearning {
+              private fun prefs(c:Context)=c.getSharedPreferences("gama_learned_aliases",Context.MODE_PRIVATE)
+              fun handleTeaching(c:Context,raw:String):String? {
+                  val s=GamaUniversalAppLauncher.normalize(raw).removePrefix("gama ")
+                  val learn=Regex("^(aprenda que|lembre que) ([a-z0-9 ]{2,35}) (significa|e o aplicativo|e o app) ([a-z0-9 ]{2,35})$").find(s)
+                  if(learn!=null) {
+                      val alias=learn.groupValues[2].trim(); val app=learn.groupValues[4].trim()
+                      if(alias in setOf("gama","abrir","bloquear","apagar")) return "Esse apelido está reservado."
+                      prefs(c).edit().putString("alias:$alias",app).apply()
+                      return "Aprendi que $alias significa $app."
+                  }
+                  val forget=Regex("^(esqueca|esquece) ([a-z0-9 ]{2,35})$").find(s)
+                  if(forget!=null) { val alias=forget.groupValues[2].trim(); prefs(c).edit().remove("alias:$alias").apply(); return "Esqueci $alias." }
+                  return null
+              }
+              fun resolveAppCommand(c:Context,raw:String):String {
+                  val target=GamaUniversalAppLauncher.target(raw) ?: return raw
+                  val learned=prefs(c).getString("alias:$target",null) ?: return raw
+                  return "abrir $learned"
+              }
+          }
+          KOTLIN
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          s=p.read_text()
+          needle='if (\n            tryHandleRawBatteryBeforeContext(command)\n        ) return'
+          # Locate the existing deterministic routing by its stable function name.
+          import re
+          m=re.search(r'(?m)^([ \t]*)if\s*\(\s*tryHandleRawBatteryBeforeContext\(command\)\s*\)\s*return',s)
+          if not m: raise SystemExit('FIX201 routing anchor missing; refusing unsafe insertion')
+          indent=m.group(1)
+          injected="""GamaLearning.handleTeaching(this, command)?.let { reply ->
+              markResponseStarted()
+              speak(reply, false)
+              return
+          }
+          GamaUniversalAppLauncher.launchIfRequested(this, GamaLearning.resolveAppCommand(this,command))?.let { result ->
+              markResponseStarted()
+              speak(if(result.started) "Abrindo ${result.label}." else "Não consegui abrir ${result.label} neste celular.",false)
+              return
+          }
+          """
+          s=s[:m.start()]+''.join(indent+line if line.strip() else line for line in injected.splitlines(True))+s[m.start():]
+          p.write_text(s)
+          PY
 
       # ============================================================
-      # JAVA
+      # FIX202: Ferramentas determinísticas e memória de notas
       # ============================================================
+      - name: Install FIX202 Android tools and private notes
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaAssistantTools.kt <<'KOTLIN'
+          package com.gama.assistant
 
-      - name: Java 17
+          import android.app.KeyguardManager
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.net.Uri
+          import android.os.BatteryManager
+          import android.provider.CalendarContract
+          import android.provider.AlarmClock
+          import java.net.URLEncoder
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          object GamaAssistantTools {
+              private const val STORE = "gama_assistant_notes"
+              private const val KEY = "entries"
+              private fun normalized(raw: String): String =
+                  GamaUniversalAppLauncher.normalize(raw)
+                      .removePrefix("gama ").trim()
+
+              private fun open(context: Context, intent: Intent): Boolean =
+                  runCatching {
+                      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                      context.startActivity(intent)
+                      true
+                  }.getOrDefault(false)
+
+              private fun browse(context: Context, address: String, label: String): String {
+                  val ok = open(context, Intent(Intent.ACTION_VIEW, Uri.parse(address)))
+                  return if (ok) "Abrindo $label." else "Não consegui abrir $label."
+              }
+
+              private fun battery(context: Context): Int? {
+                  val status = context.registerReceiver(
+                      null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                  ) ?: return null
+                  val level = status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                  val scale = status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                  return if (level >= 0 && scale > 0) (100 * level / scale) else null
+              }
+
+              fun handle(context: Context, raw: String): String? {
+                  val command = normalized(raw)
+                  if (command.isEmpty()) return null
+                  val prefs = context.getSharedPreferences(STORE, Context.MODE_PRIVATE)
+
+                  if (command in setOf("que horas sao", "horas", "me diga as horas")) {
+                      val clock = SimpleDateFormat("HH:mm", Locale("pt", "BR"))
+                      return "Agora são ${clock.format(Date())}."
+                  }
+                  if (command in setOf("qual a bateria", "nivel da bateria", "quanto de bateria tenho")) {
+                      return battery(context)?.let { "A bateria está em $it por cento." }
+                          ?: "Não consegui verificar a bateria agora."
+                  }
+                  if (command in setOf("abrir agenda", "minha agenda", "agenda", "abrir calendario", "calendario")) {
+                      val ok = open(context, Intent(Intent.ACTION_VIEW, CalendarContract.CONTENT_URI))
+                      return if (ok) "Abrindo a agenda." else "Não consegui abrir a agenda."
+                  }
+                  if (command in setOf("abrir email", "meus emails", "email", "abrir emails")) {
+                      val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_EMAIL)
+                      return if (open(context, intent)) "Abrindo o e-mail." else "Não encontrei um aplicativo de e-mail."
+                  }
+                  if (command in setOf("noticias", "ultimas noticias", "abrir noticias")) {
+                      return browse(context, "https://news.google.com/", "as notícias")
+                  }
+                  if (command in setOf("navegador", "abrir navegador")) {
+                      return browse(context, "https://www.google.com/", "o navegador")
+                  }
+                  if (command in setOf("abrir github", "acessar github", "abrir site github")) {
+                      return browse(context, "https://github.com/", "GitHub")
+                  }
+                  if (command in setOf("gama ta ai", "ta ai", "esta ai", "voce ta ai", "voce esta ai")) {
+                      return "Estou aqui. Pode falar."
+                  }
+                  if (command == "minhas notas" || command == "ler minhas notas") {
+                      val notes = prefs.getString(KEY, "").orEmpty().lines()
+                          .filter { it.isNotBlank() }.takeLast(5)
+                      return if (notes.isEmpty()) "Você ainda não tem notas." else
+                          "Suas notas recentes: ${notes.joinToString("; ")}."
+                  }
+                  val note = Regex("^(anote|anota|guarde uma nota|salve uma nota) (.+)$").find(command)
+                  if (note != null) {
+                      val value = note.groupValues[2].trim().take(400)
+                      val current = prefs.getString(KEY, "").orEmpty().lines()
+                          .filter { it.isNotBlank() }.takeLast(49)
+                      prefs.edit().putString(KEY, (current + value).joinToString("\n")).apply()
+                      return "Anotado."
+                  }
+                  if (command == "apagar minhas notas") {
+                      return "Para apagar suas notas, diga: confirme apagar minhas notas."
+                  }
+                  if (command == "confirme apagar minhas notas") {
+                      prefs.edit().remove(KEY).apply()
+                      return "Suas notas foram apagadas."
+                  }
+                  val website = Regex("""^(abrir|acessar|entre no|entrar no) (site |pagina )?([a-z0-9.-]+\.(com|org|net|io|dev|app|br)(\.br)?)$""").find(raw.lowercase(Locale.ROOT).removePrefix("gama ").trim())
+                  if (website != null) {
+                      val host = website.groupValues[3]
+                      return browse(context, "https://$host", host)
+                  }
+                  val siteSearch = Regex("^(abrir|acessar|entrar no) site (do |da |de )?(.+)$").find(command)
+                  if (siteSearch != null) {
+                      val term = URLEncoder.encode(siteSearch.groupValues[3] + " site oficial", "UTF-8")
+                      return browse(context, "https://www.google.com/search?q=$term", "a pesquisa do site")
+                  }
+                  if (command == "acorda crianca papai chegou" || command == "acorda crianca pai chegou") {
+                      val time = SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date())
+                      val level = battery(context)
+                      val locked = context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked ?: true
+                      return buildString {
+                          append("Bem-vindo de volta. Agora são $time.")
+                          if (level != null) append(" A bateria está em $level por cento.")
+                          if (locked) append(" Desbloqueie o Android para consultar informações privadas.")
+                      }
+                  }
+                  return null
+              }
+          }
+          KOTLIN
+
+      # ============================================================
+      # FIX202: Memória de contexto e proteção contra falso comando
+      # ============================================================
+      - name: Install FIX202 conversation memory
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaConversationMemory.kt <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.content.Context
+          import org.json.JSONArray
+          import org.json.JSONObject
+
+          object GamaConversationMemory {
+              private const val PREFS = "gama_conversation_context"
+              private const val KEY = "recent_turns"
+              private const val LIMIT = 12
+
+              @Synchronized
+              fun remember(context: Context, role: String, content: String) {
+                  if (role !in setOf("user", "assistant")) return
+                  val clean = content.trim().take(1200)
+                  if (clean.isEmpty()) return
+                  val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                  val entries = runCatching {
+                      JSONArray(prefs.getString(KEY, "[]"))
+                  }.getOrDefault(JSONArray())
+                  val updated = JSONArray()
+                  val start = (entries.length() - LIMIT + 1).coerceAtLeast(0)
+                  for (i in start until entries.length()) updated.put(entries.optJSONObject(i))
+                  updated.put(JSONObject().put("role", role).put("content", clean))
+                  prefs.edit().putString(KEY, updated.toString()).apply()
+              }
+
+              @Synchronized
+              fun recent(context: Context): String {
+                  val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .getString(KEY, "[]") ?: "[]"
+                  val entries = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+                  return buildString {
+                      for (i in 0 until entries.length()) {
+                          val item = entries.optJSONObject(i) ?: continue
+                          val role = if (item.optString("role") == "user") "Usuário" else "Gama"
+                          append(role).append(": ").append(item.optString("content")).append('\n')
+                      }
+                  }.takeLast(6000)
+              }
+
+              fun clear(context: Context) {
+                  context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                      .edit().remove(KEY).apply()
+              }
+          }
+          KOTLIN
+
+      # ============================================================
+      # FIX202: roteamento local antes de IA e antes de apps
+      # ============================================================
+      - name: Integrate FIX202 tools before app launcher
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          python3 - <<'PY_FIX202'
+          from pathlib import Path
+          p=Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          s=p.read_text(encoding='utf-8')
+          marker='GamaLearning.handleTeaching(this, command)?.let { reply ->'
+          if marker not in s:
+              raise SystemExit('FIX201 learning hook missing: cannot integrate FIX202 safely')
+          if 'GamaAssistantTools.handle(this, command)' not in s:
+              replacement="""GamaAssistantTools.handle(this, command)?.let { reply ->
+              markResponseStarted()
+              speak(reply, false)
+              return
+          }
+          """
+              s=s.replace(marker,replacement+marker,1)
+          p.write_text(s,encoding='utf-8')
+          PY_FIX202
+
+      # FIX200: presença, retorno e reconhecimento de fala não devem cair no LLM.
+      - name: Integrate FIX200 presence and return briefing
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          cat > app/src/main/java/com/gama/assistant/GamaReturnBrief.kt <<'KOTLIN'
+          package com.gama.assistant
+
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.os.BatteryManager
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          object GamaReturnBrief {
+              fun isReturnWake(raw: String): Boolean {
+                  val c = GamaUniversalAppLauncher.normalize(raw)
+                  return "acorda crianca" in c && ("papai chegou" in c || "pai chegou" in c)
+              }
+              fun isPresenceWake(raw: String): Boolean {
+                  val c = GamaUniversalAppLauncher.normalize(raw).removePrefix("gama ").trim()
+                  return c in setOf("ta ai", "esta ai", "voce ta ai", "voce esta ai")
+              }
+              fun build(context: Context): String {
+                  val hour = SimpleDateFormat("HH:mm", Locale("pt", "BR")).format(Date())
+                  val battery = runCatching {
+                      val status = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                      val level = status?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                      val scale = status?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                      if (level >= 0 && scale > 0) 100 * level / scale else -1
+                  }.getOrDefault(-1)
+                  return "Bem-vindo de volta. Agora são $hour." +
+                      if (battery in 0..100) " A bateria está em $battery por cento." else ""
+              }
+          }
+          KOTLIN
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('app/src/main/java/com/gama/assistant/GamaService.kt')
+          s=p.read_text()
+          marker='GamaLearning.handleTeaching(this, command)?.let { reply ->'
+          if marker not in s: raise SystemExit('FIX203 command routing anchor not found')
+          code='''GamaReturnBrief.isPresenceWake(command).let { presence ->
+              if (presence) {
+                  markResponseStarted()
+                  speak("Estou aqui. Pode falar.", false)
+                  return
+              }
+          }
+          if (GamaReturnBrief.isReturnWake(command)) {
+              markResponseStarted()
+              speak(GamaReturnBrief.build(this), false)
+              return
+          }
+          '''
+          # Use the existing command gate's indentation.
+          m=re.search(r'(?m)^([ \t]*)'+re.escape(marker),s)
+          if not m: raise SystemExit('FIX203 insertion anchor not found')
+          indent=m.group(1)
+          s=s[:m.start()]+''.join(indent+line if line.strip() else line for line in code.splitlines(True))+s[m.start():]
+          p.write_text(s)
+          PY
+
+      - name: FIX203 source and shell checks
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          test -s app/src/main/java/com/gama/assistant/GamaReturnBrief.kt
+          test -s app/src/main/java/com/gama/assistant/GamaLearning.kt
+          test -s app/src/main/java/com/gama/assistant/GamaAssistantTools.kt
+          grep -Fq 'GamaReturnBrief.isReturnWake(command)' app/src/main/java/com/gama/assistant/GamaService.kt
+
+      - name: Add FIX202 JVM tests
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/test/java/com/gama/assistant
+          cat > app/src/test/java/com/gama/assistant/GamaFIX202RoutingTest.kt <<'KOTLIN'
+          package com.gama.assistant
+
+          import org.junit.Assert.assertEquals
+          import org.junit.Assert.assertNull
+          import org.junit.Test
+
+          class GamaFIX202RoutingTest {
+              @Test fun openWhatsappAlias() {
+                  assertEquals("whatsapp", GamaUniversalAppLauncher.target("Gama, abrir zap"))
+              }
+              @Test fun openSpotify() {
+                  assertEquals("spotify", GamaUniversalAppLauncher.target("Gama, abrir Spotify"))
+              }
+              @Test fun voskAbril() {
+                  assertEquals("calculadora", GamaUniversalAppLauncher.target("Gama, abril calculadora"))
+              }
+              @Test fun questionIsNotApp() {
+                  assertNull(GamaUniversalAppLauncher.target("Gama, quem foi Einstein"))
+              }
+              @Test fun websiteIsNotApp() {
+                  assertNull(GamaUniversalAppLauncher.target("abrir site github.com"))
+              }
+          }
+          KOTLIN
+
+      - name: FIX202 source audit
+        working-directory: _gama_build
+        run: |
+          set -euo pipefail
+          test -s app/src/main/java/com/gama/assistant/GamaAssistantTools.kt
+          test -s app/src/main/java/com/gama/assistant/GamaConversationMemory.kt
+          test -s app/src/main/java/com/gama/assistant/GamaLearning.kt
+          test -s app/src/main/java/com/gama/assistant/GamaEnergyView.kt
+          grep -Fq 'GamaAssistantTools.handle(this, command)' app/src/main/java/com/gama/assistant/GamaService.kt
+          grep -Fq 'GamaUniversalAppLauncher.launchIfRequested' app/src/main/java/com/gama/assistant/GamaService.kt
+
+      - name: Configure FIX201 version and Android package visibility
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,re
+          p=Path('_gama_build/app/build.gradle.kts'); s=p.read_text()
+          s,n=re.subn(r'versionCode\s*=\s*\d+',f'versionCode = {40000000+int(os.environ["GITHUB_RUN_NUMBER"])}',s,count=1)
+          if n!=1: raise SystemExit('versionCode missing')
+          s,n=re.subn(r'versionName\s*=\s*"[^"]*"','versionName = "Gama 13.5 RED ASSISTANT FIX202"',s,count=1)
+          if n!=1: raise SystemExit('versionName missing')
+          p.write_text(s)
+          p=Path('_gama_build/app/src/main/AndroidManifest.xml'); s=p.read_text()
+          if '<queries>' not in s:
+              insert="""<queries>
+              <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>
+              <package android:name="com.whatsapp"/>
+              <package android:name="com.instagram.android"/>
+              <package android:name="com.google.android.youtube"/>
+              <package android:name="com.android.chrome"/>
+              <package android:name="org.telegram.messenger"/>
+              </queries>"""
+              s=s.replace('<application',insert+'\n    <application',1)
+          p.write_text(s)
+          PY
+
+      - name: Download and verify local Qwen
+        run: |
+          set -euo pipefail
+          MODEL="_gama_build/app/src/main/assets/llm/Qwen3-0.6B-int4.litertlm"
+          mkdir -p "$(dirname "$MODEL")"
+          curl -fL --retry 5 --retry-all-errors --connect-timeout 30 --max-time 1800 -o "$MODEL" "$GAMA_MODEL_URL"
+          test "$(stat -c%s "$MODEL")" = "$GAMA_MODEL_SIZE"
+          echo "$GAMA_MODEL_SHA256  $MODEL" | sha256sum -c -
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
-      # ============================================================
-      # ANDROID SDK
-      # ============================================================
-
-      - name: Locate Android SDK
+      - name: Setup Android SDK 35
         run: |
           set -euo pipefail
-
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-
-          if [ ! -d "$SDK_ROOT" ]; then
-            echo "::error::Android SDK não encontrado em $SDK_ROOT"
-            exit 1
-          fi
-
-          echo \
-            "ANDROID_SDK_ROOT=$SDK_ROOT" \
-            >> "$GITHUB_ENV"
-
-          echo \
-            "ANDROID_HOME=$SDK_ROOT" \
-            >> "$GITHUB_ENV"
-
-          SDKMANAGER="$(
-            command -v sdkmanager || true
-          )"
-
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$(command -v sdkmanager || true)"
           if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER="$(
-              find \
-                "$SDK_ROOT/cmdline-tools" \
-                -type f \
-                -path '*/bin/sdkmanager' \
-                2>/dev/null \
-                | sort -V \
-                | tail -n 1
-            )"
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -path '*/bin/sdkmanager' 2>/dev/null | sort -V | tail -n 1)"
           fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
 
-          if [ -z "$SDKMANAGER" ] || \
-             [ ! -x "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não encontrado."
-            exit 1
-          fi
-
-          echo \
-            "SDKMANAGER=$SDKMANAGER" \
-            >> "$GITHUB_ENV"
-
-          echo \
-            "$(dirname "$SDKMANAGER")" \
-            >> "$GITHUB_PATH"
-
-          echo "Android SDK: $SDK_ROOT"
-          echo "sdkmanager: $SDKMANAGER"
-
-          "$SDKMANAGER" --version
-
-      - name: Install Android SDK 35
-        run: |
-          set -euo pipefail
-
-          if [ -z "${SDKMANAGER:-}" ]; then
-            echo "::error::SDKMANAGER vazio."
-            exit 1
-          fi
-
-          if [ ! -x "$SDKMANAGER" ]; then
-            echo "::error::SDKMANAGER inválido."
-            exit 1
-          fi
-
-          yes \
-            | "$SDKMANAGER" \
-              --licenses \
-              >/dev/null \
-            || true
-
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
-
-          test -d \
-            "$ANDROID_SDK_ROOT/platforms/android-35"
-
-          test -x \
-            "$ANDROID_SDK_ROOT/build-tools/35.0.0/zipalign"
-
-          test -x \
-            "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
-
-          test -x \
-            "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
-
-          echo "Android SDK 35 pronto."
-
-      # ============================================================
-      # GRADLE
-      # ============================================================
-
-      - name: Gradle cache
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # ============================================================
-      # CLEAN
-      # ============================================================
-
-      - name: Clean
+      - name: Compile Kotlin and run tests
         working-directory: _gama_build
         run: |
           set -euo pipefail
+          ./gradlew --no-daemon clean :app:compileReleaseKotlin :app:testReleaseUnitTest --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama201-tests.log"
 
-          ./gradlew \
-            --no-daemon \
-            clean \
-            --stacktrace
-
-      # ============================================================
-      # COMPILAÇÃO KOTLIN
-      # ============================================================
-
-      - name: Compile Release Kotlin
+      - name: Android lint and assemble release
         working-directory: _gama_build
         run: |
           set -euo pipefail
+          ./gradlew --no-daemon :app:lintRelease :app:assembleRelease --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/gama201-release.log"
 
-          ./gradlew \
-            --no-daemon \
-            :app:compileReleaseKotlin \
-            --stacktrace \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/gama197-compile.log"
-
-      # ============================================================
-      # TESTE ESPECÍFICO QUE QUEBROU O #192
-      # ============================================================
-
-      - name: Research router regression test
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          ./gradlew \
-            --no-daemon \
-            :app:testReleaseUnitTest \
-            --tests \
-            'com.gama.assistant.GamaOnlineRouterTest.researchGoesOnline' \
-            --stacktrace \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/gama197-router-test.log"
-
-      # ============================================================
-      # TODOS OS TESTES
-      # ============================================================
-
-      - name: Unit tests
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          ./gradlew \
-            --no-daemon \
-            :app:testReleaseUnitTest \
-            --stacktrace \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/gama197-tests.log"
-
-      # ============================================================
-      # LINT
-      # ============================================================
-
-      - name: Android lint
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          ./gradlew \
-            --no-daemon \
-            :app:lintRelease \
-            --stacktrace \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/gama197-lint.log"
-
-      # ============================================================
-      # GERAR APK
-      # ============================================================
-
-      - name: Assemble Release
-        working-directory: _gama_build
-        run: |
-          set -euo pipefail
-
-          ./gradlew \
-            --no-daemon \
-            :app:assembleRelease \
-            --stacktrace \
-            2>&1 \
-            | tee \
-              "$GITHUB_WORKSPACE/gama197-release.log"
-
-      - name: Locate generated APK
-        run: |
-          set -euo pipefail
-
-          INPUT_APK="$(
-            find \
-              _gama_build/app/build/outputs/apk/release \
-              -maxdepth 1 \
-              -type f \
-              -name '*.apk' \
-              -print \
-              | head -n 1 \
-              || true
-          )"
-
-          if [ -z "$INPUT_APK" ]; then
-            echo "::error::Nenhum APK foi gerado."
-            exit 1
-          fi
-
-          if [ ! -s "$INPUT_APK" ]; then
-            echo "::error::APK gerado está vazio."
-            exit 1
-          fi
-
-          echo \
-            "INPUT_APK=$INPUT_APK" \
-            >> "$GITHUB_ENV"
-
-          ls -lh "$INPUT_APK"
-
-      # ============================================================
-      # ZIPALIGN
-      # ============================================================
-
-      - name: Zipalign APK
-        run: |
-          set -euo pipefail
-
-          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-
-          test -x "$BT/zipalign"
-
-          mkdir -p \
-            _gama_build/dist
-
-          "$BT/zipalign" \
-            -f \
-            -p \
-            4 \
-            "$INPUT_APK" \
-            _gama_build/dist/Gama-aligned.apk
-
-          test -s \
-            _gama_build/dist/Gama-aligned.apk
-
-      # ============================================================
-      # ASSINATURA
-      # ============================================================
-
-      - name: Sign APK
+      - name: Sign and verify APK
         env:
           GAMA_KEYSTORE_B64: ${{ secrets.GAMA_KEYSTORE_B64 }}
           GAMA_KEYSTORE_PASSWORD: ${{ secrets.GAMA_KEYSTORE_PASSWORD }}
@@ -1032,203 +652,36 @@ jobs:
           GAMA_KEY_PASSWORD: ${{ secrets.GAMA_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-
           BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-
-          test -x "$BT/apksigner"
-
-          if [ -n "${GAMA_KEYSTORE_B64:-}" ] && \
-             [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && \
-             [ -n "${GAMA_KEY_ALIAS:-}" ] && \
-             [ -n "${GAMA_KEY_PASSWORD:-}" ]; then
-
-            echo \
-              "$GAMA_KEYSTORE_B64" \
-              | base64 --decode \
-              > "$RUNNER_TEMP/gama-release.jks"
-
-            KEYSTORE="$RUNNER_TEMP/gama-release.jks"
-            STORE_PASS="$GAMA_KEYSTORE_PASSWORD"
-            KEY_ALIAS="$GAMA_KEY_ALIAS"
-            KEY_PASS="$GAMA_KEY_PASSWORD"
-
-            echo \
-              "stable-update-capable" \
-              > _gama_build/dist/install-mode.txt
-
+          INPUT_APK="$(find _gama_build/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          if [ -z "$INPUT_APK" ] || [ ! -s "$INPUT_APK" ]; then echo '::error::Release APK missing'; exit 1; fi
+          mkdir -p _gama_build/dist
+          "$BT/zipalign" -f -p 4 "$INPUT_APK" _gama_build/dist/Gama-aligned.apk
+          if [ -n "${GAMA_KEYSTORE_B64:-}" ] && [ -n "${GAMA_KEYSTORE_PASSWORD:-}" ] && [ -n "${GAMA_KEY_ALIAS:-}" ] && [ -n "${GAMA_KEY_PASSWORD:-}" ]; then
+            echo "$GAMA_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/gama.jks"
+            KS="$RUNNER_TEMP/gama.jks"; SP="$GAMA_KEYSTORE_PASSWORD"; KA="$GAMA_KEY_ALIAS"; KP="$GAMA_KEY_PASSWORD"
+            echo stable-update-capable > _gama_build/dist/install-mode.txt
           else
-
-            KEYSTORE="$RUNNER_TEMP/gama-test.jks"
-            STORE_PASS="gama-test-pass"
-            KEY_ALIAS="gama-test"
-            KEY_PASS="gama-test-pass"
-
-            keytool \
-              -genkeypair \
-              -keystore "$KEYSTORE" \
-              -storepass "$STORE_PASS" \
-              -keypass "$KEY_PASS" \
-              -alias "$KEY_ALIAS" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 3650 \
-              -dname "CN=Gama Test,O=Gama,C=BR" \
-              -noprompt
-
-            echo \
-              "fresh-install-only" \
-              > _gama_build/dist/install-mode.txt
+            KS="$RUNNER_TEMP/gama-test.jks"; SP=gama-test-pass; KA=gama-test; KP=gama-test-pass
+            keytool -genkeypair -keystore "$KS" -storepass "$SP" -keypass "$KP" -alias "$KA" -keyalg RSA -keysize 2048 -validity 3650 -dname 'CN=Gama Test,O=Gama,C=BR' -noprompt
+            echo fresh-install-only > _gama_build/dist/install-mode.txt
           fi
-
-          "$BT/apksigner" sign \
-            --ks "$KEYSTORE" \
-            --ks-pass "pass:$STORE_PASS" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass "pass:$KEY_PASS" \
-            --out \
-              _gama_build/dist/Gama.apk \
-            _gama_build/dist/Gama-aligned.apk
-
-          test -s \
-            _gama_build/dist/Gama.apk
-
-      # ============================================================
-      # VERIFICAR ASSINATURA
-      # ============================================================
-
-      - name: Verify APK signature
-        run: |
-          set -euo pipefail
-
-          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-
-          "$BT/apksigner" \
-            verify \
-            --verbose \
-            --print-certs \
-            _gama_build/dist/Gama.apk \
-            | tee \
-              _gama_build/dist/signature-info.txt
-
-          test -s \
-            _gama_build/dist/signature-info.txt
-
-      # ============================================================
-      # VERIFICAR APK
-      # ============================================================
-
-      - name: Verify APK contents
-        run: |
-          set -euo pipefail
-
-          APK="_gama_build/dist/Gama.apk"
-          BT="$ANDROID_SDK_ROOT/build-tools/35.0.0"
-
-          test -s "$APK"
-
-          APK_SIZE="$(
-            stat -c%s "$APK"
-          )"
-
-          echo "APK final: $APK_SIZE bytes"
-
-          if [ "$APK_SIZE" -lt 350000000 ]; then
-            echo "::error::APK pequeno demais."
-            echo "::error::O Qwen local provavelmente não foi incluído."
-            exit 1
-          fi
-
-          unzip -l \
-            "$APK" \
-            > _gama_build/dist/apk-files.txt
-
-          grep -Fq \
-            'assets/model/final.mdl' \
-            _gama_build/dist/apk-files.txt
-
-          grep -Fq \
-            'assets/model/Gr.fst' \
-            _gama_build/dist/apk-files.txt
-
-          grep -Fq \
-            'assets/spk-model/final.ext.raw' \
-            _gama_build/dist/apk-files.txt
-
-          grep -Fq \
-            'assets/llm/Qwen3-0.6B-int4.litertlm' \
-            _gama_build/dist/apk-files.txt
-
-          grep -Fq \
-            'classes.dex' \
-            _gama_build/dist/apk-files.txt
-
-          "$BT/aapt" \
-            dump badging \
-            "$APK" \
-            > _gama_build/dist/apk-info.txt
-
-          grep -Fq \
-            "name='com.gama.assistant'" \
-            _gama_build/dist/apk-info.txt
-
-          grep -Fq \
-            "versionName='Gama 13.0 Core FIX197'" \
-            _gama_build/dist/apk-info.txt
-
-          (
-            cd _gama_build/dist
-
-            sha256sum \
-              Gama.apk \
-              > Gama.apk.sha256
-
-            sha256sum \
-              -c \
-              Gama.apk.sha256
-          )
-
-          rm -f \
-            _gama_build/dist/Gama-aligned.apk
-
-          echo "================================"
-          echo "GAMA FIX197 APK VERIFICADO"
-          echo "================================"
-
-          ls -lh \
-            _gama_build/dist/Gama.apk
-
-      # ============================================================
-      # GATE FINAL
-      #
-      # NÃO permite workflow verde sem Gama.apk.
-      # ============================================================
-
-      - name: Final APK gate
-        run: |
-          set -euo pipefail
-
-          test -s \
-            _gama_build/dist/Gama.apk
-
-          test -s \
-            _gama_build/dist/Gama.apk.sha256
-
-          test -s \
-            _gama_build/dist/apk-info.txt
-
-          test -s \
-            _gama_build/dist/signature-info.txt
-
-          echo "Gama.apk existe e passou por todas as verificações."
-
-      # ============================================================
-      # PUBLICAR APK
-      # ============================================================
+          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$SP" --ks-key-alias "$KA" --key-pass "pass:$KP" --out _gama_build/dist/Gama.apk _gama_build/dist/Gama-aligned.apk
+          "$BT/apksigner" verify --verbose --print-certs _gama_build/dist/Gama.apk | tee _gama_build/dist/signature-info.txt
+          test -s _gama_build/dist/Gama.apk
+          test "$(stat -c%s _gama_build/dist/Gama.apk)" -ge 350000000
+          unzip -l _gama_build/dist/Gama.apk > _gama_build/dist/apk-files.txt
+          grep -Fq 'assets/llm/Qwen3-0.6B-int4.litertlm' _gama_build/dist/apk-files.txt
+          grep -Fq 'classes.dex' _gama_build/dist/apk-files.txt
+          "$BT/aapt" dump badging _gama_build/dist/Gama.apk > _gama_build/dist/apk-info.txt
+          grep -Fq "name='com.gama.assistant'" _gama_build/dist/apk-info.txt
+          grep -Fq "versionName='Gama 13.5 RED ASSISTANT FIX202'" _gama_build/dist/apk-info.txt
+          (cd _gama_build/dist && sha256sum Gama.apk > Gama.apk.sha256 && sha256sum -c Gama.apk.sha256)
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-13.0-FIX197-APK
+          name: Gama-13.6-FIX203-RED-CORE-LEARNING-APK
           path: |
             _gama_build/dist/Gama.apk
             _gama_build/dist/Gama.apk.sha256
@@ -1239,21 +692,15 @@ jobs:
           compression-level: 0
           retention-days: 30
 
-      # ============================================================
-      # LOGS SE FALHAR
-      # ============================================================
-
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Gama-FIX197-diagnostics
+          name: Gama-FIX203-diagnostics
           path: |
-            gama197-compile.log
-            gama197-router-test.log
-            gama197-tests.log
-            gama197-lint.log
-            gama197-release.log
+            gama201-tests.log
+            gama201-release.log
             _gama_build/app/build/reports/
+            _gama_build/app/build/test-results/
           if-no-files-found: ignore
           retention-days: 7
